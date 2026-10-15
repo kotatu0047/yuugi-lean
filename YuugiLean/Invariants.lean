@@ -5,7 +5,15 @@ import YuugiLean.YuGiOh
 
 `step` で1手進めても保たれる性質を証明する。
 
-* カードの総数は変わらない（`step_count`）
+* カードの総数は変わらない（`step_count`、`play_count`）
+* フィールドのモンスターの uid は重複しない（`step_uidOK`、`reachable_uidOK`）
+* ゾーンの上限を超えない：メインモンスターゾーン5・エクストラモンスターゾーン1・
+  魔法罠ゾーン（チェーン上の魔法・罠を含む）5（`step_zoneOK`、`reachable_zoneOK`）
+* どちらかの LP が 0 なら決着している（`reachable_lp_zero_decided`）
+* 永続効果の有効・無効の判定（`decideAll`）について
+  * 無効と判定されたカードには、それを無効にする有効なカードがある（`negated_has_reason`）
+  * 有効と判定されたカード同士は互いに無効にしない（`effective_consistent`）
+  * どのカードにも無効にされないカードは有効（`unbeaten_effective`）
 -/
 
 namespace YGO
@@ -2324,5 +2332,97 @@ theorem reachable_lp_zero_decided {g : Game} (hr : Reachable g)
   cases hres : g.result with
   | some _ => rfl
   | none => obtain ⟨h1, h2⟩ := this hres; omega
+
+/-! ## 永続効果の有効・無効の判定（effectiveSources）の正しさ -/
+
+/-- 判定の途中経過が満たす性質：
+* 無効と決まったカードには、それを無効にする有効なカードがある
+* 有効と決まったカードを無効にするカードは、すべて無効と決まっている -/
+def DInv (srcs : List AuraSrc) (st : Nat → Option Bool) : Prop :=
+  ∀ i s, srcs[i]? = some s →
+    (st i = some false → ∃ j t, srcs[j]? = some t ∧ t.beats s = true ∧ st j = some true) ∧
+    (st i = some true → ∀ j t, srcs[j]? = some t → t.beats s = true → st j = some false)
+
+/-- 一度決まった判定は変わらない -/
+theorem decideRound_mono {srcs : List AuraSrc} {st : Nat → Option Bool} {i : Nat} {v : Bool}
+    (h : st i = some v) : decideRound srcs st i = some v := by
+  simp [decideRound, h]
+
+theorem mem_att {srcs : List AuraSrc} {s t : AuraSrc} {j : Nat} (hj : srcs[j]? = some t)
+    (hb : t.beats s = true) :
+    j ∈ (List.range srcs.length).filter (fun j => match srcs[j]? with | some t => t.beats s | none => false) := by
+  have hlt : j < srcs.length := (List.getElem?_eq_some_iff.mp hj).1
+  simp only [List.mem_filter, List.mem_range, hlt, true_and, hj, hb]
+
+theorem decideRound_inv {srcs : List AuraSrc} {st : Nat → Option Bool} (h : DInv srcs st) :
+    DInv srcs (decideRound srcs st) := by
+  intro i s hs
+  cases hst : st i with
+  | some v =>
+    rw [decideRound_mono hst]
+    obtain ⟨h1, h2⟩ := h i s hs
+    constructor
+    · intro hv; obtain ⟨j, t, hj, hb, hjt⟩ := h1 (by rw [hst, hv])
+      exact ⟨j, t, hj, hb, decideRound_mono hjt⟩
+    · intro hv j t hj hb; exact decideRound_mono (h2 (by rw [hst, hv]) j t hj hb)
+  | none =>
+    simp only [decideRound, hst, hs]
+    split
+    · rename_i hany
+      refine ⟨fun _ => ?_, fun h => by simp at h⟩
+      obtain ⟨j, hj, hjt⟩ := List.any_eq_true.mp hany
+      simp only [List.mem_filter, List.mem_range] at hj
+      obtain ⟨_, hj2⟩ := hj
+      split at hj2
+      · rename_i t ht
+        exact ⟨j, t, ht, hj2, decideRound_mono (by simpa using hjt)⟩
+      · simp at hj2
+    · split
+      · rename_i _ hall
+        refine ⟨fun h => by simp at h, fun _ j t hj hb => ?_⟩
+        have := List.all_eq_true.mp hall j (mem_att hj hb)
+        exact decideRound_mono (by simpa using this)
+      · exact ⟨fun h => by simp at h, fun h => by simp at h⟩
+
+theorem repeat_inv (srcs : List AuraSrc) (n : Nat) : DInv srcs (Nat.repeat (decideRound srcs) n (fun _ => none)) := by
+  induction n with
+  | zero => intro i s _; exact ⟨fun h => by simp [Nat.repeat] at h, fun h => by simp [Nat.repeat] at h⟩
+  | succ n ih => exact decideRound_inv ih
+
+theorem repeat_mono (srcs : List AuraSrc) (n m : Nat) (i : Nat) (v : Bool)
+    (h : Nat.repeat (decideRound srcs) n (fun _ => none) i = some v) :
+    Nat.repeat (decideRound srcs) (n + m) (fun _ => none) i = some v := by
+  induction m with
+  | zero => exact h
+  | succ m ih => exact decideRound_mono ih
+
+/-- **無効と判定されたカードには、それを無効にする有効なカードがある** -/
+theorem negated_has_reason {srcs : List AuraSrc} {i : Nat} {s : AuraSrc} (hs : srcs[i]? = some s)
+    (h : decideAll srcs i = some false) :
+    ∃ j t, srcs[j]? = some t ∧ t.beats s = true ∧ decideAll srcs j = some true :=
+  (repeat_inv srcs _ i s hs).1 h
+
+/-- **有効と判定されたカード同士は、互いに無効にしない** -/
+theorem effective_consistent {srcs : List AuraSrc} {i j : Nat} {s t : AuraSrc}
+    (hs : srcs[i]? = some s) (ht : srcs[j]? = some t)
+    (hi : decideAll srcs i = some true) (hj : decideAll srcs j = some true) : t.beats s = false := by
+  cases hb : t.beats s
+  · rfl
+  · have := (repeat_inv srcs _ i s hs).2 hi j t ht hb
+    unfold decideAll at hj
+    rw [hj] at this; cases this
+
+/-- **どのカードにも無効にされないカードは有効** -/
+theorem unbeaten_effective {srcs : List AuraSrc} {i : Nat} {s : AuraSrc} (hs : srcs[i]? = some s)
+    (hn : ∀ t ∈ srcs, t.beats s = false) : decideAll srcs i = some true := by
+  have h1 : Nat.repeat (decideRound srcs) 1 (fun _ => none) i = some true := by
+    simp [Nat.repeat, decideRound, hs]
+    intro x _
+    split
+    · rename_i t ht; simp [hn t (List.mem_of_getElem? ht)]
+    · rfl
+  unfold decideAll
+  rw [show srcs.length + 1 = 1 + srcs.length by omega]
+  exact repeat_mono srcs 1 srcs.length i true h1
 
 end YGO

@@ -536,20 +536,32 @@ def AuraSrc.negates (t s : AuraSrc) : Bool :=
 def AuraSrc.beats (t s : AuraSrc) : Bool :=
   t.negates s && !(s.negates t && s.since < t.since)
 
+/-- 判定の1ラウンド。`st i` は i 番目のカードの判定（`some true` は有効、`some false` は無効、`none` は未定）。
+無効にするカードの中に有効なものがあれば無効、すべて無効なら有効と決める。 -/
+def decideRound (srcs : List AuraSrc) (st : Nat → Option Bool) (i : Nat) : Option Bool :=
+  match st i with
+  | some v => some v
+  | none =>
+    match srcs[i]? with
+    | none => none
+    | some s =>
+      let att := (List.range srcs.length).filter fun j =>
+        match srcs[j]? with
+        | some t => t.beats s
+        | none => false
+      if att.any (fun j => st j == some true) then some false
+      else if att.all (fun j => st j == some false) then some true
+      else none
+
+/-- 判定をカードの枚数＋1回繰り返す -/
+def decideAll (srcs : List AuraSrc) : Nat → Option Bool :=
+  Nat.repeat (decideRound srcs) (srcs.length + 1) (fun _ => none)
+
 /-- 無効化されていないカード。無効にする側が無効化されていれば、無効にされる側は有効に戻るので、
-状態が決まるまで判定を繰り返す（`some true` は有効、`some false` は無効、`none` は未定）。 -/
+状態が決まるまで判定を繰り返す。 -/
 def effectiveSources (srcs : List AuraSrc) : List AuraSrc :=
-  let step (st : List (Option Bool)) : List (Option Bool) :=
-    (srcs.zip st).map fun (s, cur) =>
-      match cur with
-      | some v => some v
-      | none =>
-        let attackers := (srcs.zip st).filter (·.1.beats s)
-        if attackers.any (·.2 == some true) then some false
-        else if attackers.all (·.2 == some false) then some true
-        else none
-  let final := (List.range (srcs.length + 1)).foldl (fun st _ => step st) (srcs.map fun _ => none)
-  (srcs.zip final).filterMap fun (s, v) => if v == some false then none else some s
+  (List.range srcs.length).filterMap fun i =>
+    if decideAll srcs i == some false then none else srcs[i]?
 
 /-- 魔法・罠ゾーンの i 番目のカードの識別 -/
 def stKey (w : PlayerId) (i : Nat) : Nat × Nat × Nat := (1, w.code, i)
