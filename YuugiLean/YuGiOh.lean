@@ -615,8 +615,13 @@ def destroyBackrow (b : Board) (w : PlayerId) (i : Nat) : Board :=
     | some u => if negated then b else b.toGraveMon u .destroyed
     | none => b
 
+/-- 魔法・罠ゾーンのカードを全て**同時に**破壊する。関係を持つモンスターを破壊するかは、
+破壊される直前の盤面で効果が有効かどうかで判定する（12/02/01、07/10/29）。 -/
 def destroyAllBackrowOf (b : Board) (w : PlayerId) : Board :=
-  (List.range (b.get w).backrow.length).foldl (fun b _ => b.destroyBackrow w 0) b
+  let p := b.get w
+  let bonded := p.backrow.filterMap fun s => if s.card.isTrap && b.trapsNegated then none else s.bond
+  let b := b.modify w fun p => { p with backrow := [], grave := p.grave ++ p.backrow.map (·.card) }
+  bonded.foldl (fun b u => b.toGraveMon u .destroyed) b
 
 end Board
 
@@ -1944,6 +1949,17 @@ example : cothRaigeki.toOption.map (fun g => (names g.board.p1.monsters, g.board
 
 -- スキルドレインが適用中なら、ショッカーの効果は無効なので罠は発動でき、効果も無効にならない
 #eval (play (withDrain cothStart) (revive 0)).map (fun g => (g.board.trapsLocked, g.board.trapsNegated))
+
+/-- スキルドレインと呼び声が同時に破壊される場合、破壊される直前はスキルドレインでショッカーの効果が
+無効なので呼び声の効果は有効であり、ショッカーは破壊される（12/02/01） -/
+def drainCothEnd : Except String Game :=
+  let start := { cothStart with board := cothStart.board.modify .one fun p =>
+    { p with backrow := { card := skillDrain, setTurn := 1, faceUp := true } :: p.backrow } }
+  play start (resolve (.activateSet .one 1 { grave := some (.one, 0) }) ++ toP2Main ++ resolve (.activateSpell 0))
+
+#eval drainCothEnd.map (fun g => (names g.board.p1.monsters, g.board.p1.grave.map (·.name)))
+
+example : drainCothEnd.toOption.map (fun g => names g.board.p1.monsters) = some [] := by decide
 
 end Demo
 
