@@ -2241,4 +2241,88 @@ theorem reachable_zoneOK {g : Game} (hr : Reachable g) : g.ZoneOK := by
       spellTrapZones]
   | step a _ hs ih => exact step_zoneOK ih hs
 
+/-! ## LP と勝敗 -/
+
+/-- 決着がついていなければ、両者の LP は 1 以上 -/
+def Game.LPOK (g : Game) : Prop := g.result = none → 0 < g.board.p1.lp ∧ 0 < g.board.p2.lp
+
+theorem checkResult_none {g : Game} (h : (checkResult g).result = none) :
+    0 < g.board.p1.lp ∧ 0 < g.board.p2.lp := by
+  unfold checkResult at h
+  simp only at h
+  split at h
+  · simp at h
+  · split at h
+    · simp at h
+    · split at h
+      · simp at h
+      · split at h
+        · simp at h
+        · rename_i h1 h2 h3; omega
+
+theorem Board.lp_modify_reset (b : Board) (w v : PlayerId) :
+    ((b.modify w Player.resetMonsters).get v).lp = (b.get v).lp := by
+  by_cases hv : v = w
+  · subst hv; rw [Board.get_modify_same]; rfl
+  · rw [Board.get_modify_other _ _ _ _ hv]
+
+theorem Player.lp_drawOne {p p' : Player} (h : p.drawOne = some p') : p'.lp = p.lp := by
+  unfold Player.drawOne at h; split at h <;> simp at h; subst h; rfl
+
+theorem Board.lp_p (b : Board) : b.p1 = b.get .one ∧ b.p2 = b.get .two := ⟨rfl, rfl⟩
+
+/-- フェイズの移行では LP は変わらない -/
+theorem nextPhase_lp {g g' : Game} (h : nextPhase g = .ok g') :
+    ∀ v, (g'.board.get v).lp = (g.board.get v).lp := by
+  intro v
+  unfold nextPhase at h
+  split at h
+  all_goals try (simp only [pure, Except.pure, Except.ok.injEq] at h; subst h; rfl)
+  · split at h <;> (simp only [pure, Except.pure, Except.ok.injEq] at h; subst h; rfl)
+  · split at h
+    · cases h
+    · dsimp only at h
+      split at h
+      · simp only [pure, Except.pure, Except.ok.injEq] at h; subst h
+        simp only [Board.lp_modify_reset]; cases v <;> rfl
+      · rename_i p hp
+        simp only [pure, Except.pure, Except.ok.injEq] at h; subst h
+        by_cases hv : v = g.active.other
+        · subst hv; rw [Board.get_set_same, Player.lp_drawOne hp]; simp only [Board.lp_modify_reset]
+          cases g.active <;> rfl
+        · rw [Board.get_set_other _ _ _ _ hv]; simp only [Board.lp_modify_reset]; cases v <;> rfl
+
+/-- **1手進めても、決着がついていないなら両者の LP は 1 以上** -/
+theorem step_LPOK {g g' : Game} {a : Action} (hg : g.LPOK) (h : step g a = .ok g') : g'.LPOK := by
+  intro hr
+  unfold step at h
+  split at h
+  · cases h
+  · rename_i hn
+    split at h
+    · split at h
+      · have hl := nextPhase_lp h
+        have hgn : g.result = none := by simpa using hn
+        obtain ⟨h1, h2⟩ := hg hgn
+        rw [(Board.lp_p _).1, (Board.lp_p _).2, hl .one, hl .two]; exact ⟨h1, h2⟩
+      · cases h
+    · cases ha : act g.ctx g.cs a <;> simp only [ha, Except.map] at h
+      · cases h
+      · rename_i s0
+        simp only [Except.ok.injEq] at h; subst h
+        exact checkResult_none (g := g.setCs (processTriggers g.ctx s0)) hr
+
+theorem reachable_LPOK {g : Game} (hr : Reachable g) : g.LPOK := by
+  induction hr with
+  | init d1 d2 e1 e2 => intro _; simp [Game.init, initialLP]
+  | step a _ hs ih => exact step_LPOK ih hs
+
+/-- **到達可能な全状態で、どちらかの LP が 0 なら決着がついている** -/
+theorem reachable_lp_zero_decided {g : Game} (hr : Reachable g)
+    (h0 : g.board.p1.lp = 0 ∨ g.board.p2.lp = 0) : g.result.isSome := by
+  have := reachable_LPOK hr
+  cases hres : g.result with
+  | some _ => rfl
+  | none => obtain ⟨h1, h2⟩ := this hres; omega
+
 end YGO
