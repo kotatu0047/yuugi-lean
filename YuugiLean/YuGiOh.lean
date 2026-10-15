@@ -18,6 +18,7 @@ Lean 4 コアのみ（Mathlib 不要）で動く、遊戯王OCGの基本ルー�
 * チェーン：スペルスピード1〜3、両者のパスで逆順に解決、カウンター罠による発動の無効化
 * 優先権：空きチェーンでもターンプレイヤーが優先権を持ち、相手はターンプレイヤーのパスを受けて発動する
 * 誘発効果は、チェーンが空になった時点で SEGOC（ターンプレイヤーの効果が先）の順にチェーンを組む
+* 効果の無効化（スキルドレイン）：処理時にフィールドに表側表示で存在するモンスターの効果のみ無効
 * 手札上限6枚（エンドフェイズに捨てる）
 * 勝敗：LP 0、デッキ切れ（ドローできない）
 
@@ -30,6 +31,7 @@ Lean 4 コアのみ（Mathlib 不要）で動く、遊戯王OCGの基本ルー�
 * 効果による特殊召喚・エクストラデッキからの特殊召喚は表側攻撃表示で行う
 * フェイズ移行はターンプレイヤーの宣言で行う（相手が発動したい場合は、事前にパスで優先権を受ける）
 * ダメージステップ中の発動、「1ターンに1度」の名称指定、蘇生制限
+* ライフコストは現在の LP 以下のときだけ払える
 -/
 
 namespace YGO
@@ -85,6 +87,7 @@ inductive Aura where
   | atkUpOwn (race : Option Race) (n : Nat) -- 自分の（その種族の）表側モンスターの攻撃力 n アップ
   | oppAtkDownPerLevel (n : Nat)            -- 相手の表側モンスターの攻撃力はレベル×n ダウン
   | noAttackLevelGE (n : Nat)               -- レベル n 以上のモンスターは攻撃宣言できない
+  | negateMonsterEffects                    -- フィールドの表側表示モンスターの効果を無効にする
   deriving Repr, DecidableEq
 
 /-- モンスター効果のコスト -/
@@ -92,6 +95,7 @@ inductive Cost where
   | free
   | tributeSelf           -- このカードをリリース
   | detach (n : Nat)      -- X素材を n 個取り除く
+  | payLP (n : Nat)       -- LP を n 払う
   deriving Repr, DecidableEq
 
 inductive MonsterEffect where
@@ -144,7 +148,7 @@ inductive SpellKind where
 
 inductive TrapKind where
   | normal (e : Effect)
-  | continuous (a : Aura)
+  | continuous (a : Aura) (cost : Cost := .free)
   | counter (e : Effect)
   deriving Repr, DecidableEq
 
@@ -175,8 +179,13 @@ def Card.activationEffect : Card → Effect
 
 def Card.aura? : Card → Option Aura
   | .spell _ (.continuous a) => some a
-  | .trap _ (.continuous a) => some a
+  | .trap _ (.continuous a _) => some a
   | _ => none
+
+/-- 発動時に払う LP -/
+def Card.lpCost : Card → Nat
+  | .trap _ (.continuous _ (.payLP n)) => n
+  | _ => 0
 
 def Card.isEquip : Card → Bool
   | .spell _ (.equip _) => true
@@ -252,6 +261,7 @@ structure Happened where
   who  : PlayerId
   card : MonsterCard
   ev   : Event
+  uid  : Nat     -- 出来事が起きたときの uid
   deriving Repr, DecidableEq
 
 /-- 盤面：ターン・フェイズに依存しない部分 -/
@@ -291,6 +301,7 @@ structure ChainLink where
   eff         : Effect
   speed       : Nat
   mon         : Bool := false                    -- モンスター効果か
+  src         : Option Nat := none               -- 効果を発動したモンスターの uid
   targets     : List Nat := []                   -- 対象モンスターの uid
   graveTarget : Option (PlayerId × Nat × Card) := none
   handMats    : List (Nat × Card) := []
@@ -456,9 +467,12 @@ def slotAfter (p : Player) (removed : List Nat) (isLink : Bool) : Option Bool :=
   else if !rest.any (·.emz) then some true
   else none
 
-/-- 適用中の永続効果（表側の永続魔法・罠と、表側モンスターの永続効果） -/
-def auras (p : Player) : List Aura :=
-  p.backrow.filterMap (fun s => if s.faceUp then s.card.aura? else none) ++
+/-- 表側の永続魔法・罠の効果 -/
+def stAuras (p : Player) : List Aura :=
+  p.backrow.filterMap (fun s => if s.faceUp then s.card.aura? else none)
+
+/-- 表側モンスターの永続効果 -/
+def monAuras (p : Player) : List Aura :=
   (p.monsters.filter (·.pos ≠ .faceDownDefense)).flatMap
     (fun m => m.card.effects.filterMap MonsterEffect.aura?)
 
@@ -474,8 +488,15 @@ def findMon (b : Board) (uid : Nat) : Option (PlayerId × FieldMonster) :=
 def updMon (b : Board) (w : PlayerId) (uid : Nat) (f : FieldMonster → FieldMonster) : Board :=
   b.modify w fun p => { p with monsters := p.monsters.map fun m => if m.uid = uid then f m else m }
 
+/-- 適用中の永続効果とそのコントローラー。モンスターの効果が無効化されていればモンスターの永続効果は含めない。 -/
 def auras (b : Board) : List (PlayerId × Aura) :=
-  b.p1.auras.map (PlayerId.one, ·) ++ b.p2.auras.map (PlayerId.two, ·)
+  let st := b.p1.stAuras.map (PlayerId.one, ·) ++ b.p2.stAuras.map (PlayerId.two, ·)
+  if st.any (·.2 == .negateMonsterEffects) then st
+  else st ++ b.p1.monAuras.map (PlayerId.one, ·) ++ b.p2.monAuras.map (PlayerId.two, ·)
+
+/-- フィールドの表側表示モンスターの効果が無効化されているか -/
+def monsterEffectsNegated (b : Board) : Bool :=
+  b.auras.any (·.2 == .negateMonsterEffects)
 
 /-- 永続効果による攻撃力の変化。`own` は永続効果のコントローラーがモンスターと同じか。 -/
 def _root_.YGO.Aura.atkMod (a : Aura) (own : Bool) (c : MonsterCard) : Int :=
@@ -483,7 +504,7 @@ def _root_.YGO.Aura.atkMod (a : Aura) (own : Bool) (c : MonsterCard) : Int :=
   | .atkUpOwn r n =>
     if own && (match r with | none => true | some r => c.race == r) then n else 0
   | .oppAtkDownPerLevel n => if own then 0 else -((c.level?.getD 0 * n : Nat) : Int)
-  | .noAttackLevelGE _ => 0
+  | .noAttackLevelGE _ | .negateMonsterEffects => 0
 
 /-- 装備カード・永続効果を適用した攻撃力（0 未満にはならない） -/
 def atkOf (b : Board) (w : PlayerId) (m : FieldMonster) : Nat :=
@@ -506,7 +527,7 @@ def place (b : Board) (w : PlayerId) (c : MonsterCard) (pos : Position) (turn : 
   let uid := b.nextUid
   let b := b.modify w fun p =>
     { p with monsters := p.monsters ++ [{ uid, card := c, pos, summonedTurn := turn, emz, overlays }] }
-  { b with nextUid := uid + 1, log := b.log ++ (ev.map (Happened.mk w c)).toList }
+  { b with nextUid := uid + 1, log := b.log ++ (ev.map (Happened.mk w c · uid)).toList }
 
 /-- uid のモンスターをフィールドから取り除く。そのモンスターの装備カードは墓地へ送られる。 -/
 def detach (b : Board) (uid : Nat) : Option (Board × PlayerId × FieldMonster) := do
@@ -524,7 +545,7 @@ def toGraveMon (b : Board) (uid : Nat) (battle : Bool := false) : Board :=
   | some (b, w, m) =>
     let b := b.modify w fun p => { p with grave := p.grave ++ m.overlays ++ [.monster m.card] }
     let evs := (if battle then [Event.destroyedByBattle] else []) ++ [.sentToGraveFromField]
-    { b with log := b.log ++ evs.map (Happened.mk w m.card) }
+    { b with log := b.log ++ evs.map (Happened.mk w m.card · uid) }
 
 def destroyAllOf (b : Board) (w : PlayerId) : Board :=
   (b.get w).monsters.foldl (fun b m => b.toGraveMon m.uid) b
@@ -722,15 +743,23 @@ def mkLink (b : Board) (who : PlayerId) (card : Card) (eff : Effect) (speed : Na
 def toGrave (b : Board) (l : ChainLink) : Board :=
   if l.mon then b else b.modify l.owner (fun p => { p with grave := p.grave ++ [l.card] })
 
+/-- モンスター効果の処理時、そのモンスターがフィールドに表側表示で存在し、効果が無効化されているか。
+フィールドを離れたモンスター（コストでリリースした、墓地で発動した等）の効果は無効にならない。 -/
+def Board.effectNegated (b : Board) (l : ChainLink) : Bool :=
+  l.mon && b.monsterEffectsNegated &&
+    match l.src.bind b.findMon with
+    | some (_, m) => m.pos != .faceDownDefense
+    | none => false
+
 /-- 1つのチェーンブロックを解決する。永続・装備カードはフィールドに表側で残る。 -/
 def resolveLink (c : Ctx) (b : Board) (l : ChainLink) : Board :=
-  let b := applyEffect c l b
+  let b := if b.effectNegated l then b else applyEffect c l b
   if l.mon then b else
   let keep (eq : Option Nat) : Board :=
     b.modify l.owner fun p =>
       { p with backrow := p.backrow ++ [{ card := l.card, setTurn := c.turn, faceUp := true, equipTo := eq }] }
   match l.card with
-  | .spell _ (.continuous _) | .trap _ (.continuous _) => keep none
+  | .spell _ (.continuous _) | .trap _ (.continuous ..) => keep none
   | .spell _ (.equip _) =>
     match l.targets with
     | [u] =>
@@ -786,7 +815,8 @@ def activateSetAct (c : Ctx) (s : ChainState) (who : PlayerId) (z : Nat) (args :
   let b := s.board.set who { me with backrow := me.backrow.eraseIdx z }
   let l ← mkLink b who sc.card sc.card.activationEffect sc.card.spellSpeed args none
   canActivate b s.chain l
-  pushLink s b l
+  unless sc.card.lpCost ≤ (b.get who).lp do throw "LP が足りないため発動できない"
+  pushLink s (b.modify who (·.damage sc.card.lpCost)) l
 
 def activateMonsterAct (c : Ctx) (s : ChainState) (who : PlayerId) (z i : Nat) (args : Args) :
     Except String ChainState := do
@@ -802,13 +832,15 @@ def activateMonsterAct (c : Ctx) (s : ChainState) (who : PlayerId) (z i : Nat) (
     | _ => throw "誘発効果・永続効果は自分で発動するものではない"
   if m.effectUsed then throw "この効果は1ターンに1度しか使えない"
   let l ← mkLink b who (.monster m.card) e speed args none
-  let l := { l with mon := true }
+  let l := { l with mon := true, src := some m.uid }
   canActivate b s.chain l
   -- コストの支払い
   let b := b.updMon who m.uid fun x => { x with effectUsed := true }
   let b ← match cost with
     | .free => pure b
     | .tributeSelf => pure (b.toGraveMon m.uid)
+    | .payLP n =>
+      if n ≤ (b.get who).lp then pure (b.modify who (·.damage n)) else throw "LP が足りない"
     | .detach n =>
       if n ≤ m.overlays.length then
         pure ((b.updMon who m.uid fun x => { x with overlays := m.overlays.drop n }).modify who
@@ -909,7 +941,7 @@ def performBattle (c : Ctx) (b : Board) : Board :=
           let flipped := d.pos = .faceDownDefense
           let d := if flipped then { d with pos := .faceUpDefense } else d
           let b := b.updMon opp tu fun _ => d
-          let b := if flipped then { b with log := b.log ++ [⟨opp, d.card, .flipped⟩] } else b
+          let b := if flipped then { b with log := b.log ++ [⟨opp, d.card, .flipped, tu⟩] } else b
           let r := resolveBattle aAtk d.pos (b.atkOf opp d) d.card.dfs
           let b := (b.modify me (·.damage r.dmgToAttacker)).modify opp (·.damage r.dmgToDefender)
           let b := if r.attackerDestroyed then b.toGraveMon a.uid true else b
@@ -936,7 +968,7 @@ def flipSummonAct (c : Ctx) (b : Board) (i : Nat) : Except String Board := do
   if m.summonedTurn = c.turn then throw "セットしたターンは反転召喚できない"
   if m.posChanged then throw "このターン既に表示形式を変更している"
   let b := b.updMon c.active m.uid fun x => { x with pos := .attack, posChanged := true }
-  return { b with log := b.log ++ [⟨c.active, m.card, .flipped⟩] }
+  return { b with log := b.log ++ [⟨c.active, m.card, .flipped, m.uid⟩] }
 
 def setSpellTrapAct (c : Ctx) (b : Board) (h : Nat) : Except String Board := do
   unless c.phase.isMain do throw "セットはメインフェイズのみ"
@@ -977,7 +1009,7 @@ def passAct (c : Ctx) (s : ChainState) : ChainState :=
 def triggeredLinks (h : Happened) : List ChainLink :=
   h.card.effects.filterMap fun
     | .trigger ev e =>
-      if ev = h.ev then some { owner := h.who, card := .monster h.card, eff := e, speed := 1, mon := true }
+      if ev = h.ev then some { owner := h.who, card := .monster h.card, eff := e, speed := 1, mon := true, src := some h.uid }
       else none
     | _ => none
 
@@ -1273,6 +1305,24 @@ theorem negated_link_skipped (c : Ctx) (b : Board) (n l : ChainLink) (rest : Lis
       resolveChain c (toGrave (resolveLink c b n) l) false rest := by
   simp [resolveChain, hn]
 
+/-! ### 効果の無効化（スキルドレイン）の定理 -/
+
+/-- **フィールドにいないモンスターの効果は、スキルドレインの適用下でも無効にならない**
+（例：コストで自身をリリースした《ならず者傭兵部隊》、墓地で発動した《キラー・トマト》） -/
+theorem effectNegated_offField (b : Board) (l : ChainLink) (h : l.src.bind b.findMon = none) :
+    b.effectNegated l = false := by
+  simp [Board.effectNegated, h]
+
+/-- 無効化されていないモンスター効果は、そのまま処理される -/
+theorem resolveLink_monster (c : Ctx) (b : Board) (l : ChainLink) (hm : l.mon = true)
+    (hn : b.effectNegated l = false) : resolveLink c b l = applyEffect c l b := by
+  simp [resolveLink, hm, hn]
+
+/-- 無効化されたモンスター効果は何も起こさない -/
+theorem resolveLink_negated (c : Ctx) (b : Board) (l : ChainLink) (hm : l.mon = true)
+    (hn : b.effectNegated l = true) : resolveLink c b l = b := by
+  simp [resolveLink, hm, hn]
+
 /-! ### エクストラデッキの定理 -/
 
 /-- シンクロ素材のチューナーはちょうど1体 -/
@@ -1391,6 +1441,7 @@ def justDesserts : Card := .trap "仕込みマシンガン" (.normal (.burnPerOp
 def darkBribe    : Card := .trap "魔宮の賄賂" (.counter (.negate 1))
 def sakuretsu    : Card := .trap "炸裂装甲" (.normal .destroyAttacker)
 def gravityBind  : Card := .trap "グラヴィティ・バインド－超重力の網－" (.continuous (.noAttackLevelGE 4))
+def skillDrain   : Card := .trap "スキルドレイン" (.continuous .negateMonsterEffects (.payLP 1000))
 
 end Cards
 
@@ -1684,6 +1735,44 @@ def gravityStart : Game where
 
 #eval (play gravityStart [.attack 0 none]).map (fun _ => ())
 #eval (play gravityStart (resolve (.attack 1 none))).map (fun g => g.board.p1.lp)
+
+/-! ### スキルドレイン
+フィールドの表側表示モンスターの効果を無効にする。無効になるのは、処理時にフィールドに
+表側表示で存在するモンスターの効果だけ。 -/
+
+/-- 相手（P2）がスキルドレインを発動済み（LP 1000 を払っている） -/
+def withDrain (g : Game) : Game :=
+  { g with board := g.board.modify .two fun p =>
+      { p with lp := p.lp - 1000, backrow := p.backrow ++ [{ card := skillDrain, setTurn := 2, faceUp := true }] } }
+
+/-- 《ならず者傭兵部隊》は自身をリリースして発動するので、処理時にはフィールドにいない。
+効果は無効にならず、相手モンスターを破壊できる。墓地へ送られたウィッチの効果も墓地で処理される。 -/
+def drainExiledEnd : Except String Game :=
+  play (withDrain exiledStart)
+    (resolve (.activateMonster .one 0 0 { targets := [(.two, 0)] }) ++ [.pass, .pass])
+
+#eval drainExiledEnd.map (fun g => (names g.board.p2.monsters, g.board.p2.hand.map (·.name)))
+
+example : drainExiledEnd.toOption.map (fun g => (names g.board.p2.monsters, g.board.p2.hand.map (·.name)))
+    = some ([], ["クリボー"]) := by decide
+
+/-- ホープはフィールドで効果を処理するので無効になる（発動はでき、X素材は取り除かれる）。
+攻撃は続き、ホープは戦闘で破壊される。 -/
+def drainHopeEnd : Except String Game :=
+  play (withDrain hopeDefense)
+    ([.attack 0 (some 0), .pass, .activateMonster .one 0, .pass, .pass] ++ [.pass, .pass])
+
+#eval drainHopeEnd.map (fun g => (g.board.p1.lp, names g.board.p1.monsters, g.board.p1.grave.length))
+
+example : drainHopeEnd.toOption.map (fun g => (g.board.p1.lp, names g.board.p1.monsters))
+    = some (7500, []) := by decide
+
+-- 永続効果も無効になる：コマンド・ナイトの攻撃力アップが消える（強者の苦痛の -400 のみ）
+#eval (withDrain auraStart).board.p1.monsters.map ((withDrain auraStart).board.atkOf .one ·)
+
+-- 戦闘で破壊され墓地へ送られた《キラー・トマト》の効果は墓地で処理されるので無効にならない
+#eval (play (withDrain tomatoStart) (resolve (.attack 0 (some 0)) ++ [.pass, .pass])).map
+  (fun g => names g.board.p1.monsters)
 
 end Demo
 
