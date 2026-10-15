@@ -682,6 +682,16 @@ def toGraveMon (b : Board) (uid : Nat) (cause : LeaveCause := .sent) : Board :=
           { p with backrow := r.1, grave := p.grave ++ r.2.map (·.card) }
       drop (drop b .one) .two
 
+/-- モンスターを順に取り除き、取り除けたモンスターを集める（エクシーズ素材用） -/
+def detachAllAux : Board × List FieldMonster → List FieldMonster → Board × List FieldMonster
+  | acc, [] => acc
+  | acc, m :: ms =>
+    detachAllAux (match acc.1.detach m.uid with
+      | some (b, _, x) => (b, acc.2 ++ [x])
+      | none => acc) ms
+
+def detachAll (b : Board) (ms : List FieldMonster) : Board × List FieldMonster := detachAllAux (b, []) ms
+
 def destroyAllOf (b : Board) (w : PlayerId) : Board :=
   (b.get w).monsters.foldl (fun b m => b.toGraveMon m.uid .destroyed) b
 
@@ -735,20 +745,16 @@ def Action.isNextPhase : Action → Bool
 /-! ### 効果 -/
 
 /-- 対象の墓地のモンスターを蘇生できるか -/
-def reviveOk (b : Board) (l : ChainLink) : Option (PlayerId × Nat × MonsterCard) := do
-  let (w, i, cd) ← l.graveTarget
-  guard ((b.get w).grave[i]? = some cd)
-  let .monster m := cd | none
-  if let .revive true := l.eff then guard (w = l.owner)
-  guard (b.get l.owner).mainFree
-  pure (w, i, m)
+def reviveOk (b : Board) (l : ChainLink) : Option (PlayerId × Nat × MonsterCard) :=
+  match l.graveTarget with
+  | some (w, i, .monster m) =>
+    if (b.get w).grave[i]? = some (.monster m) ∧ (l.eff = .revive true → w = l.owner) ∧
+        (b.get l.owner).mainFree then some (w, i, m) else none
+  | _ => none
 
-/-- 融合召喚できるか。できるなら融合モンスターとエクストラデッキでの位置を返す。 -/
-def fusionPlan (b : Board) (l : ChainLink) : Option (MonsterCard × Nat × Bool) := do
+/-- 融合素材の条件を満たすか。満たすなら融合モンスターを出すゾーンを返す。 -/
+def fusionCheck (b : Board) (l : ChainLink) (fm : MonsterCard) : Option Bool := do
   let p := b.get l.owner
-  let (i, c) ← l.extra
-  guard (p.extra[i]? = some c)
-  let .monster fm := c | none
   let .fusion req := fm.kind | none
   guard (l.handMats.all fun (j, hc) => p.hand[j]? == some hc)
   guard ((l.handMats.map (·.1)).eraseDups.length = l.handMats.length)
@@ -761,8 +767,14 @@ def fusionPlan (b : Board) (l : ChainLink) : Option (MonsterCard × Nat × Bool)
   guard (names.length = req.length)
   guard (l.handMats.length + fms.length = req.length)
   guard (req.all fun n => names.count n == req.count n)
-  let emz ← p.slotAfter l.fieldMats false
-  pure (fm, i, emz)
+  p.slotAfter l.fieldMats false
+
+/-- 融合召喚できるか。できるなら融合モンスターとエクストラデッキでの位置を返す。 -/
+def fusionPlan (b : Board) (l : ChainLink) : Option (MonsterCard × Nat × Bool) :=
+  match l.extra with
+  | some (i, .monster fm) =>
+    if (b.get l.owner).extra[i]? = some (.monster fm) then (fusionCheck b l fm).map (fm, i, ·) else none
+  | _ => none
 
 /-- 効果の適用。解決時に処理できない部分は何もしない。 -/
 def applyEffect (c : Ctx) (l : ChainLink) (b : Board) : Board :=
@@ -1079,10 +1091,7 @@ def extraSummonAct (c : Ctx) (b : Board) (ei : Nat) (mats : List Nat) : Except S
   match em.kind with
   | .xyz _ =>
     -- 素材は墓地へ送らず、X素材として重ねる（取り除けたモンスターだけを重ねる）
-    let (b, got) := ms.foldl (fun (acc : Board × List FieldMonster) m =>
-      match acc.1.detach m.uid with
-      | some (b, _, x) => (b, acc.2 ++ [x])
-      | none => acc) (b, [])
+    let (b, got) := b.detachAll ms
     let b := b.modify c.active fun p => { p with grave := p.grave ++ got.flatMap (·.overlays) }
     summon b (got.map fun m => Card.monster m.card)
   | _ => summon (ms.foldl (fun b m => b.toGraveMon m.uid) b) []
