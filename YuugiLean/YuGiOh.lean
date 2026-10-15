@@ -19,8 +19,10 @@ Lean 4 コアのみ（Mathlib 不要）で動く、遊戯王OCGの基本ルー�
 * 優先権：空きチェーンでもターンプレイヤーが優先権を持ち、相手はターンプレイヤーのパスを受けて発動する
 * 誘発効果は、チェーンが空になった時点で SEGOC（ターンプレイヤーの効果が先）の順にチェーンを組む
 * 効果の無効化（スキルドレイン）：処理時にフィールドに表側表示で存在するモンスターの効果のみ無効
-* 罠の封殺（サイコ・ショッカー）：罠の発動を禁止し、フィールドの罠の効果を無効にする。
-  永続効果はその時点の盤面から毎回計算するので、ショッカーが離れた直後に罠の効果は有効に戻る
+* 罠の封殺（サイコ・ショッカー、王宮のお触れ）：罠の発動の禁止、フィールドの罠の効果の無効化
+* 永続効果どうしの無効化は適用が始まった順番（タイムスタンプ）で判定する：
+  一方的に無効にする効果は順番に関係なく優先され、互いに無効にし合う効果は先に適用された方が優先される。
+  無効にしている側が無効化されれば、無効にされていた側は有効に戻る。判定はその時点の盤面から毎回行う
 * 対象と関係を持つ永続罠（リビングデッドの呼び声）：このカードが離れた時、または蘇生したモンスターが
   破壊された時にもう一方を破壊する（その時点で効果が無効なら何も起きない）
 * ライフコスト：自分の LP が 0 以下になるようには払えない
@@ -77,6 +79,7 @@ inductive Effect where
   | fusionSummon                 -- 手札・フィールドの素材を墓地へ送り融合召喚
   | destroyAttacker              -- 攻撃してきた相手モンスターを破壊
   | destroyOppSpellTraps         -- 相手の魔法・罠ゾーンのカードを全て破壊
+  | destroyAllSpellTraps         -- フィールドの魔法・罠カードを全て破壊
   | negateAttack                 -- 相手モンスターの攻撃を無効にする
   | millOpp (n : Nat)            -- 相手のデッキの上から n 枚を墓地へ送る
   | recruit (attr : Attribute) (maxAtk : Nat) -- デッキから攻撃力 maxAtk 以下の attr 属性モンスターを特殊召喚
@@ -94,7 +97,7 @@ inductive Aura where
   | noAttackLevelGE (n : Nat)               -- レベル n 以上のモンスターは攻撃宣言できない
   | negateMonsterEffects                    -- フィールドの表側表示モンスターの効果を無効にする
   | noTrapActivation                        -- お互いに罠カードを発動できない
-  | negateTraps                             -- フィールドの罠カードの効果を無効にする
+  | negateTraps                             -- （このカード以外の）フィールドの罠カードの効果を無効にする
   deriving Repr, DecidableEq
 
 /-- モンスター効果のコスト -/
@@ -230,6 +233,7 @@ structure FieldMonster where
   effectUsed   : Bool := false  -- 起動効果・誘発即時効果を使った（1ターンに1度）
   overlays     : List Card := [] -- X素材
   emz          : Bool := false  -- エクストラモンスターゾーンにいる
+  since        : Nat := 0       -- 表側表示になった時刻（永続効果の適用順）
   deriving Repr, DecidableEq
 
 /-- 魔法・罠ゾーンのカード -/
@@ -239,6 +243,7 @@ structure SetCard where
   faceUp  : Bool := false        -- 表側表示（発動済みの永続・装備カード）
   equipTo : Option Nat := none   -- 装備しているモンスターの uid
   bond    : Option Nat := none   -- 関係を持つモンスターの uid（リビングデッドの呼び声）
+  since   : Nat := 0             -- 表側表示になった時刻（永続効果の適用順）
   deriving Repr, DecidableEq
 
 def initialLP      : Nat := 8000
@@ -263,6 +268,10 @@ inductive PlayerId where
 def PlayerId.other : PlayerId → PlayerId
   | .one => .two
   | .two => .one
+
+def PlayerId.code : PlayerId → Nat
+  | .one => 1
+  | .two => 2
 
 @[simp] theorem PlayerId.other_other (p : PlayerId) : p.other.other = p := by
   cases p <;> rfl
@@ -297,6 +306,7 @@ structure Board where
   p2 : Player
   normalSummoned : Bool := false
   nextUid : Nat := 0
+  clock   : Nat := 0             -- 永続効果の適用順を決める時刻
   attack  : Option AttackDecl := none
   log     : List Happened := []
   deriving Repr, DecidableEq
@@ -494,20 +504,69 @@ def slotAfter (p : Player) (removed : List Nat) (isLink : Bool) : Option Bool :=
   else if !rest.any (·.emz) then some true
   else none
 
-/-- 表側の永続魔法の効果 -/
-def spellAuras (p : Player) : List Aura :=
-  (p.backrow.filter (fun s => s.faceUp && !s.card.isTrap)).flatMap (·.card.auras)
-
-/-- 表側の永続罠の効果 -/
-def trapAuras (p : Player) : List Aura :=
-  (p.backrow.filter (fun s => s.faceUp && s.card.isTrap)).flatMap (·.card.auras)
-
-/-- 表側モンスターの永続効果 -/
-def monAuras (p : Player) : List Aura :=
-  (p.monsters.filter (·.pos ≠ .faceDownDefense)).flatMap
-    (fun m => m.card.effects.filterMap MonsterEffect.aura?)
-
 end Player
+
+/-! ### 永続効果の適用順 -/
+
+inductive SrcKind where
+  | spell | trap | monster
+  deriving Repr, DecidableEq
+
+/-- 永続効果を持ちうる表側表示のカード -/
+structure AuraSrc where
+  who   : PlayerId
+  kind  : SrcKind
+  key   : Nat × Nat × Nat   -- カードの識別（同じカードかどうか）
+  since : Nat               -- 表側表示になった時刻
+  auras : List Aura
+  deriving Repr, DecidableEq
+
+/-- t の永続効果が s の効果を無効にするか（自分自身は無効にしない） -/
+def AuraSrc.negates (t s : AuraSrc) : Bool :=
+  t.key != s.key && t.auras.any fun a =>
+    match a, s.kind with
+    | .negateMonsterEffects, .monster => true
+    | .negateTraps, .trap => true
+    | _, _ => false
+
+/-- t が s を無効にする。互いに無効にし合う場合は、先に適用された方だけが無効にする。 -/
+def AuraSrc.beats (t s : AuraSrc) : Bool :=
+  t.negates s && !(s.negates t && s.since < t.since)
+
+/-- 無効化されていないカード。無効にする側が無効化されていれば、無効にされる側は有効に戻るので、
+状態が決まるまで判定を繰り返す（`some true` は有効、`some false` は無効、`none` は未定）。 -/
+def effectiveSources (srcs : List AuraSrc) : List AuraSrc :=
+  let step (st : List (Option Bool)) : List (Option Bool) :=
+    (srcs.zip st).map fun (s, cur) =>
+      match cur with
+      | some v => some v
+      | none =>
+        let attackers := (srcs.zip st).filter (·.1.beats s)
+        if attackers.any (·.2 == some true) then some false
+        else if attackers.all (·.2 == some false) then some true
+        else none
+  let final := (List.range (srcs.length + 1)).foldl (fun st _ => step st) (srcs.map fun _ => none)
+  (srcs.zip final).filterMap fun (s, v) => if v == some false then none else some s
+
+/-- 魔法・罠ゾーンの i 番目のカードの識別 -/
+def stKey (w : PlayerId) (i : Nat) : Nat × Nat × Nat := (1, w.code, i)
+
+/-- モンスターの識別 -/
+def monKey (uid : Nat) : Nat × Nat × Nat := (0, 0, uid)
+
+def Player.sources (p : Player) (w : PlayerId) : List AuraSrc :=
+  ((List.range p.backrow.length).filterMap fun i =>
+    match p.backrow[i]? with
+    | some s =>
+      if s.faceUp then
+        some { who := w, kind := if s.card.isTrap then .trap else .spell, key := stKey w i,
+               since := s.since, auras := s.card.auras }
+      else none
+    | none => none) ++
+  p.monsters.filterMap fun m =>
+    if m.pos = .faceDownDefense then none
+    else some { who := w, kind := .monster, key := monKey m.uid, since := m.since,
+                auras := m.card.effects.filterMap MonsterEffect.aura? }
 
 namespace Board
 
@@ -519,23 +578,26 @@ def findMon (b : Board) (uid : Nat) : Option (PlayerId × FieldMonster) :=
 def updMon (b : Board) (w : PlayerId) (uid : Nat) (f : FieldMonster → FieldMonster) : Board :=
   b.modify w fun p => { p with monsters := p.monsters.map fun m => if m.uid = uid then f m else m }
 
-/-- 適用中の永続効果とそのコントローラー。その時点の盤面から毎回計算する。
-* 罠がモンスターの効果を無効にしていれば（スキルドレイン）、モンスターの永続効果は含めない
-* そうでなく、モンスターが罠の効果を無効にしていれば（サイコ・ショッカー）、罠の永続効果は含めない -/
+def sources (b : Board) : List AuraSrc := b.p1.sources .one ++ b.p2.sources .two
+
+/-- 無効化されていないカード -/
+def effective (b : Board) : List AuraSrc := effectiveSources b.sources
+
+/-- 適用中の永続効果とそのコントローラー。その時点の盤面から毎回計算する。 -/
 def auras (b : Board) : List (PlayerId × Aura) :=
-  let tag (w : PlayerId) (l : List Aura) := l.map (w, ·)
-  let sp := tag .one b.p1.spellAuras ++ tag .two b.p2.spellAuras
-  let tr := tag .one b.p1.trapAuras ++ tag .two b.p2.trapAuras
-  let mo := tag .one b.p1.monAuras ++ tag .two b.p2.monAuras
-  if tr.any (·.2 == .negateMonsterEffects) then sp ++ tr
-  else if mo.any (·.2 == .negateTraps) then sp ++ mo
-  else sp ++ tr ++ mo
+  b.effective.flatMap fun s => s.auras.map (s.who, ·)
 
-/-- フィールドの表側表示モンスターの効果が無効化されているか -/
-def monsterEffectsNegated (b : Board) : Bool :=
-  b.auras.any (·.2 == .negateMonsterEffects)
+/-- そのカードがフィールドに表側表示で存在し、効果が無効化されているか -/
+def srcNegated (b : Board) (key : Nat × Nat × Nat) : Bool :=
+  b.sources.any (·.key == key) && !b.effective.any (·.key == key)
 
-/-- フィールドの罠カードの効果が無効化されているか -/
+/-- 魔法・罠ゾーンの i 番目のカードの効果が無効化されているか -/
+def stNegated (b : Board) (w : PlayerId) (i : Nat) : Bool := b.srcNegated (stKey w i)
+
+/-- モンスターの効果が無効化されているか -/
+def monNegated (b : Board) (uid : Nat) : Bool := b.srcNegated (monKey uid)
+
+/-- チェーン上の罠カードの効果が無効化されるか（フィールドの罠を無効にする効果が適用中か） -/
 def trapsNegated (b : Board) : Bool :=
   b.auras.any (·.2 == .negateTraps)
 
@@ -570,9 +632,10 @@ def cannotAttack (b : Board) (m : MonsterCard) : Bool :=
 def place (b : Board) (w : PlayerId) (c : MonsterCard) (pos : Position) (turn : Nat)
     (emz : Bool := false) (ev : Option Event := none) (overlays : List Card := []) : Board :=
   let uid := b.nextUid
+  let since := b.clock + 1
   let b := b.modify w fun p =>
-    { p with monsters := p.monsters ++ [{ uid, card := c, pos, summonedTurn := turn, emz, overlays }] }
-  { b with nextUid := uid + 1, log := b.log ++ (ev.map (Happened.mk w c · uid)).toList }
+    { p with monsters := p.monsters ++ [{ uid, card := c, pos, summonedTurn := turn, emz, overlays, since }] }
+  { b with nextUid := uid + 1, clock := since, log := b.log ++ (ev.map (Happened.mk w c · uid)).toList }
 
 /-- uid のモンスターをフィールドから取り除く。そのモンスターの装備カードは墓地へ送られる。 -/
 def detach (b : Board) (uid : Nat) : Option (Board × PlayerId × FieldMonster) := do
@@ -593,12 +656,17 @@ def toGraveMon (b : Board) (uid : Nat) (cause : LeaveCause := .sent) : Board :=
     let b := b.modify w fun p => { p with grave := p.grave ++ m.overlays ++ [.monster m.card] }
     let evs := (if cause == .battle then [Event.destroyedByBattle] else []) ++ [.sentToGraveFromField]
     let b := { b with log := b.log ++ evs.map (Happened.mk w m.card · uid) }
-    if cause == .sent || b.trapsNegated then b
+    if cause == .sent then b
     else
-      let dropBonded (p : Player) : Player :=
-        let (bs, rest) := p.backrow.partition (·.bond == some uid)
-        { p with backrow := rest, grave := p.grave ++ bs.map (·.card) }
-      (b.modify .one dropBonded).modify .two dropBonded
+      -- 関係を持つ永続罠のうち、その時点で効果が無効化されていないものを（同時に）破壊する
+      let doomed (v : PlayerId) : List Nat :=
+        (List.range (b.get v).backrow.length).filter fun i =>
+          ((b.get v).backrow[i]?.bind (·.bond)) == some uid && !b.stNegated v i
+      let drop (b' : Board) (v : PlayerId) : Board :=
+        b'.modify v fun p =>
+          let r := removeIdxs p.backrow (doomed v)
+          { p with backrow := r.1, grave := p.grave ++ r.2.map (·.card) }
+      drop (drop b .one) .two
 
 def destroyAllOf (b : Board) (w : PlayerId) : Board :=
   (b.get w).monsters.foldl (fun b m => b.toGraveMon m.uid .destroyed) b
@@ -609,18 +677,21 @@ def destroyBackrow (b : Board) (w : PlayerId) (i : Nat) : Board :=
   match (b.get w).backrow[i]? with
   | none => b
   | some s =>
-    let negated := s.card.isTrap && b.trapsNegated
+    let negated := b.stNegated w i
     let b := b.modify w fun p => { p with backrow := p.backrow.eraseIdx i, grave := p.grave ++ [s.card] }
     match s.bond with
     | some u => if negated then b else b.toGraveMon u .destroyed
     | none => b
 
-/-- 魔法・罠ゾーンのカードを全て**同時に**破壊する。関係を持つモンスターを破壊するかは、
+/-- プレイヤー `ws` の魔法・罠ゾーンのカードを全て**同時に**破壊する。関係を持つモンスターを破壊するかは、
 破壊される直前の盤面で効果が有効かどうかで判定する（12/02/01、07/10/29）。 -/
-def destroyAllBackrowOf (b : Board) (w : PlayerId) : Board :=
-  let p := b.get w
-  let bonded := p.backrow.filterMap fun s => if s.card.isTrap && b.trapsNegated then none else s.bond
-  let b := b.modify w fun p => { p with backrow := [], grave := p.grave ++ p.backrow.map (·.card) }
+def destroyAllBackrow (b : Board) (ws : List PlayerId) : Board :=
+  let bonded := ws.flatMap fun w =>
+    let p := b.get w
+    (List.range p.backrow.length).filterMap fun i =>
+      if b.stNegated w i then none else p.backrow[i]?.bind (·.bond)
+  let b := ws.foldl (fun b w =>
+    b.modify w fun p => { p with backrow := [], grave := p.grave ++ p.backrow.map (·.card) }) b
   bonded.foldl (fun b u => b.toGraveMon u .destroyed) b
 
 end Board
@@ -721,7 +792,8 @@ def applyEffect (c : Ctx) (l : ChainLink) (b : Board) : Board :=
     | some bt => { b.toGraveMon bt.attacker .destroyed with attack := none }
     | none => b
   | .negateAttack => { b with attack := none }
-  | .destroyOppSpellTraps => b.destroyAllBackrowOf self.other
+  | .destroyOppSpellTraps => b.destroyAllBackrow [self.other]
+  | .destroyAllSpellTraps => b.destroyAllBackrow [.one, .two]
   | .millOpp n =>
     b.modify self.other fun p => { p with deck := p.deck.drop n, grave := p.grave ++ p.deck.take n }
   | .recruit attr mx =>
@@ -824,9 +896,9 @@ def toGrave (b : Board) (l : ChainLink) : Board :=
   フィールドを離れたモンスター（コストでリリースした、墓地で発動した等）の効果は無効にならない。 -/
 def Board.effectNegated (b : Board) (l : ChainLink) : Bool :=
   (!l.mon && l.card.isTrap && b.trapsNegated) ||
-  l.mon && b.monsterEffectsNegated &&
+  l.mon &&
     match l.src.bind b.findMon with
-    | some (_, m) => m.pos != .faceDownDefense
+    | some (_, m) => m.pos != .faceDownDefense && b.monNegated m.uid
     | none => false
 
 /-- 1つのチェーンブロックを解決する。永続・装備カードはフィールドに表側で残る。 -/
@@ -837,9 +909,11 @@ def resolveLink (c : Ctx) (b : Board) (l : ChainLink) : Board :=
   -- 効果で特殊召喚したモンスターの uid
   let summoned := if b0.nextUid < b.nextUid then some b0.nextUid else none
   let keep (eq bond : Option Nat) : Board :=
-    b.modify l.owner fun p =>
-      { p with backrow := p.backrow ++
-          [{ card := l.card, setTurn := c.turn, faceUp := true, equipTo := eq, bond }] }
+    let since := b.clock + 1
+    { b.modify l.owner (fun p =>
+        { p with backrow := p.backrow ++
+            [{ card := l.card, setTurn := c.turn, faceUp := true, equipTo := eq, bond, since }] })
+      with clock := since }
   match l.card with
   | .spell _ (.continuous _) => keep none none
   | .trap _ (.continuous ..) => keep none (if l.card.bonds then summoned else none)
@@ -1025,7 +1099,8 @@ def performBattle (c : Ctx) (b : Board) : Board :=
         | some d =>
           -- 裏側守備表示は表側にしてからダメージ計算
           let flipped := d.pos = .faceDownDefense
-          let d := if flipped then { d with pos := .faceUpDefense } else d
+          let b := if flipped then { b with clock := b.clock + 1 } else b
+          let d := if flipped then { d with pos := .faceUpDefense, since := b.clock } else d
           let b := b.updMon opp tu fun _ => d
           let b := if flipped then { b with log := b.log ++ [⟨opp, d.card, .flipped, tu⟩] } else b
           let r := resolveBattle aAtk d.pos (b.atkOf opp d) d.card.dfs
@@ -1053,8 +1128,9 @@ def flipSummonAct (c : Ctx) (b : Board) (i : Nat) : Except String Board := do
   unless m.pos = .faceDownDefense do throw "裏側守備表示のモンスターではない"
   if m.summonedTurn = c.turn then throw "セットしたターンは反転召喚できない"
   if m.posChanged then throw "このターン既に表示形式を変更している"
-  let b := b.updMon c.active m.uid fun x => { x with pos := .attack, posChanged := true }
-  return { b with log := b.log ++ [⟨c.active, m.card, .flipped, m.uid⟩] }
+  let since := b.clock + 1
+  let b := b.updMon c.active m.uid fun x => { x with pos := .attack, posChanged := true, since }
+  return { b with clock := since, log := b.log ++ [⟨c.active, m.card, .flipped, m.uid⟩] }
 
 def setSpellTrapAct (c : Ctx) (b : Board) (h : Nat) : Except String Board := do
   unless c.phase.isMain do throw "セットはメインフェイズのみ"
@@ -1404,14 +1480,22 @@ theorem effectNegated_trap (b : Board) (l : ChainLink) (hm : l.mon = false) (ht 
     (hn : b.trapsNegated = true) : b.effectNegated l = true := by
   simp [Board.effectNegated, hm, ht, hn]
 
-/-- **罠がモンスターの効果を無効にしている間（スキルドレイン）は、モンスターの永続効果は適用されない** -/
-theorem drain_beats_monster_auras (b : Board)
-    (h : (b.p1.trapAuras.map (PlayerId.one, ·) ++ b.p2.trapAuras.map (PlayerId.two, ·)).any
-      (·.2 == .negateMonsterEffects) = true) :
-    b.auras = b.p1.spellAuras.map (PlayerId.one, ·) ++ b.p2.spellAuras.map (PlayerId.two, ·) ++
-      (b.p1.trapAuras.map (PlayerId.one, ·) ++ b.p2.trapAuras.map (PlayerId.two, ·)) := by
-  simp only [Board.auras] at h ⊢
-  simp only [h, ite_true]
+/-- **一方的に無効にする永続効果は、適用の順番に関係なく優先される**（王宮のお触れ → スキルドレイン） -/
+theorem beats_one_way (t s : AuraSrc) (hts : t.negates s = true) (hst : s.negates t = false) :
+    t.beats s = true := by
+  simp [AuraSrc.beats, hts, hst]
+
+/-- **互いに無効にし合う永続効果は、先に適用された方が優先される**（スキルドレイン ⇄ サイコ・ショッカー） -/
+theorem beats_mutual (t s : AuraSrc) (hts : t.negates s = true) (hst : s.negates t = true) :
+    t.beats s = true ↔ t.since ≤ s.since := by
+  simp [AuraSrc.beats, hts, hst]
+
+/-- 互いに無効にし合うとき、両方が相手を無効にすることはない（適用の時刻が異なれば） -/
+theorem beats_not_both (t s : AuraSrc) (hne : t.since ≠ s.since) :
+    ¬ (t.beats s = true ∧ s.beats t = true) := by
+  intro ⟨h1, h2⟩
+  simp only [AuraSrc.beats, Bool.and_eq_true, Bool.not_eq_true', Bool.and_eq_false_iff] at h1 h2
+  rcases h1 with ⟨h1a, h1b | h1b⟩ <;> rcases h2 with ⟨h2a, h2b | h2b⟩ <;> simp_all <;> omega
 
 /-- 無効化されていないモンスター効果は、そのまま処理される -/
 theorem resolveLink_monster (c : Ctx) (b : Board) (l : ChainLink) (hm : l.mon = true)
@@ -1541,6 +1625,7 @@ def polymerization : Card := .spell "融合" (.normal .fusionSummon)
 def axeOfDespair : Card := .spell "デーモンの斧" (.equip 1000)
 def burdenOfMighty : Card := .spell "強者の苦痛" (.continuous (.oppAtkDownPerLevel 100))
 def harpieFeather : Card := .spell "ハーピィの羽根帚" (.normal .destroyOppSpellTraps)
+def heavyStorm : Card := .spell "大嵐" (.normal .destroyAllSpellTraps)
 
 -- 罠
 def justDesserts : Card := .trap "仕込みマシンガン" (.normal (.burnPerOppMonster 500))
@@ -1548,6 +1633,8 @@ def darkBribe    : Card := .trap "魔宮の賄賂" (.counter (.negate 1))
 def sakuretsu    : Card := .trap "炸裂装甲" (.normal .destroyAttacker)
 def gravityBind  : Card := .trap "グラヴィティ・バインド－超重力の網－" (.continuous [.noAttackLevelGE 4])
 def skillDrain   : Card := .trap "スキルドレイン" (.continuous [.negateMonsterEffects] (.payLP 1000))
+/-- このカード以外のフィールドの罠カードの効果は無効化される -/
+def royalDecree  : Card := .trap "王宮のお触れ" (.continuous [.negateTraps])
 /-- 自分の墓地のモンスター1体を攻撃表示で特殊召喚。このカードが離れた時にそのモンスターは破壊され、
 そのモンスターが破壊された時にこのカードは破壊される。 -/
 def callOfHaunted : Card := .trap "リビングデッドの呼び声" (.continuous [] .free (.revive true) true)
@@ -1960,6 +2047,86 @@ def drainCothEnd : Except String Game :=
 #eval drainCothEnd.map (fun g => (names g.board.p1.monsters, g.board.p1.grave.map (·.name)))
 
 example : drainCothEnd.toOption.map (fun g => names g.board.p1.monsters) = some [] := by decide
+
+/-! ### 王宮のお触れとリビングデッドの呼び声 -/
+
+/-- P1：呼び声をセット、墓地にエルフの剣士、手札に羽根帚と大嵐。P2：お触れをセット、手札に羽根帚 -/
+def decreeStart : Game where
+  board := { p1 := { deck := [], hand := [harpieFeather, heavyStorm], grave := [.monster celticGuardian],
+                     backrow := [{ card := callOfHaunted, setTurn := 2 }] },
+             p2 := { deck := [.monster kuriboh], hand := [harpieFeather],
+                     backrow := [{ card := royalDecree, setTurn := 2 }] } }
+  turn := 3
+  active := .one
+  phase := .main1
+
+def callCoth : Action := .activateSet .one 0 { grave := some (.one, 0) }
+
+/-- 呼び声の発動にお触れをチェーンされると、特殊召喚は無効になり呼び声だけが残る。
+その後でお触れを除去しても、改めて特殊召喚はされない -/
+def decreeChain : Except String Game :=
+  play decreeStart ([callCoth, .activateSet .two 0, .pass, .pass] ++ resolve (.activateSpell 0))
+
+#eval decreeChain.map (fun g => (names g.board.p1.monsters, g.board.p1.backrow.map (·.card.name),
+  g.board.p2.backrow.length))
+
+example : decreeChain.toOption.map (fun g => (names g.board.p1.monsters, g.board.p1.backrow.length))
+    = some ([], 1) := by decide
+
+/-- 蘇生後にお触れを発動され、次にお触れを破壊した後で呼び声が破壊されると、モンスターも破壊される。
+途中で無効化されていても、破壊される時点で有効なら関係は適用される（07/03/28） -/
+def decreeLater : Except String Game :=
+  play decreeStart (resolve callCoth ++ [.pass] ++ resolve (.activateSet .two 0) ++
+    resolve (.activateSpell 0) ++ toP2Main ++ resolve (.activateSpell 0))
+
+#eval decreeLater.map (fun g => (names g.board.p1.monsters, g.board.p1.grave.map (·.name)))
+
+example : decreeLater.toOption.map (fun g => names g.board.p1.monsters) = some [] := by decide
+
+-- 比較：お触れが残っていれば、呼び声が破壊されてもモンスターは破壊されない
+#eval (play decreeStart (resolve callCoth ++ [.pass] ++ resolve (.activateSet .two 0) ++
+    toP2Main ++ resolve (.activateSpell 0))).map (fun g => names g.board.p1.monsters)
+
+/-- お触れと呼び声が大嵐で同時に破壊される場合、モンスターは破壊されない（07/10/29） -/
+def decreeStorm : Except String Game :=
+  play decreeStart (resolve callCoth ++ [.pass] ++ resolve (.activateSet .two 0) ++ resolve (.activateSpell 1))
+
+#eval decreeStorm.map (fun g => (names g.board.p1.monsters, g.board.p1.backrow.length, g.board.p2.backrow.length))
+
+example : decreeStorm.toOption.map (fun g => names g.board.p1.monsters) = some ["エルフの剣士"] := by decide
+
+/-! ### 永続効果の適用順 -/
+
+/-- コマンド・ナイトとスキルドレイン（ナイトの効果は無効）。P2 はお触れをセット、P1 は手札にスキルドレイン -/
+def orderStart : Game where
+  board := { p1 := { deck := [], hand := [],
+                     monsters := [fm 0 commandKnight],
+                     backrow := [{ card := skillDrain, setTurn := 1, faceUp := true, since := 1 }] },
+             p2 := { deck := [], backrow := [{ card := royalDecree, setTurn := 2 }] },
+             nextUid := 1, clock := 1 }
+  turn := 3
+  active := .one
+  phase := .main1
+
+def knightAtk (g : Game) : List Nat := g.board.p1.monsters.map (g.board.atkOf .one ·)
+
+-- 適用中のスキルドレインでナイトの効果は無効（攻撃力 1200）
+#eval knightAtk orderStart
+
+-- 後からお触れが適用されるとスキルドレインが無効になり、ナイトの効果が有効に戻る（攻撃力 1600）
+#eval (play orderStart ([.pass] ++ resolve (.activateSet .two 0))).map knightAtk
+
+example : (play orderStart ([.pass] ++ resolve (.activateSet .two 0))).toOption.map knightAtk
+    = some [1600] := by decide
+
+/-- 先にお触れが適用されていれば、後から発動したスキルドレインは無効（一方的に無効にするので順番によらない） -/
+def decreeFirst : Game :=
+  { orderStart with board := { orderStart.board with
+      p1 := { orderStart.board.p1 with backrow := [{ card := skillDrain, setTurn := 1 }] },
+      p2 := { orderStart.board.p2 with backrow := [{ card := royalDecree, setTurn := 2, faceUp := true, since := 1 }] } } }
+
+#eval (play decreeFirst (resolve (.activateSet .one 0))).map
+  (fun g => (knightAtk g, g.board.p1.backrow.map (·.card.name), g.board.p1.lp))
 
 end Demo
 
