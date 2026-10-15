@@ -1691,14 +1691,22 @@ def script : List Action :=
 
 def final : Except String Game := play (Game.init deck1 deck2) script
 
+/-- info: Except.ok (6, 6200, 5200, some (YGO.Outcome.win (YGO.PlayerId.one))) -/
+#guard_msgs in
 #eval final.map (fun g => (g.turn, g.board.p1.lp, g.board.p2.lp, g.result))
 
 /-- この対戦は P1 のデッキ切れ勝ちで終わる（カーネルで検証） -/
 example : (final.toOption.bind (·.result)) = some (.win .one) := by decide
 
 -- 反則の例
+/-- info: Except.ok (2, YGO.PlayerId.two, 6) -/
+#guard_msgs in
 #eval (play (Game.init deck1 deck2) [np, np, np, np]).map (fun g => (g.turn, g.active, g.board.p2.hand.length))
+/-- info: Except.error "通常召喚（セット）は1ターンに1度まで" -/
+#guard_msgs in
 #eval (play (Game.init deck1 deck2) [np, np, .normalSummon 0 [], .normalSummon 0 []]).map (·.turn)
+/-- info: Except.error "攻撃はバトルフェイズにしか行えない" -/
+#guard_msgs in
 #eval (play (Game.init deck1 deck2) [np, np, np, .attack 0 none]).map (·.turn)
 
 /-! ### チェーンと優先権
@@ -1719,6 +1727,8 @@ def chainStart : Game where
 def chainEnd : Except String Game :=
   play chainStart [.activateSpell 0, .activateSet .two 0, .activateSet .one 0, .pass, .pass]
 
+/-- info: Except.ok (8000, 7200, 1, 0) -/
+#guard_msgs in
 #eval chainEnd.map (fun g => (g.board.p1.lp, g.board.p2.lp, g.board.p2.hand.length, g.chain.length))
 
 /-- 仕込みマシンガンは無効にされ、P1 は無傷。P2 は 800 ダメージを受けて1枚ドロー -/
@@ -1726,13 +1736,23 @@ example : chainEnd.toOption.map (fun g => (g.board.p1.lp, g.board.p2.lp, g.board
     = some (8000, 7200, 1) := by decide
 
 -- 優先権：P1 がパスするまで P2 は発動できない
+/-- info: Except.error "優先権を持っていない" -/
+#guard_msgs in
 #eval (play chainStart [.activateSet .two 0]).map (fun _ => ())
+/-- info: Except.ok 7500 -/
+#guard_msgs in
 #eval (play chainStart [.pass, .activateSet .two 0, .pass, .pass]).map (fun g => g.board.p1.lp)
 -- 反則の例：チェーン中のフェイズ移行、スペルスピード1のチェーン、カウンター罠への通常罠
+/-- info: Except.error "チェーンや攻撃の処理中、または優先権がないときはフェイズを進められない" -/
+#guard_msgs in
 #eval (play chainStart [.activateSpell 0, .nextPhase]).map (fun _ => ())
+/-- info: Except.error "スペルスピード1はチェーンに組めない" -/
+#guard_msgs in
 #eval (play { chainStart with board := (chainStart.board.modify .one
               (fun p => { p with hand := [ookazi, hinotama] })) }
         [.activateSpell 0, .pass, .activateSpell 0]).map (fun _ => ())
+/-- info: Except.error "スペルスピード3にはスペルスピード3以上でしかチェーンできない" -/
+#guard_msgs in
 #eval (play { chainStart with board := (chainStart.board.modify .two
               (fun p => { p with backrow := [{ card := justDesserts, setTurn := 2 },
                                              { card := justDesserts, setTurn := 2 }] })) }
@@ -1753,12 +1773,16 @@ def fusionStart : Game where
 def fusionEnd : Except String Game :=
   play fusionStart (resolve (.activateSpell 0 { hand := [1], mine := [0], extra := some 0 }))
 
+/-- info: Except.ok (["ブラック・デーモンズ・ドラゴン"], ["真紅眼の黒竜", "デーモンの召喚", "融合"]) -/
+#guard_msgs in
 #eval fusionEnd.map (fun g => (names g.board.p1.monsters, g.board.p1.grave.map (·.name)))
 
 example : fusionEnd.toOption.map (fun g => (names g.board.p1.monsters, g.board.p1.grave.length,
     g.board.p1.extra.length)) = some (["ブラック・デーモンズ・ドラゴン"], 3, 0) := by decide
 
 -- 素材が足りなければ発動できない
+/-- info: Except.error "融合召喚の条件を満たしていない" -/
+#guard_msgs in
 #eval (play fusionStart [.activateSpell 0 { mine := [0], extra := some 0 }]).map (fun _ => ())
 
 /-! ### シンクロ召喚
@@ -1772,12 +1796,16 @@ def synchroStart : Game where
   active := .one
   phase := .main1
 
+/-- info: Except.ok ["エルフの剣士", "大地の騎士ガイアナイト"] -/
+#guard_msgs in
 #eval (play synchroStart [.extraSummon 0 [0, 1]]).map (fun g => names g.board.p1.monsters)
 
 example : (play synchroStart [.extraSummon 0 [0, 1]]).toOption.map (fun g => names g.board.p1.monsters)
     = some ["エルフの剣士", "大地の騎士ガイアナイト"] := by decide
 
 -- レベルの合計が合わない（3 + 4 = 7）
+/-- info: Except.error "大地の騎士ガイアナイトの召喚条件を満たしていない" -/
+#guard_msgs in
 #eval (play synchroStart [.extraSummon 0 [0, 2]]).map (fun _ => ())
 
 /-! ### エクシーズ召喚と誘発即時効果
@@ -1791,6 +1819,8 @@ def xyzStart : Game where
   active := .one
   phase := .main1
 
+/-- info: Except.ok (["No.39 希望皇ホープ"], [2]) -/
+#guard_msgs in
 #eval (play xyzStart [.extraSummon 0 [0, 1]]).map
   (fun g => (names g.board.p1.monsters, g.board.p1.monsters.map (·.overlays.length)))
 
@@ -1808,6 +1838,8 @@ def hopeDefense : Game where
 def hopeEnd : Except String Game :=
   play hopeDefense ([.attack 0 (some 0), .pass, .activateMonster .one 0, .pass, .pass])
 
+/-- info: Except.ok (8000, ["No.39 希望皇ホープ"], [1], false) -/
+#guard_msgs in
 #eval hopeEnd.map (fun g => (g.board.p1.lp, names g.board.p1.monsters,
   g.board.p1.monsters.map (·.overlays.length), g.board.attack.isSome))
 
@@ -1815,6 +1847,8 @@ example : hopeEnd.toOption.map (fun g => (g.board.p1.lp, g.board.p1.monsters.map
     = some (8000, [1]) := by decide
 
 -- 炸裂装甲で攻撃モンスターを破壊する
+/-- info: Except.ok ([], ["青眼の白龍"]) -/
+#guard_msgs in
 #eval (play hopeDefense [.attack 0 (some 0), .pass, .activateSet .one 0, .pass, .pass]).map
   (fun g => (names g.board.p2.monsters, g.board.p2.grave.map (·.name)))
 
@@ -1831,8 +1865,12 @@ def linkStart : Game where
   active := .one
   phase := .main1
 
+/-- info: Except.ok [("岩石の巨兵", false), ("ホーリー・エルフ", false), ("プロキシー・ドラゴン", true)] -/
+#guard_msgs in
 #eval (play linkStart [.extraSummon 0 [0, 1]]).map
   (fun g => g.board.p1.monsters.map (fun m => (m.card.name, m.emz)))
+/-- info: Except.error "モンスターゾーンに空きがない" -/
+#guard_msgs in
 #eval (play linkStart [.extraSummon 0 [0, 1], .extraSummon 0 [0, 1]]).map (fun _ => ())
 
 /-! ### 誘発効果 -/
@@ -1851,6 +1889,8 @@ def tomatoStart : Game where
 def tomatoEnd : Except String Game :=
   play tomatoStart (resolve (.attack 0 (some 0)) ++ [.pass, .pass])
 
+/-- info: Except.ok (6400, ["黒き森のウィッチ"], 2) -/
+#guard_msgs in
 #eval tomatoEnd.map (fun g => (g.board.p1.lp, names g.board.p1.monsters, g.board.p1.deck.length))
 
 example : tomatoEnd.toOption.map (fun g => (g.board.p1.lp, names g.board.p1.monsters))
@@ -1866,6 +1906,8 @@ def wormStart : Game where
   phase := .battle
   priority := .two
 
+/-- info: Except.ok (0, 1, 5) -/
+#guard_msgs in
 #eval (play wormStart (resolve (.attack 0 (some 0)) ++ [.pass, .pass])).map
   (fun g => (g.board.p1.monsters.length, g.board.p2.deck.length, g.board.p2.grave.length))
 
@@ -1881,6 +1923,8 @@ def exiledStart : Game where
 def exiledEnd : Except String Game :=
   play exiledStart (resolve (.activateMonster .one 0 0 { targets := [(.two, 0)] }) ++ [.pass, .pass])
 
+/-- info: Except.ok (0, 0, ["クリボー"]) -/
+#guard_msgs in
 #eval exiledEnd.map (fun g => (g.board.p1.monsters.length, g.board.p2.monsters.length,
   g.board.p2.hand.map (·.name)))
 
@@ -1895,6 +1939,8 @@ def rebornStart : Game where
   active := .one
   phase := .main1
 
+/-- info: Except.ok (["聖鳥クレイン"], ["クリボー"]) -/
+#guard_msgs in
 #eval (play rebornStart (resolve (.activateSpell 0 { grave := some (.one, 0) }) ++ [.pass, .pass])).map
   (fun g => (names g.board.p1.monsters, g.board.p1.hand.map (·.name)))
 
@@ -1914,12 +1960,16 @@ def auraEnd : Except String Game :=
   play auraStart (resolve (.activateSpell 0 { targets := [(.one, 1)] }))
 
 -- コマンド・ナイト 1200+400-400 = 1200、エルフの剣士 1400+400+1000-400 = 2400
+/-- info: Except.ok [1200, 2400] -/
+#guard_msgs in
 #eval auraEnd.map (fun g => g.board.p1.monsters.map (g.board.atkOf .one ·))
 
 example : auraEnd.toOption.map (fun g => g.board.p1.monsters.map (g.board.atkOf .one ·))
     = some [1200, 2400] := by decide
 
 -- 装備モンスターがフィールドを離れると装備カードも墓地へ送られる
+/-- info: Except.ok (0, ["デーモンの斧", "エルフの剣士"]) -/
+#guard_msgs in
 #eval (auraEnd.map fun g => g.board.toGraveMon 1).map
   (fun b => (b.p1.backrow.length, b.p1.grave.map (·.name)))
 
@@ -1932,7 +1982,11 @@ def gravityStart : Game where
   phase := .battle
   priority := .two
 
+/-- info: Except.error "永続効果により攻撃宣言できない" -/
+#guard_msgs in
 #eval (play gravityStart [.attack 0 none]).map (fun _ => ())
+/-- info: Except.ok 5500 -/
+#guard_msgs in
 #eval (play gravityStart (resolve (.attack 1 none))).map (fun g => g.board.p1.lp)
 
 /-! ### スキルドレイン
@@ -1950,6 +2004,8 @@ def drainExiledEnd : Except String Game :=
   play (withDrain exiledStart)
     (resolve (.activateMonster .one 0 0 { targets := [(.two, 0)] }) ++ [.pass, .pass])
 
+/-- info: Except.ok ([], ["クリボー"]) -/
+#guard_msgs in
 #eval drainExiledEnd.map (fun g => (names g.board.p2.monsters, g.board.p2.hand.map (·.name)))
 
 example : drainExiledEnd.toOption.map (fun g => (names g.board.p2.monsters, g.board.p2.hand.map (·.name)))
@@ -1961,12 +2017,16 @@ def drainHopeEnd : Except String Game :=
   play (withDrain hopeDefense)
     ([.attack 0 (some 0), .pass, .activateMonster .one 0, .pass, .pass] ++ [.pass, .pass])
 
+/-- info: Except.ok (7500, [], 3) -/
+#guard_msgs in
 #eval drainHopeEnd.map (fun g => (g.board.p1.lp, names g.board.p1.monsters, g.board.p1.grave.length))
 
 example : drainHopeEnd.toOption.map (fun g => (g.board.p1.lp, names g.board.p1.monsters))
     = some (7500, []) := by decide
 
 -- 永続効果も無効になる：コマンド・ナイトの攻撃力アップが消える（強者の苦痛の -400 のみ）
+/-- info: [800, 1000] -/
+#guard_msgs in
 #eval (withDrain auraStart).board.p1.monsters.map ((withDrain auraStart).board.atkOf .one ·)
 
 /-- LP がちょうど 1000 のときはスキルドレインを発動できない（LP が 0 以下になるようには払えない） -/
@@ -1977,12 +2037,18 @@ def drainCostStart (lp : Nat) : Game where
   active := .one
   phase := .main1
 
+/-- info: Except.error "LP が足りないため発動できない" -/
+#guard_msgs in
 #eval (play (drainCostStart 1000) [.pass, .activateSet .two 0]).map (fun _ => ())
+/-- info: Except.ok 1 -/
+#guard_msgs in
 #eval (play (drainCostStart 1001) (.pass :: resolve (.activateSet .two 0))).map (fun g => g.board.p2.lp)
 
 example : (play (drainCostStart 1000) [.pass, .activateSet .two 0]).toOption.isNone := by decide
 
 -- 戦闘で破壊され墓地へ送られた《キラー・トマト》の効果は墓地で処理されるので無効にならない
+/-- info: Except.ok ["黒き森のウィッチ"] -/
+#guard_msgs in
 #eval (play (withDrain tomatoStart) (resolve (.attack 0 (some 0)) ++ [.pass, .pass])).map
   (fun g => names g.board.p1.monsters)
 
@@ -2006,16 +2072,22 @@ def revive (target : Nat) : List Action := resolve (.activateSet .one 0 { grave 
 /-- P1 のターンを終えて P2 のメインフェイズ1へ -/
 def toP2Main : List Action := [np, np, np, np, np, np]
 
+/-- info: Except.ok (["人造人間－サイコ・ショッカー"], [some 0], true) -/
+#guard_msgs in
 #eval (play cothStart (revive 0)).map
   (fun g => (names g.board.p1.monsters, g.board.p1.backrow.map (·.bond), g.board.trapsNegated))
 
 -- ショッカーがいる間は、お互いに罠カードを発動できない
+/-- info: Except.error "罠カードを発動できない（永続効果）" -/
+#guard_msgs in
 #eval (play cothStart (revive 0 ++ [.pass, .activateSet .two 0])).map (fun _ => ())
 
 /-- 呼び声が破壊されても、その時点で呼び声の効果は無効なので、ショッカーは破壊されない -/
 def cothFeather : Except String Game :=
   play cothStart (revive 0 ++ toP2Main ++ resolve (.activateSpell 0))
 
+/-- info: Except.ok (["人造人間－サイコ・ショッカー"], 0, ["エルフの剣士", "リビングデッドの呼び声"]) -/
+#guard_msgs in
 #eval cothFeather.map (fun g => (names g.board.p1.monsters, g.board.p1.backrow.length, g.board.p1.grave.map (·.name)))
 
 example : cothFeather.toOption.map (fun g => (names g.board.p1.monsters, g.board.p1.backrow.length))
@@ -2025,19 +2097,27 @@ example : cothFeather.toOption.map (fun g => (names g.board.p1.monsters, g.board
 def cothRaigeki : Except String Game :=
   play cothStart (revive 0 ++ toP2Main ++ resolve (.activateSpell 1))
 
+/-- info: Except.ok ([], 0, ["エルフの剣士", "人造人間－サイコ・ショッカー", "リビングデッドの呼び声"]) -/
+#guard_msgs in
 #eval cothRaigeki.map (fun g => (names g.board.p1.monsters, g.board.p1.backrow.length, g.board.p1.grave.map (·.name)))
 
 example : cothRaigeki.toOption.map (fun g => (names g.board.p1.monsters, g.board.p1.backrow.length))
     = some ([], 0) := by decide
 
 -- 比較：ショッカー以外を蘇生した場合、呼び声が破壊されるとそのモンスターも破壊される
+/-- info: Except.ok ([], ["人造人間－サイコ・ショッカー", "リビングデッドの呼び声", "エルフの剣士"]) -/
+#guard_msgs in
 #eval (play cothStart (revive 1 ++ toP2Main ++ resolve (.activateSpell 0))).map
   (fun g => (names g.board.p1.monsters, g.board.p1.grave.map (·.name)))
 
 -- 比較：リリースは破壊ではないので、蘇生したモンスターをリリースしても呼び声は残る
+/-- info: Except.ok (["デーモンの召喚"], 1) -/
+#guard_msgs in
 #eval (play cothStart (revive 1 ++ [.normalSummon 0 [0]])).map (fun g => (names g.board.p1.monsters, g.board.p1.backrow.length))
 
 -- スキルドレインが適用中なら、ショッカーの効果は無効なので罠は発動でき、効果も無効にならない
+/-- info: Except.ok (false, false) -/
+#guard_msgs in
 #eval (play (withDrain cothStart) (revive 0)).map (fun g => (g.board.trapsLocked, g.board.trapsNegated))
 
 /-- スキルドレインと呼び声が同時に破壊される場合、破壊される直前はスキルドレインでショッカーの効果が
@@ -2047,6 +2127,8 @@ def drainCothEnd : Except String Game :=
     { p with backrow := { card := skillDrain, setTurn := 1, faceUp := true } :: p.backrow } }
   play start (resolve (.activateSet .one 1 { grave := some (.one, 0) }) ++ toP2Main ++ resolve (.activateSpell 0))
 
+/-- info: Except.ok ([], ["エルフの剣士", "スキルドレイン", "リビングデッドの呼び声", "人造人間－サイコ・ショッカー"]) -/
+#guard_msgs in
 #eval drainCothEnd.map (fun g => (names g.board.p1.monsters, g.board.p1.grave.map (·.name)))
 
 example : drainCothEnd.toOption.map (fun g => names g.board.p1.monsters) = some [] := by decide
@@ -2070,6 +2152,8 @@ def callCoth : Action := .activateSet .one 0 { grave := some (.one, 0) }
 def decreeChain : Except String Game :=
   play decreeStart ([callCoth, .activateSet .two 0, .pass, .pass] ++ resolve (.activateSpell 0))
 
+/-- info: Except.ok ([], ["リビングデッドの呼び声"], 0) -/
+#guard_msgs in
 #eval decreeChain.map (fun g => (names g.board.p1.monsters, g.board.p1.backrow.map (·.card.name),
   g.board.p2.backrow.length))
 
@@ -2082,11 +2166,15 @@ def decreeLater : Except String Game :=
   play decreeStart (resolve callCoth ++ [.pass] ++ resolve (.activateSet .two 0) ++
     resolve (.activateSpell 0) ++ toP2Main ++ resolve (.activateSpell 0))
 
+/-- info: Except.ok ([], ["ハーピィの羽根帚", "リビングデッドの呼び声", "エルフの剣士"]) -/
+#guard_msgs in
 #eval decreeLater.map (fun g => (names g.board.p1.monsters, g.board.p1.grave.map (·.name)))
 
 example : decreeLater.toOption.map (fun g => names g.board.p1.monsters) = some [] := by decide
 
 -- 比較：お触れが残っていれば、呼び声が破壊されてもモンスターは破壊されない
+/-- info: Except.ok ["エルフの剣士"] -/
+#guard_msgs in
 #eval (play decreeStart (resolve callCoth ++ [.pass] ++ resolve (.activateSet .two 0) ++
     toP2Main ++ resolve (.activateSpell 0))).map (fun g => names g.board.p1.monsters)
 
@@ -2094,6 +2182,8 @@ example : decreeLater.toOption.map (fun g => names g.board.p1.monsters) = some [
 def decreeStorm : Except String Game :=
   play decreeStart (resolve callCoth ++ [.pass] ++ resolve (.activateSet .two 0) ++ resolve (.activateSpell 1))
 
+/-- info: Except.ok (["エルフの剣士"], 0, 0) -/
+#guard_msgs in
 #eval decreeStorm.map (fun g => (names g.board.p1.monsters, g.board.p1.backrow.length, g.board.p2.backrow.length))
 
 example : decreeStorm.toOption.map (fun g => names g.board.p1.monsters) = some ["エルフの剣士"] := by decide
@@ -2114,9 +2204,13 @@ def orderStart : Game where
 def knightAtk (g : Game) : List Nat := g.board.p1.monsters.map (g.board.atkOf .one ·)
 
 -- 適用中のスキルドレインでナイトの効果は無効（攻撃力 1200）
+/-- info: [1200] -/
+#guard_msgs in
 #eval knightAtk orderStart
 
 -- 後からお触れが適用されるとスキルドレインが無効になり、ナイトの効果が有効に戻る（攻撃力 1600）
+/-- info: Except.ok [1600] -/
+#guard_msgs in
 #eval (play orderStart ([.pass] ++ resolve (.activateSet .two 0))).map knightAtk
 
 example : (play orderStart ([.pass] ++ resolve (.activateSet .two 0))).toOption.map knightAtk
@@ -2128,6 +2222,8 @@ def decreeFirst : Game :=
       p1 := { orderStart.board.p1 with backrow := [{ card := skillDrain, setTurn := 1 }] },
       p2 := { orderStart.board.p2 with backrow := [{ card := royalDecree, setTurn := 2, faceUp := true, since := 1 }] } } }
 
+/-- info: Except.ok ([1600], ["スキルドレイン"], 7000) -/
+#guard_msgs in
 #eval (play decreeFirst (resolve (.activateSet .one 0))).map
   (fun g => (knightAtk g, g.board.p1.backrow.map (·.card.name), g.board.p1.lp))
 
