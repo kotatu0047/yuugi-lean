@@ -640,13 +640,24 @@ def place (b : Board) (w : PlayerId) (c : MonsterCard) (pos : Position) (turn : 
     { p with monsters := p.monsters ++ [{ uid, card := c, pos, summonedTurn := turn, emz, overlays, since }] }
   { b with nextUid := uid + 1, clock := since, log := b.log ++ (ev.map (Happened.mk w c · uid)).toList }
 
+/-- uid のモンスターの位置 -/
+def findMonIdx (b : Board) (uid : Nat) : Option (PlayerId × Nat) :=
+  match b.p1.monsters.findIdx? (·.uid == uid) with
+  | some i => some (.one, i)
+  | none => (b.p2.monsters.findIdx? (·.uid == uid)).map (.two, ·)
+
+/-- i 番目のモンスターを置き換える -/
+def setMonAt (b : Board) (w : PlayerId) (i : Nat) (m : FieldMonster) : Board :=
+  b.modify w fun p => { p with monsters := p.monsters.set i m }
+
 /-- uid のモンスターをフィールドから取り除く。そのモンスターの装備カードは墓地へ送られる。 -/
 def detach (b : Board) (uid : Nat) : Option (Board × PlayerId × FieldMonster) := do
-  let (w, m) ← b.findMon uid
-  let b := b.modify w fun p => { p with monsters := p.monsters.filter (·.uid != uid) }
+  let (w, i) ← b.findMonIdx uid
+  let m ← (b.get w).monsters[i]?
+  let b := b.modify w fun p => { p with monsters := p.monsters.eraseIdx i }
   let dropEquips (p : Player) : Player :=
-    let (eqs, rest) := p.backrow.partition (·.equipTo == some uid)
-    { p with backrow := rest, grave := p.grave ++ eqs.map (·.card) }
+    { p with backrow := p.backrow.filter (·.equipTo != some uid)
+             grave := p.grave ++ (p.backrow.filter (·.equipTo == some uid)).map (·.card) }
   pure ((b.modify .one dropEquips).modify .two dropEquips, w, m)
 
 /-- uid のモンスターを墓地へ送る（X素材も墓地へ）。
@@ -783,13 +794,17 @@ def applyEffect (c : Ctx) (l : ChainLink) (b : Board) : Board :=
   | .fusionSummon =>
     match fusionPlan b l with
     | none => b
-    | some (fm, i, emz) =>
+    | some (fm, i, _) =>
       let b := b.modify self fun p =>
-        { p with hand := (removeIdxs p.hand (l.handMats.map (·.1))).1
-                 grave := p.grave ++ l.handMats.map (·.2)
-                 extra := p.extra.eraseIdx i }
+        let r := removeIdxs p.hand (l.handMats.map (·.1))
+        { p with hand := r.1, grave := p.grave ++ r.2 }
       let b := l.fieldMats.foldl (fun b u => b.toGraveMon u) b
-      b.place self fm .attack c.turn emz (some .specialSummoned)
+      -- 素材が離れた後のゾーンの空きを確認してから出す
+      match (b.get self).slotAfter [] false with
+      | some emz =>
+        (b.modify self fun p => { p with extra := p.extra.eraseIdx i }).place self fm .attack c.turn emz
+          (some .specialSummoned)
+      | none => b
   | .destroyAttacker =>
     match b.attack with
     | some bt => { b.toGraveMon bt.attacker .destroyed with attack := none }
@@ -804,21 +819,27 @@ def applyEffect (c : Ctx) (l : ChainLink) (b : Board) : Board :=
     let ok : Card → Bool
       | .monster m => m.attr == attr && m.atk ≤ mx
       | _ => false
-    match p.deck.findIdx? ok, p.deck.find? ok with
-    | some i, some (.monster m) =>
-      if p.mainFree then
-        (b.set self { p with deck := p.deck.eraseIdx i }).place self m .attack c.turn
-          false (some .specialSummoned)
-      else b
-    | _, _ => b
+    match p.deck.findIdx? ok with
+    | some i =>
+      match p.deck[i]? with
+      | some (.monster m) =>
+        if p.mainFree then
+          (b.set self { p with deck := p.deck.eraseIdx i }).place self m .attack c.turn
+            false (some .specialSummoned)
+        else b
+      | _ => b
+    | none => b
   | .searchMaxDef d =>
     let p := b.get self
     let ok : Card → Bool
       | .monster m => m.dfs ≤ d
       | _ => false
-    match p.deck.findIdx? ok, p.deck.find? ok with
-    | some i, some cd => b.set self { p with deck := p.deck.eraseIdx i, hand := p.hand ++ [cd] }
-    | _, _ => b
+    match p.deck.findIdx? ok with
+    | some i =>
+      match p.deck[i]? with
+      | some cd => b.set self { p with deck := p.deck.eraseIdx i, hand := p.hand ++ [cd] }
+      | none => b
+    | none => b
 
 /-! ### チェーン -/
 
@@ -998,7 +1019,7 @@ def activateMonsterAct (c : Ctx) (s : ChainState) (who : PlayerId) (z i : Nat) (
   let l := { l with mon := true, src := some m.uid }
   canActivate b s.chain l
   -- コストの支払い
-  let b := b.updMon who m.uid fun x => { x with effectUsed := true }
+  let b := b.setMonAt who z { m with effectUsed := true }
   let b ← match cost with
     | .free => pure b
     | .tributeSelf => pure (b.toGraveMon m.uid)
@@ -1006,7 +1027,7 @@ def activateMonsterAct (c : Ctx) (s : ChainState) (who : PlayerId) (z i : Nat) (
       if n < (b.get who).lp then pure (b.modify who (·.damage n)) else throw "LP が足りない"
     | .detach n =>
       if n ≤ m.overlays.length then
-        pure ((b.updMon who m.uid fun x => { x with overlays := m.overlays.drop n }).modify who
+        pure ((b.setMonAt who z { m with effectUsed := true, overlays := m.overlays.drop n }).modify who
           fun p => { p with grave := p.grave ++ m.overlays.take n })
       else throw "X素材が足りない"
   pushLink s b l
@@ -1026,10 +1047,10 @@ def summonCore (c : Ctx) (b : Board) (h : Nat) (ts : List Nat) (pos : Position) 
   let some tms := ts.mapM (me.monsters[·]?) | throw "リリース対象が存在しない"
   unless ts.length = tributesRequired m.level do
     throw s!"レベル{m.level}の召喚にはリリースが{tributesRequired m.level}体必要"
-  let rest := me.monsters.filter (fun x => !(tms.map (·.uid)).contains x.uid)
-  unless (rest.filter (fun x => !x.emz)).length < monsterZones do throw "モンスターゾーンに空きがない"
   let b := tms.foldl (fun b t => b.toGraveMon t.uid) b
   let b := b.modify c.active fun p => { p with hand := p.hand.eraseIdx h }
+  -- リリースしたモンスターが離れた後のゾーンの空きを確認する
+  unless (b.get c.active).mainFree do throw "モンスターゾーンに空きがない"
   let b := b.place c.active m pos c.turn false (if pos = .attack then some .normalSummoned else none)
   return { b with normalSummoned := true }
 
@@ -1048,18 +1069,23 @@ def extraSummonAct (c : Ctx) (b : Board) (ei : Nat) (mats : List Nat) : Except S
     | .link r => linkOk r cards
     | _ => false
   unless ok do throw s!"{em.name}の召喚条件を満たしていない"
-  let some emz := me.slotAfter (ms.map (·.uid)) em.isLink | throw "モンスターゾーンに空きがない"
-  let b := b.modify c.active fun p => { p with extra := p.extra.eraseIdx ei }
+  -- 素材が離れた後のゾーンの空きを確認してから出す
+  let summon (b : Board) (overlays : List Card) : Except String Board :=
+    match (b.get c.active).slotAfter [] em.isLink with
+    | some emz =>
+      pure ((b.modify c.active fun p => { p with extra := p.extra.eraseIdx ei }).place c.active em
+        .attack c.turn emz (some .specialSummoned) overlays)
+    | none => throw "モンスターゾーンに空きがない"
   match em.kind with
   | .xyz _ =>
-    -- 素材は墓地へ送らず、X素材として重ねる
-    let b := ms.foldl (fun b m => match b.detach m.uid with | some (b, _, _) => b | none => b) b
-    let b := b.modify c.active fun p => { p with grave := p.grave ++ ms.flatMap (·.overlays) }
-    return b.place c.active em .attack c.turn emz (some .specialSummoned)
-      (ms.map fun m => Card.monster m.card)
-  | _ =>
-    let b := ms.foldl (fun b m => b.toGraveMon m.uid) b
-    return b.place c.active em .attack c.turn emz (some .specialSummoned)
+    -- 素材は墓地へ送らず、X素材として重ねる（取り除けたモンスターだけを重ねる）
+    let (b, got) := ms.foldl (fun (acc : Board × List FieldMonster) m =>
+      match acc.1.detach m.uid with
+      | some (b, _, x) => (b, acc.2 ++ [x])
+      | none => acc) (b, [])
+    let b := b.modify c.active fun p => { p with grave := p.grave ++ got.flatMap (·.overlays) }
+    summon b (got.map fun m => Card.monster m.card)
+  | _ => summon (ms.foldl (fun b m => b.toGraveMon m.uid) b) []
 
 /-- 攻撃宣言。ダメージ計算は両者がパスした後に `performBattle` で行う。 -/
 def declareAttack (c : Ctx) (b : Board) (ai : Nat) (tgt : Option Nat) : Except String Board := do
@@ -1103,8 +1129,9 @@ def performBattle (c : Ctx) (b : Board) : Board :=
           -- 裏側守備表示は表側にしてからダメージ計算
           let flipped := d.pos = .faceDownDefense
           let b := if flipped then { b with clock := b.clock + 1 } else b
-          let d := if flipped then { d with pos := .faceUpDefense, since := b.clock } else d
-          let b := b.updMon opp tu fun _ => d
+          let since := b.clock
+          let d := if flipped then { d with pos := .faceUpDefense, since } else d
+          let b := b.updMon opp tu fun x => if flipped then { x with pos := .faceUpDefense, since } else x
           let b := if flipped then { b with log := b.log ++ [⟨opp, d.card, .flipped, tu⟩] } else b
           let r := resolveBattle aAtk d.pos (b.atkOf opp d) d.card.dfs
           let b := (b.modify me (·.damage r.dmgToAttacker)).modify opp (·.damage r.dmgToDefender)
