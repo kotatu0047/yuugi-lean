@@ -1,0 +1,10 @@
+name = "YuugiLean"
+version = "0.1.0"
+defaultTargets = ["yuugilean"]
+
+[[lean_lib]]
+name = "YuugiLean"
+
+[[lean_exe]]
+name = "yuugilean"
+root = "Main"
