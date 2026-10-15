@@ -19,6 +19,7 @@ Lean 4 コアのみ（Mathlib 不要）で動く、遊戯王OCGの基本ルー�
 * 優先権：空きチェーンでもターンプレイヤーが優先権を持ち、相手はターンプレイヤーのパスを受けて発動する
 * 誘発効果は、チェーンが空になった時点で SEGOC（ターンプレイヤーの効果が先）の順にチェーンを組む
 * 効果の無効化（スキルドレイン）：処理時にフィールドに表側表示で存在するモンスターの効果のみ無効
+* ライフコスト：自分の LP が 0 以下になるようには払えない
 * 手札上限6枚（エンドフェイズに捨てる）
 * 勝敗：LP 0、デッキ切れ（ドローできない）
 
@@ -31,7 +32,6 @@ Lean 4 コアのみ（Mathlib 不要）で動く、遊戯王OCGの基本ルー�
 * 効果による特殊召喚・エクストラデッキからの特殊召喚は表側攻撃表示で行う
 * フェイズ移行はターンプレイヤーの宣言で行う（相手が発動したい場合は、事前にパスで優先権を受ける）
 * ダメージステップ中の発動、「1ターンに1度」の名称指定、蘇生制限
-* ライフコストは現在の LP 以下のときだけ払える
 -/
 
 namespace YGO
@@ -815,7 +815,8 @@ def activateSetAct (c : Ctx) (s : ChainState) (who : PlayerId) (z : Nat) (args :
   let b := s.board.set who { me with backrow := me.backrow.eraseIdx z }
   let l ← mkLink b who sc.card sc.card.activationEffect sc.card.spellSpeed args none
   canActivate b s.chain l
-  unless sc.card.lpCost ≤ (b.get who).lp do throw "LP が足りないため発動できない"
+  -- LP が 0 以下になるようには払えない（コストがなければ 0 < LP は常に成り立つ）
+  unless sc.card.lpCost < (b.get who).lp do throw "LP が足りないため発動できない"
   pushLink s (b.modify who (·.damage sc.card.lpCost)) l
 
 def activateMonsterAct (c : Ctx) (s : ChainState) (who : PlayerId) (z i : Nat) (args : Args) :
@@ -840,7 +841,7 @@ def activateMonsterAct (c : Ctx) (s : ChainState) (who : PlayerId) (z i : Nat) (
     | .free => pure b
     | .tributeSelf => pure (b.toGraveMon m.uid)
     | .payLP n =>
-      if n ≤ (b.get who).lp then pure (b.modify who (·.damage n)) else throw "LP が足りない"
+      if n < (b.get who).lp then pure (b.modify who (·.damage n)) else throw "LP が足りない"
     | .detach n =>
       if n ≤ m.overlays.length then
         pure ((b.updMon who m.uid fun x => { x with overlays := m.overlays.drop n }).modify who
@@ -1769,6 +1770,19 @@ example : drainHopeEnd.toOption.map (fun g => (g.board.p1.lp, names g.board.p1.m
 
 -- 永続効果も無効になる：コマンド・ナイトの攻撃力アップが消える（強者の苦痛の -400 のみ）
 #eval (withDrain auraStart).board.p1.monsters.map ((withDrain auraStart).board.atkOf .one ·)
+
+/-- LP がちょうど 1000 のときはスキルドレインを発動できない（LP が 0 以下になるようには払えない） -/
+def drainCostStart (lp : Nat) : Game where
+  board := { p1 := { deck := [] },
+             p2 := { deck := [], lp, backrow := [{ card := skillDrain, setTurn := 2 }] } }
+  turn := 3
+  active := .one
+  phase := .main1
+
+#eval (play (drainCostStart 1000) [.pass, .activateSet .two 0]).map (fun _ => ())
+#eval (play (drainCostStart 1001) (.pass :: resolve (.activateSet .two 0))).map (fun g => g.board.p2.lp)
+
+example : (play (drainCostStart 1000) [.pass, .activateSet .two 0]).toOption.isNone := by decide
 
 -- 戦闘で破壊され墓地へ送られた《キラー・トマト》の効果は墓地で処理されるので無効にならない
 #eval (play (withDrain tomatoStart) (resolve (.attack 0 (some 0)) ++ [.pass, .pass])).map
