@@ -1496,4 +1496,749 @@ theorem reachable_uidOK {g : Game} (hr : Reachable g) : g.UidOK := by
   | init d1 d2 e1 e2 => exact init_uidOK d1 d2 e1 e2
   | step a _ hs ih => exact step_uidOK ih hs
 
+/-! ## ゾーンの上限 -/
+
+def Player.mainCnt (p : Player) : Nat := (p.monsters.filter (fun m => !m.emz)).length
+def Player.emzCnt (p : Player) : Nat := (p.monsters.filter (·.emz)).length
+
+/-- チェーン上の、そのプレイヤーの魔法・罠（魔法・罠ゾーンを使っている） -/
+def ownST (ch : List ChainLink) (v : PlayerId) : Nat :=
+  (ch.filter (fun l => decide (l.owner = v) && !l.mon)).length
+
+/-- メインモンスターゾーン・エクストラモンスターゾーンの上限と、魔法・罠ゾーンの上限 B -/
+def Board.Bounded (b : Board) (B : PlayerId → Nat) : Prop :=
+  ∀ v, (b.get v).mainCnt ≤ monsterZones ∧ (b.get v).emzCnt ≤ 1 ∧ (b.get v).backrow.length ≤ B v
+
+/-- ゾーンの上限：チェーン上の魔法・罠も魔法・罠ゾーンを使っている -/
+def ZoneOK (b : Board) (ch : List ChainLink) : Prop :=
+  ∀ v, (b.get v).mainCnt ≤ monsterZones ∧ (b.get v).emzCnt ≤ 1 ∧
+    (b.get v).backrow.length + ownST ch v ≤ spellTrapZones
+
+/-- モンスター・魔法罠が減るか変わらないだけ -/
+def Board.Dec (b b' : Board) : Prop :=
+  ∀ v, (b'.get v).mainCnt ≤ (b.get v).mainCnt ∧ (b'.get v).emzCnt ≤ (b.get v).emzCnt ∧
+    (b'.get v).backrow.length ≤ (b.get v).backrow.length
+
+theorem Board.Dec.refl (b : Board) : b.Dec b := fun _ => ⟨Nat.le_refl _, Nat.le_refl _, Nat.le_refl _⟩
+
+theorem Board.Dec.trans {b b' b'' : Board} (h1 : b.Dec b') (h2 : b'.Dec b'') : b.Dec b'' := fun v =>
+  ⟨Nat.le_trans (h2 v).1 (h1 v).1, Nat.le_trans (h2 v).2.1 (h1 v).2.1, Nat.le_trans (h2 v).2.2 (h1 v).2.2⟩
+
+theorem Board.Bounded.dec {b b' : Board} {B : PlayerId → Nat} (h : b.Bounded B) (hd : b.Dec b') :
+    b'.Bounded B := fun v =>
+  ⟨Nat.le_trans (hd v).1 (h v).1, Nat.le_trans (hd v).2.1 (h v).2.1, Nat.le_trans (hd v).2.2 (h v).2.2⟩
+
+theorem Board.Bounded.mono {b : Board} {B B' : PlayerId → Nat} (h : b.Bounded B) (hB : ∀ v, B v ≤ B' v) :
+    b.Bounded B' := fun v => ⟨(h v).1, (h v).2.1, Nat.le_trans (h v).2.2 (hB v)⟩
+
+theorem Player.mainCnt_le_of_sublist {p q : Player} (h : q.monsters.Sublist p.monsters) :
+    q.mainCnt ≤ p.mainCnt := (h.filter _).length_le
+theorem Player.emzCnt_le_of_sublist {p q : Player} (h : q.monsters.Sublist p.monsters) :
+    q.emzCnt ≤ p.emzCnt := (h.filter _).length_le
+
+theorem Board.dec_modify (b : Board) (w : PlayerId) (f : Player → Player)
+    (hm : ((f (b.get w)).monsters.filter (fun m => !m.emz)).length ≤ ((b.get w).monsters.filter (fun m => !m.emz)).length)
+    (he : ((f (b.get w)).monsters.filter (·.emz)).length ≤ ((b.get w).monsters.filter (·.emz)).length)
+    (hb : (f (b.get w)).backrow.length ≤ (b.get w).backrow.length) : b.Dec (b.modify w f) := by
+  intro v
+  by_cases hv : v = w
+  · subst hv; rw [Board.get_modify_same]; exact ⟨hm, he, hb⟩
+  · rw [Board.get_modify_other _ _ _ _ hv]; exact ⟨Nat.le_refl _, Nat.le_refl _, Nat.le_refl _⟩
+
+theorem Board.dec_modify_same (b : Board) (w : PlayerId) (f : Player → Player)
+    (hm : (f (b.get w)).monsters = (b.get w).monsters)
+    (hb : (f (b.get w)).backrow.length ≤ (b.get w).backrow.length) : b.Dec (b.modify w f) :=
+  b.dec_modify w f (by rw [hm]; exact Nat.le_refl _) (by rw [hm]; exact Nat.le_refl _) hb
+
+theorem Board.dec_with {b b' : Board} (h1 : b'.p1 = b.p1) (h2 : b'.p2 = b.p2) : b.Dec b' := by
+  intro v; cases v <;> simp [Board.get, h1, h2]
+
+theorem length_removeIdxs_fst_le {α : Type} (l : List α) (is : List Nat) : (removeIdxs l is).1.length ≤ l.length := by
+  have := removeIdxs_length l is; omega
+
+theorem Board.dec_detach {b b' : Board} {u : Nat} {w : PlayerId} {m : FieldMonster}
+    (h : b.detach u = some (b', w, m)) : b.Dec b' := by
+  unfold Board.detach at h
+  cases hf : b.findMonIdx u with
+  | none => simp [hf] at h
+  | some wi =>
+    obtain ⟨w0, i⟩ := wi
+    cases hm : (b.get w0).monsters[i]? with
+    | none => simp [hf, hm] at h
+    | some m0 =>
+      simp only [hf, hm, Option.bind_eq_bind, Option.bind_some, Option.pure_def, Option.some.injEq,
+        Prod.mk.injEq] at h
+      obtain ⟨rfl, rfl, rfl⟩ := h
+      refine ((b.dec_modify w0 _ ?_ ?_ (Nat.le_refl _)).trans (Board.dec_modify _ _ _ (Nat.le_refl _)
+        (Nat.le_refl _) (List.length_filter_le _ _))).trans
+        (Board.dec_modify _ _ _ (Nat.le_refl _) (Nat.le_refl _) (List.length_filter_le _ _))
+      · exact ((List.eraseIdx_sublist _ _).filter _).length_le
+      · exact ((List.eraseIdx_sublist _ _).filter _).length_le
+
+theorem Board.dec_toGraveMon (b : Board) (u : Nat) (cause : LeaveCause) : b.Dec (b.toGraveMon u cause) := by
+  unfold Board.toGraveMon
+  split
+  · exact Board.Dec.refl _
+  · rename_i b' w m hd
+    refine (Board.dec_detach hd).trans ((b'.dec_modify_same w
+      (fun p => { p with grave := p.grave ++ m.overlays ++ [.monster m.card] }) rfl (Nat.le_refl _)).trans ?_)
+    by_cases hc : (cause == LeaveCause.sent) = true
+    · simp only [hc, ite_true]; exact Board.dec_with rfl rfl
+    · simp only [hc, Bool.false_eq_true, ite_false]
+      intro v
+      cases v <;> cases w <;> simp only [Board.modify, Board.set, Board.get, Player.mainCnt, Player.emzCnt] <;>
+        exact ⟨Nat.le_refl _, Nat.le_refl _, length_removeIdxs_fst_le _ _⟩
+
+theorem Board.dec_foldl_toGraveMon {α : Type} (xs : List α) (f : α → Nat) (cause : LeaveCause)
+    (b : Board) : b.Dec (xs.foldl (fun b x => b.toGraveMon (f x) cause) b) := by
+  induction xs generalizing b with
+  | nil => exact Board.Dec.refl _
+  | cons x xs ih => exact (Board.dec_toGraveMon _ _ _).trans (ih _)
+
+theorem Board.dec_foldl_toGraveMonN (us : List Nat) (cause : LeaveCause) (b : Board) :
+    b.Dec (us.foldl (fun b u => b.toGraveMon u cause) b) := Board.dec_foldl_toGraveMon us id cause b
+
+theorem Board.dec_destroyAllBackrow (b : Board) (ws : List PlayerId) : b.Dec (b.destroyAllBackrow ws) := by
+  unfold Board.destroyAllBackrow
+  simp only
+  refine Board.Dec.trans ?_ (Board.dec_foldl_toGraveMonN _ _ _)
+  generalize b = b0
+  induction ws generalizing b0 with
+  | nil => exact Board.Dec.refl _
+  | cons w ws ih => exact (Board.dec_modify_same _ _ _ rfl (by simp)).trans (ih _)
+
+theorem Board.dec_detachAllAux (ms : List FieldMonster) (acc : Board × List FieldMonster) :
+    acc.1.Dec (Board.detachAllAux acc ms).1 := by
+  induction ms generalizing acc with
+  | nil => exact Board.Dec.refl _
+  | cons m ms ih =>
+    simp only [Board.detachAllAux]
+    refine Board.Dec.trans ?_ (ih _)
+    split
+    · rename_i b x hd; exact Board.dec_detach hd
+    · exact Board.Dec.refl _
+
+theorem Board.dec_updMon (b : Board) (w : PlayerId) (u : Nat) (f : FieldMonster → FieldMonster)
+    (hf : ∀ x, (f x).emz = x.emz) : b.Dec (b.updMon w u f) := by
+  unfold Board.updMon
+  have key : ∀ (q : FieldMonster → Bool), (∀ x, q (if x.uid = u then f x else x) = q x) →
+      (((b.get w).monsters.map fun m => if m.uid = u then f m else m).filter q).length =
+        ((b.get w).monsters.filter q).length := by
+    intro q hq
+    rw [List.filter_map, List.length_map]
+    congr 1; apply List.filter_congr; intro x _; simp [Function.comp, hq]
+  apply Board.dec_modify
+  · rw [key (fun m => !m.emz) (fun x => by split <;> simp [hf])]; exact Nat.le_refl _
+  · rw [key (·.emz) (fun x => by split <;> simp [hf])]; exact Nat.le_refl _
+  · exact Nat.le_refl _
+
+theorem length_filter_set {α : Type} {l : List α} {i : Nat} {m m' : α} (h : l[i]? = some m)
+    (q : α → Bool) (hq : q m' = q m) : ((l.set i m').filter q).length = (l.filter q).length := by
+  induction l generalizing i with
+  | nil => simp at h
+  | cons x xs ih =>
+    cases i with
+    | zero => simp at h; subst h; simp only [List.set_cons_zero, List.filter_cons, hq]; split <;> simp
+    | succ j =>
+      simp at h
+      simp only [List.set_cons_succ, List.filter_cons]
+      split <;> simp [ih h]
+
+theorem Board.dec_setMonAt {b : Board} {w : PlayerId} {i : Nat} {m m' : FieldMonster}
+    (h : (b.get w).monsters[i]? = some m) (he : m'.emz = m.emz) : b.Dec (b.setMonAt w i m') := by
+  unfold Board.setMonAt
+  apply Board.dec_modify
+  · rw [length_filter_set h (fun m => !m.emz) (by simp [he])]; exact Nat.le_refl _
+  · rw [length_filter_set h (·.emz) (by simp [he])]; exact Nat.le_refl _
+  · exact Nat.le_refl _
+
+theorem Player.mainFree_iff (p : Player) : p.mainFree = true ↔ p.mainCnt < monsterZones := by
+  simp [Player.mainFree, Player.mainCnt]
+
+theorem Player.slotAfter_nil {p : Player} {isLink e : Bool} (h : p.slotAfter [] isLink = some e) :
+    (e = false → p.mainCnt < monsterZones) ∧ (e = true → p.emzCnt = 0) := by
+  have hft : ∀ l : List FieldMonster, l.filter (fun _ => true) = l := by
+    intro l; induction l <;> simp_all
+  unfold Player.slotAfter at h
+  simp only [List.contains_nil, Bool.not_false, hft] at h
+  split at h
+  · rename_i hc; simp at h; subst h
+    simp only [Bool.and_eq_true, Bool.not_eq_true', decide_eq_true_eq] at hc
+    exact ⟨fun _ => hc.2, fun h => by simp at h⟩
+  · split at h
+    · rename_i _ hc; simp at h; subst h
+      refine ⟨fun h => by simp at h, fun _ => ?_⟩
+      simp only [Bool.not_eq_true', List.any_eq_false] at hc
+      simp only [Player.emzCnt, List.length_eq_zero_iff, List.filter_eq_nil_iff]
+      intro x hx; simpa using hc x hx
+    · simp at h
+
+theorem Board.Bounded.place {b : Board} {B : PlayerId → Nat} (h : b.Bounded B) {w : PlayerId} {c : MonsterCard}
+    {pos : Position} {t : Nat} {e : Bool} {ev : Option Event} {ov : List Card}
+    (hm : e = false → (b.get w).mainCnt < monsterZones) (he : e = true → (b.get w).emzCnt = 0) :
+    (b.place w c pos t e ev ov).Bounded B := by
+  intro v
+  have hv := h v
+  by_cases hvw : v = w
+  · subst hvw
+    have hg : ((b.place v c pos t e ev ov).get v) = { b.get v with monsters := (b.get v).monsters ++
+        [{ uid := b.nextUid, card := c, pos, summonedTurn := t, emz := e, overlays := ov, since := b.clock + 1 }] } := by
+      cases v <;> rfl
+    rw [hg]
+    cases e <;> simp_all [Player.mainCnt, Player.emzCnt, List.filter_append] <;> omega
+  · have hg : ((b.place w c pos t e ev ov).get v) = b.get v := by
+      cases v <;> cases w <;> first | rfl | exact absurd rfl hvw
+    rw [hg]; exact hv
+
+theorem Board.Bounded.place_main {b : Board} {B : PlayerId → Nat} (h : b.Bounded B) {w : PlayerId}
+    {c : MonsterCard} {pos : Position} {t : Nat} {ev : Option Event} {ov : List Card}
+    (hf : (b.get w).mainFree = true) : (b.place w c pos t false ev ov).Bounded B :=
+  h.place (fun _ => (Player.mainFree_iff _).mp hf) (fun h => by simp at h)
+
+theorem Board.Bounded.place_slot {b : Board} {B : PlayerId → Nat} (h : b.Bounded B) {w : PlayerId}
+    {c : MonsterCard} {pos : Position} {t : Nat} {e isLink : Bool} {ev : Option Event} {ov : List Card}
+    (hs : (b.get w).slotAfter [] isLink = some e) : (b.place w c pos t e ev ov).Bounded B :=
+  h.place (Player.slotAfter_nil hs).1 (Player.slotAfter_nil hs).2
+
+theorem Board.Bounded.with_same {b b' : Board} {B : PlayerId → Nat} (h : b.Bounded B)
+    (h1 : b'.p1 = b.p1) (h2 : b'.p2 = b.p2) : b'.Bounded B := h.dec (Board.dec_with h1 h2)
+theorem Board.Bounded.with_attack {b : Board} {B : PlayerId → Nat} (h : b.Bounded B) (a : Option AttackDecl) :
+    ({ b with attack := a } : Board).Bounded B := h.with_same rfl rfl
+theorem Board.Bounded.with_log {b : Board} {B : PlayerId → Nat} (h : b.Bounded B) (l : List Happened) :
+    ({ b with log := l } : Board).Bounded B := h.with_same rfl rfl
+theorem Board.Bounded.with_clock {b : Board} {B : PlayerId → Nat} (h : b.Bounded B) (n : Nat) :
+    ({ b with clock := n } : Board).Bounded B := h.with_same rfl rfl
+theorem Board.Bounded.with_ns {b : Board} {B : PlayerId → Nat} (h : b.Bounded B) (x : Bool) :
+    ({ b with normalSummoned := x } : Board).Bounded B := h.with_same rfl rfl
+theorem Board.Bounded.with_clock_log {b : Board} {B : PlayerId → Nat} (h : b.Bounded B) (n : Nat)
+    (l : List Happened) : ({ b with clock := n, log := l } : Board).Bounded B := h.with_same rfl rfl
+theorem Board.Bounded.toGraveMon {b : Board} {B : PlayerId → Nat} (h : b.Bounded B) (u : Nat) (c : LeaveCause) :
+    (b.toGraveMon u c).Bounded B := h.dec (Board.dec_toGraveMon _ _ _)
+theorem Board.Bounded.foldl_toGraveMon {α : Type} {xs : List α} {f : α → Nat} {cause : LeaveCause}
+    {b : Board} {B : PlayerId → Nat} (h : b.Bounded B) :
+    (xs.foldl (fun b x => b.toGraveMon (f x) cause) b).Bounded B := h.dec (Board.dec_foldl_toGraveMon _ _ _ _)
+theorem Board.Bounded.foldl_toGraveMonN {us : List Nat} {cause : LeaveCause} {b : Board} {B : PlayerId → Nat}
+    (h : b.Bounded B) : (us.foldl (fun b u => b.toGraveMon u cause) b).Bounded B :=
+  h.dec (Board.dec_foldl_toGraveMonN _ _ _)
+theorem Board.Bounded.modify_same {b : Board} {B : PlayerId → Nat} {w : PlayerId} {f : Player → Player}
+    (h : b.Bounded B) (hm : (f (b.get w)).monsters = (b.get w).monsters)
+    (hb : (f (b.get w)).backrow.length ≤ (b.get w).backrow.length) : (b.modify w f).Bounded B :=
+  h.dec (b.dec_modify_same w f hm hb)
+theorem Board.Bounded.set_same {b : Board} {B : PlayerId → Nat} {w : PlayerId} {p : Player}
+    (h : b.Bounded B) (hm : p.monsters = (b.get w).monsters) (hb : p.backrow.length ≤ (b.get w).backrow.length) :
+    (b.set w p).Bounded B := h.modify_same (f := fun _ => p) hm hb
+theorem Board.Bounded.updMon {b : Board} {B : PlayerId → Nat} (h : b.Bounded B) (w : PlayerId) (u : Nat)
+    (f : FieldMonster → FieldMonster) (hf : ∀ x, (f x).emz = x.emz) : (b.updMon w u f).Bounded B :=
+  h.dec (Board.dec_updMon _ _ _ _ hf)
+theorem Board.Bounded.detachAll {b : Board} {B : PlayerId → Nat} (h : b.Bounded B) (ms : List FieldMonster) :
+    (b.detachAll ms).1.Bounded B := h.dec (Board.dec_detachAllAux ms (b, []))
+theorem Board.Bounded.destroyAllOf {b : Board} {B : PlayerId → Nat} (h : b.Bounded B) (w : PlayerId) :
+    (b.destroyAllOf w).Bounded B := h.dec (Board.dec_foldl_toGraveMon _ _ _ _)
+theorem Board.Bounded.destroyAllBackrow {b : Board} {B : PlayerId → Nat} (h : b.Bounded B) (ws : List PlayerId) :
+    (b.destroyAllBackrow ws).Bounded B := h.dec (Board.dec_destroyAllBackrow _ _)
+
+/-- 盤面への操作を外側から1つずつ剥がして、元の盤面の `Bounded` に帰着させる -/
+macro "zone_peel" : tactic => `(tactic| repeat' (first
+  | with_reducible assumption
+  | split
+  | with_reducible apply Board.Bounded.toGraveMon
+  | with_reducible apply Board.Bounded.foldl_toGraveMon
+  | with_reducible apply Board.Bounded.foldl_toGraveMonN
+  | with_reducible apply Board.Bounded.destroyAllOf
+  | with_reducible apply Board.Bounded.destroyAllBackrow
+  | with_reducible apply Board.Bounded.detachAll
+  | (with_reducible refine Board.Bounded.place_main ?_ ?_; with_reducible assumption)
+  | (with_reducible refine Board.Bounded.place_slot ?_ ?_; with_reducible assumption)
+  | with_reducible refine Board.Bounded.updMon ?_ _ _ _ (fun x => by first | rfl | (split <;> rfl))
+  | with_reducible refine Board.Bounded.modify_same ?_ (by with_unfolding_all rfl) (by simp)
+  | with_reducible refine Board.Bounded.set_same ?_ (by with_unfolding_all rfl) (by simp)
+  | with_reducible apply Board.Bounded.with_attack
+  | with_reducible apply Board.Bounded.with_log
+  | with_reducible apply Board.Bounded.with_clock
+  | with_reducible apply Board.Bounded.with_ns
+  | with_reducible apply Board.Bounded.with_clock_log))
+
+theorem Player.slotAfter_monsters {p q : Player} (h : q.monsters = p.monsters) (r : List Nat) (isLink : Bool) :
+    q.slotAfter r isLink = p.slotAfter r isLink := by simp [Player.slotAfter, h]
+
+theorem Player.mainFree_monsters {p q : Player} (h : q.monsters = p.monsters) : q.mainFree = p.mainFree := by
+  simp [Player.mainFree, h]
+
+theorem Board.get_set_same (b : Board) (w : PlayerId) (p : Player) : (b.set w p).get w = p := by
+  cases w <;> rfl
+
+theorem Board.get_set_other (b : Board) (w v : PlayerId) (p : Player) (h : v ≠ w) : (b.set w p).get v = b.get v := by
+  cases w <;> cases v <;> simp_all [Board.set, Board.get]
+
+theorem Board.get_modify_monsters (b : Board) (w v : PlayerId) (f : Player → Player)
+    (hf : (f (b.get w)).monsters = (b.get w).monsters) : ((b.modify w f).get v).monsters = (b.get v).monsters := by
+  by_cases hv : v = w
+  · subst hv; rw [Board.get_modify_same, hf]
+  · rw [Board.get_modify_other _ _ _ _ hv]
+
+theorem Board.Bounded.place_after_extra {b : Board} {B : PlayerId → Nat} (h : b.Bounded B) {w : PlayerId}
+    {i : Nat} {c : MonsterCard} {pos : Position} {t : Nat} {e isLink : Bool} {ev : Option Event}
+    {ov : List Card} (hs : (b.get w).slotAfter [] isLink = some e) :
+    ((b.modify w fun p => { p with extra := p.extra.eraseIdx i }).place w c pos t e ev ov).Bounded B := by
+  apply Board.Bounded.place_slot (isLink := isLink) (h.modify_same rfl (Nat.le_refl _))
+  rw [Board.get_modify_same]; exact hs
+
+theorem Player.backrow_drawN {n : Nat} {p p' : Player} (h : p.drawN n = some p') : p'.backrow = p.backrow := by
+  induction n generalizing p with
+  | zero => simp [Player.drawN] at h; subst h; rfl
+  | succ n ih =>
+    simp only [Player.drawN, Option.bind_eq_some_iff] at h
+    obtain ⟨q, hq, hr⟩ := h
+    rw [ih hr]
+    unfold Player.drawOne at hq; split at hq <;> simp at hq; subst hq; rfl
+
+theorem Player.backrow_drawOne {p p' : Player} (h : p.drawOne = some p') : p'.backrow = p.backrow := by
+  unfold Player.drawOne at h; split at h <;> simp at h; subst h; rfl
+
+theorem reviveOk_mainFree {b : Board} {l : ChainLink} {w : PlayerId} {i : Nat} {m : MonsterCard}
+    (h : reviveOk b l = some (w, i, m)) : (b.get l.owner).mainFree = true := by
+  unfold reviveOk at h
+  split at h
+  · split at h
+    · rename_i hc; exact hc.2.2
+    · simp at h
+  · simp at h
+
+/-- **効果を適用してもゾーンの上限を超えない** -/
+theorem Board.Bounded.applyEffect {c : Ctx} {l : ChainLink} {b : Board} {B : PlayerId → Nat}
+    (h : b.Bounded B) : (applyEffect c l b).Bounded B := by
+  unfold YGO.applyEffect
+  cases he : l.eff <;> simp only
+  case noop => exact h
+  case revive own =>
+    split
+    · exact h
+    · rename_i w i m hr
+      apply Board.Bounded.place_main (h.modify_same rfl (by simp))
+      rw [Player.mainFree_monsters (Board.get_modify_monsters _ _ _ _ rfl)]
+      exact reviveOk_mainFree hr
+  case fusionSummon =>
+    split
+    · exact h
+    · have h1 : (l.fieldMats.foldl (fun b u => b.toGraveMon u) (b.modify l.owner fun p =>
+          let r := removeIdxs p.hand (l.handMats.map (·.1))
+          { p with hand := r.1, grave := p.grave ++ r.2 })).Bounded B :=
+        (h.modify_same rfl (Nat.le_refl _)).foldl_toGraveMonN
+      split
+      · exact h1.place_after_extra (by assumption)
+      · exact h1
+  case recruit =>
+    split
+    · split
+      · split
+        · refine Board.Bounded.place_main (h.set_same (by rfl) (by simp)) ?_
+          rw [Board.get_set_same]; assumption
+        · exact h
+      · exact h
+    · exact h
+  case burn => exact h.modify_same rfl (Nat.le_refl _)
+  case heal => exact h.modify_same rfl (Nat.le_refl _)
+  case burnPerOppMonster => exact h.modify_same rfl (Nat.le_refl _)
+  case millOpp => exact h.modify_same rfl (Nat.le_refl _)
+  case draw =>
+    split
+    · exact h
+    · rename_i p hp
+      exact h.set_same (Player.monsters_drawN hp) (by rw [Player.backrow_drawN hp]; exact Nat.le_refl _)
+  case negate =>
+    split
+    · exact h
+    · rename_i p hp
+      exact h.set_same (Player.monsters_drawN hp) (by rw [Player.backrow_drawN hp]; exact Nat.le_refl _)
+  case destroyOppMonsters => exact h.destroyAllOf _
+  case destroyAllMonsters => exact (h.destroyAllOf _).destroyAllOf _
+  case destroyTarget => exact h.foldl_toGraveMonN
+  case destroyAttacker =>
+    split
+    · exact (h.toGraveMon _ _).with_attack _
+    · exact h
+  case negateAttack => exact h.with_attack _
+  case destroyOppSpellTraps => exact h.destroyAllBackrow _
+  case destroyAllSpellTraps => exact h.destroyAllBackrow _
+  case searchMaxDef =>
+    split
+    · split
+      · exact h.set_same (by rfl) (by simp)
+      · exact h
+    · exact h
+
+/-- 魔法・罠ゾーンに戻るカードの分だけ上限を増やす -/
+def addST (B : PlayerId → Nat) (l : ChainLink) (v : PlayerId) : Nat :=
+  B v + if decide (l.owner = v) && !l.mon then 1 else 0
+
+theorem Board.Bounded.resolveLink {c : Ctx} {b : Board} {l : ChainLink} {B : PlayerId → Nat}
+    (h : b.Bounded B) : (resolveLink c b l).Bounded (addST B l) := by
+  have hB : ∀ v, B v ≤ addST B l v := fun v => by simp [addST]
+  have hA : (if b.effectNegated l then b else YGO.applyEffect c l b).Bounded B := by
+    split
+    · exact h
+    · exact h.applyEffect
+  unfold YGO.resolveLink
+  simp only
+  generalize (if b.effectNegated l then b else YGO.applyEffect c l b) = b1 at hA
+  have hg : (toGrave b1 l).Bounded B := by
+    unfold toGrave; split
+    · exact hA
+    · exact hA.modify_same rfl (Nat.le_refl _)
+  have hk : ∀ eq bond : Option Nat, l.mon = false →
+      ({ b1.modify l.owner (fun p => { p with backrow := p.backrow ++
+            [{ card := l.card, setTurn := c.turn, faceUp := true, equipTo := eq, bond,
+               since := b1.clock + 1 }] }) with clock := b1.clock + 1 } : Board).Bounded (addST B l) := by
+    intro eq bond hm
+    apply Board.Bounded.with_clock
+    intro v
+    have hv := hA v
+    by_cases hvw : v = l.owner
+    · subst hvw
+      rw [Board.get_modify_same]
+      refine ⟨hv.1, hv.2.1, ?_⟩
+      simp [addST, hm]; omega
+    · rw [Board.get_modify_other _ _ _ _ hvw]; exact ⟨hv.1, hv.2.1, Nat.le_trans hv.2.2 (hB v)⟩
+  split
+  · exact hA.mono hB
+  · rename_i hm
+    simp only [Bool.not_eq_true] at hm
+    split
+    · exact hk _ _ hm
+    · exact hk _ _ hm
+    · split
+      · split
+        · split
+          · exact hg.mono hB
+          · exact hk _ _ hm
+        · exact hg.mono hB
+      · exact hg.mono hB
+    · exact hg.mono hB
+
+theorem ownST_cons (l : ChainLink) (ls : List ChainLink) (v : PlayerId) :
+    ownST (l :: ls) v = (if decide (l.owner = v) && !l.mon then 1 else 0) + ownST ls v := by
+  unfold ownST; simp only [List.filter_cons]; split <;> simp_all; omega
+
+theorem Board.Bounded.resolveChain {c : Ctx} (ls : List ChainLink) {b : Board} (neg : Bool) {B : PlayerId → Nat}
+    (h : b.Bounded B) : (YGO.resolveChain c b neg ls).Bounded (fun v => B v + ownST ls v) := by
+  induction ls generalizing b neg B with
+  | nil => simpa [YGO.resolveChain, ownST] using h
+  | cons l rest ih =>
+    simp only [YGO.resolveChain]
+    have h1 : (if neg then toGrave b l else YGO.resolveLink c b l).Bounded (addST B l) := by
+      split
+      · unfold toGrave; split
+        · exact h.mono (fun v => by simp [addST])
+        · exact (h.modify_same rfl (Nat.le_refl _)).mono (fun v => by simp [addST])
+      · exact h.resolveLink
+    refine (ih _ h1).mono (fun v => ?_)
+    simp only [addST, ownST_cons]; omega
+
+theorem Board.Bounded.performBattle (c : Ctx) {b : Board} {B : PlayerId → Nat} (h : b.Bounded B) :
+    (YGO.performBattle c b).Bounded B := by
+  unfold YGO.performBattle
+  dsimp only
+  repeat' split
+  all_goals repeat' (first
+    | with_reducible assumption
+    | with_reducible apply Board.Bounded.toGraveMon
+    | with_reducible refine Board.Bounded.modify_same ?_ (by with_unfolding_all rfl) (Nat.le_refl _)
+    | with_reducible refine Board.Bounded.updMon ?_ _ _ _ (fun x => by first | rfl | (split <;> rfl))
+    | with_reducible apply Board.Bounded.with_log
+    | with_reducible apply Board.Bounded.with_clock
+    | with_reducible apply Board.Bounded.with_attack)
+  all_goals exact h.with_same rfl rfl
+
+theorem mkLink_owner {b : Board} {who : PlayerId} {card : Card} {eff : Effect} {speed : Nat}
+    {args : Args} {shift : Option Nat} {l : ChainLink}
+    (h : mkLink b who card eff speed args shift = .ok l) : l.owner = who := by
+  unfold mkLink at h
+  simp only [bind, Except.bind, pure, Except.pure] at h
+  repeat' split at h
+  all_goals first | (cases h; rfl) | simp_all
+
+theorem ZoneOK.bounded {b : Board} {ch : List ChainLink} (h : ZoneOK b ch) :
+    b.Bounded (fun v => spellTrapZones - ownST ch v) := fun v =>
+  ⟨(h v).1, (h v).2.1, by show _ ≤ spellTrapZones - ownST ch v; have := (h v).2.2; omega⟩
+
+theorem ZoneOK.of_bounded {b : Board} {ch : List ChainLink} {B : PlayerId → Nat} (h : b.Bounded B)
+    (hB : ∀ v, B v + ownST ch v ≤ spellTrapZones) : ZoneOK b ch :=
+  fun v => ⟨(h v).1, (h v).2.1, Nat.le_trans (Nat.add_le_add_right (h v).2.2 _) (hB v)⟩
+
+theorem ZoneOK.ownST_le {b : Board} {ch : List ChainLink} (h : ZoneOK b ch) (v : PlayerId) :
+    ownST ch v ≤ spellTrapZones := by have := (h v).2.2; omega
+
+theorem Board.dec_setMonAt_used {b : Board} {w : PlayerId} {i : Nat} {m : FieldMonster}
+    (h : (b.get w).monsters[i]? = some m) : b.Dec (b.setMonAt w i { m with effectUsed := true }) :=
+  Board.dec_setMonAt h rfl
+
+theorem zone_activateMonsterAct {c : Ctx} {s s' : ChainState} {who : PlayerId} {z i : Nat} {args : Args}
+    (hs : ZoneOK s.board s.chain) (h : activateMonsterAct c s who z i args = .ok s') :
+    ZoneOK s'.board s'.chain := by
+  have hb := hs.bounded
+  unfold activateMonsterAct at h
+  simp only [bind, Except.bind] at h
+  repeat' split at h
+  all_goals try (simp_all [throw, throwThe, MonadExceptOf.throw]; done)
+  all_goals
+    obtain ⟨h1, h2⟩ := pushLink_ok h
+    rw [h1, h2]
+    apply ZoneOK.of_bounded (B := fun v => spellTrapZones - ownST s.chain v)
+    rotate_left
+    · intro v; rw [ownST_cons]; simp; have := hs.ownST_le v; omega
+    rename_i hv
+    simp only [pure, Except.pure, Except.ok.injEq] at hv
+    subst hv
+  all_goals have hu := hb.dec (Board.dec_setMonAt_used (by assumption))
+  · exact hu
+  · exact hu.toGraveMon _ _
+  · exact hu.modify_same rfl (Nat.le_refl _)
+  · exact (hu.dec (Board.dec_setMonAt (Board.getElem_setMonAt (by assumption)) (by rfl))).modify_same rfl
+      (Nat.le_refl _)
+  · exact hu
+  · exact hu.toGraveMon _ _
+  · exact hu.modify_same rfl (Nat.le_refl _)
+  · exact (hu.dec (Board.dec_setMonAt (Board.getElem_setMonAt (by assumption)) (by rfl))).modify_same rfl
+      (Nat.le_refl _)
+
+theorem zone_activateSpellAct {c : Ctx} {s s' : ChainState} {hd : Nat} {args : Args}
+    (hs : ZoneOK s.board s.chain) (h : activateSpellAct c s hd args = .ok s') : ZoneOK s'.board s'.chain := by
+  unfold activateSpellAct at h
+  simp only [bind, Except.bind, throw, throwThe, MonadExceptOf.throw] at h
+  repeat' split at h
+  all_goals try (cases h; done)
+  have hm := mkLink_mon (by assumption : mkLink _ _ _ _ _ _ _ = .ok _)
+  have ho := mkLink_owner (by assumption : mkLink _ _ _ _ _ _ _ = .ok _)
+  obtain ⟨h1, h2⟩ := pushLink_ok h
+  rw [h1, h2]
+  rename_i hfit _ _ _ _ _ _ _
+  intro v
+  rw [ownST_cons, hm, ho]
+  have hv := hs v
+  by_cases hvw : v = c.active
+  · subst hvw
+    rw [Board.get_set_same]
+    simp only [decide_true, Bool.not_false, Bool.and_self, ite_true]
+    refine ⟨hv.1, hv.2.1, ?_⟩
+    simp only [ownST] at hv ⊢; omega
+  · have hne : c.active ≠ v := Ne.symm hvw
+    rw [Board.get_set_other _ _ _ _ hvw]
+    simp only [hne, decide_false, Bool.false_and, Bool.false_eq_true, ite_false, Nat.zero_add]
+    exact hv
+
+theorem zone_activateSetAct {c : Ctx} {s s' : ChainState} {who : PlayerId} {z : Nat} {args : Args}
+    (hs : ZoneOK s.board s.chain) (h : activateSetAct c s who z args = .ok s') : ZoneOK s'.board s'.chain := by
+  unfold activateSetAct at h
+  simp only [bind, Except.bind, throw, throwThe, MonadExceptOf.throw] at h
+  repeat' split at h
+  all_goals try (cases h; done)
+  all_goals
+    have hm := mkLink_mon (by assumption : mkLink _ _ _ _ _ _ _ = .ok _)
+    have ho := mkLink_owner (by assumption : mkLink _ _ _ _ _ _ _ = .ok _)
+    obtain ⟨_, hz⟩ : ∃ x, (s.board.get who).backrow[z]? = some x := ⟨_, by assumption⟩
+    obtain ⟨h1, h2⟩ := pushLink_ok h
+    rw [h1, h2]
+    intro v
+    rw [ownST_cons, hm, ho]
+    have hv := hs v
+    have hlen := length_eraseIdx_of_getElem? hz
+    by_cases hvw : v = who
+    · subst hvw
+      rw [Board.get_modify_same, Board.get_set_same]
+      simp only [decide_true, Bool.not_false, Bool.and_self, ite_true]
+      refine ⟨hv.1, hv.2.1, ?_⟩
+      simp only [Player.damage] at hlen ⊢; omega
+    · have hne : who ≠ v := Ne.symm hvw
+      rw [Board.get_modify_other _ _ _ _ hvw]
+      rw [Board.get_set_other _ _ _ _ hvw]
+      simp only [hne, decide_false, Bool.false_and, Bool.false_eq_true, ite_false, Nat.zero_add]
+      exact hv
+
+abbrev full : PlayerId → Nat := fun _ => spellTrapZones
+
+theorem zone_summonCore {c : Ctx} {b b' : Board} {hd : Nat} {ts : List Nat} {pos : Position}
+    (hb : b.Bounded full) (h : summonCore c b hd ts pos = .ok b') : b'.Bounded full := by
+  unfold summonCore at h
+  simp only [bind, Except.bind, throw, throwThe, MonadExceptOf.throw] at h
+  repeat' split at h
+  all_goals try (cases h; done)
+  all_goals simp only [pure, Except.pure, Except.ok.injEq] at h
+  all_goals subst h
+  all_goals
+    apply Board.Bounded.with_ns
+    exact Board.Bounded.place_main (hb.foldl_toGraveMon.modify_same rfl (Nat.le_refl _)) (by assumption)
+
+theorem zone_extraSummonAct {c : Ctx} {b b' : Board} {ei : Nat} {ms : List Nat}
+    (hb : b.Bounded full) (h : extraSummonAct c b ei ms = .ok b') : b'.Bounded full := by
+  unfold extraSummonAct at h
+  simp only [bind, Except.bind, throw, throwThe, MonadExceptOf.throw] at h
+  repeat' split at h
+  all_goals try (cases h; done)
+  all_goals simp only [pure, Except.pure, Except.ok.injEq] at h
+  all_goals subst h
+  · exact ((hb.detachAll _).modify_same rfl (Nat.le_refl _)).place_after_extra (by assumption)
+  · exact hb.foldl_toGraveMon.place_after_extra (by assumption)
+  · exact ((hb.detachAll _).modify_same rfl (Nat.le_refl _)).place_after_extra (by assumption)
+  · exact hb.foldl_toGraveMon.place_after_extra (by assumption)
+  · exact ((hb.detachAll _).modify_same rfl (Nat.le_refl _)).place_after_extra (by assumption)
+  · exact hb.foldl_toGraveMon.place_after_extra (by assumption)
+  · exact ((hb.detachAll _).modify_same rfl (Nat.le_refl _)).place_after_extra (by assumption)
+  · exact hb.foldl_toGraveMon.place_after_extra (by assumption)
+
+theorem zone_boardAct {c : Ctx} {b b' : Board} {a : Action} (hb : b.Bounded full) (h : boardAct c b a = .ok b') :
+    b'.Bounded full := by
+  cases a <;> simp only [boardAct] at h
+  case normalSummon => exact zone_summonCore hb h
+  case normalSet => exact zone_summonCore hb h
+  case extraSummon => exact zone_extraSummonAct hb h
+  case setSpellTrap =>
+    simp only [setSpellTrapAct, bind, Except.bind, throw, throwThe, MonadExceptOf.throw] at h
+    repeat' split at h
+    all_goals try (cases h; done)
+    simp only [pure, Except.pure, Except.ok.injEq] at h
+    subst h
+    rename_i hlt
+    intro v
+    have hv := hb v
+    by_cases hvw : v = c.active
+    · subst hvw
+      rw [Board.get_set_same]
+      refine ⟨hv.1, hv.2.1, ?_⟩
+      simp only [List.length_append, List.length_cons, List.length_nil]; exact hlt
+    · rw [Board.get_set_other _ _ _ _ hvw]; exact hv
+  case discard =>
+    simp only [discardAct, bind, Except.bind, throw, throwThe, MonadExceptOf.throw] at h
+    repeat' split at h
+    all_goals try (cases h; done)
+    simp only [pure, Except.pure, Except.ok.injEq] at h
+    subst h
+    exact hb.set_same rfl (Nat.le_refl _)
+  all_goals try (cases h; done)
+  all_goals
+    simp only [flipSummonAct, changePositionAct, declareAttack, bind, Except.bind,
+      throw, throwThe, MonadExceptOf.throw] at h
+    repeat' split at h
+    all_goals try (cases h; done)
+    all_goals simp only [pure, Except.pure, Except.ok.injEq] at h
+    all_goals subst h
+  all_goals first
+    | exact (hb.updMon _ _ _ (fun _ => by rfl)).with_clock_log _ _
+    | exact hb.updMon _ _ _ (fun _ => by rfl)
+    | exact (hb.updMon _ _ _ (fun _ => by rfl)).with_attack _
+
+theorem ownST_nil (v : PlayerId) : ownST [] v = 0 := rfl
+
+theorem zone_passAct (c : Ctx) {s : ChainState} (hs : ZoneOK s.board s.chain) :
+    ZoneOK (passAct c s).board (passAct c s).chain := by
+  unfold passAct
+  split
+  · split
+    · rename_i he
+      simp only [List.isEmpty_iff] at he
+      rw [he] at hs
+      refine ZoneOK.of_bounded (B := full) ((hs.bounded.mono (fun v => by simp [ownST_nil])).performBattle c)
+        (fun v => by simp [ownST_nil])
+    · refine ZoneOK.of_bounded (hs.bounded.resolveChain s.chain false) (fun v => ?_)
+      simp only [ownST_nil]; have := hs.ownST_le v; omega
+  · exact hs
+
+theorem zone_act {c : Ctx} {s s' : ChainState} {a : Action} (hs : ZoneOK s.board s.chain)
+    (h : act c s a = .ok s') : ZoneOK s'.board s'.chain := by
+  cases a <;> simp only [act] at h
+  case pass => simp only [pure, Except.pure, Except.ok.injEq] at h; subst h; exact zone_passAct c hs
+  case activateSpell => exact zone_activateSpellAct hs h
+  case activateSet => exact zone_activateSetAct hs h
+  case activateMonster => exact zone_activateMonsterAct hs h
+  all_goals try simp only [throw, throwThe, MonadExceptOf.throw] at h
+  all_goals repeat' split at h
+  all_goals try (cases h; done)
+  all_goals
+    rename_i hc _ _
+    simp only [Bool.not_eq_true', List.isEmpty_eq_false_iff, ne_eq, Decidable.not_not] at hc
+    obtain ⟨b, hb, rfl⟩ := Except.map_ok h
+    rw [hc] at hs ⊢
+    exact ZoneOK.of_bounded (zone_boardAct ((hs.bounded).mono (fun v => by simp [ownST_nil])) hb)
+      (fun v => by simp [ownST_nil])
+
+theorem ownST_all_mon {ls : List ChainLink} {v : PlayerId} (h : ∀ l ∈ ls, l.mon = true) : ownST ls v = 0 := by
+  unfold ownST
+  simp only [List.length_eq_zero_iff, List.filter_eq_nil_iff, Bool.and_eq_true, Bool.not_eq_true', not_and,
+    Bool.not_eq_false]
+  intro l hl _; exact h l hl
+
+theorem zone_processTriggers (c : Ctx) {s : ChainState} (hs : ZoneOK s.board s.chain) :
+    ZoneOK (processTriggers c s).board (processTriggers c s).chain := by
+  unfold processTriggers
+  split
+  · exact hs
+  · rename_i hc
+    simp only [Bool.not_eq_true', List.isEmpty_eq_false_iff, ne_eq, Decidable.not_not] at hc
+    dsimp only
+    rw [hc] at hs
+    have hb : ({ s.board with log := [] } : Board).Bounded full :=
+      (hs.bounded.mono (fun v => by simp [ownST_nil])).with_log _
+    split
+    · rw [hc]; exact ZoneOK.of_bounded hb (fun v => by simp [ownST_nil])
+    · refine ZoneOK.of_bounded hb (fun v => ?_)
+      rw [ownST_all_mon]
+      · simp
+      · intro l hl
+        simp only [List.mem_reverse, List.mem_append, List.mem_filter, List.mem_flatMap] at hl
+        rcases hl with ⟨⟨h, _, hl⟩, _⟩ | ⟨⟨h, _, hl⟩, _⟩ <;> exact triggeredLinks_mon hl
+
+def Game.ZoneOK (g : Game) : Prop := YGO.ZoneOK g.board g.chain
+
+theorem Player.resetMonsters_emz (p : Player) :
+    p.resetMonsters.mainCnt = p.mainCnt ∧ p.resetMonsters.emzCnt = p.emzCnt := by
+  simp only [Player.resetMonsters, Player.mainCnt, Player.emzCnt, List.filter_map, List.length_map]
+  exact ⟨rfl, rfl⟩
+
+theorem zone_nextPhase {g g' : Game} (hg : g.ZoneOK) (h : nextPhase g = .ok g') : g'.ZoneOK := by
+  unfold nextPhase at h
+  split at h
+  all_goals try (simp only [pure, Except.pure, Except.ok.injEq] at h; subst h; exact hg)
+  · split at h <;> (simp only [pure, Except.pure, Except.ok.injEq] at h; subst h; exact hg)
+  · split at h
+    · cases h
+    · dsimp only at h
+      have hb := hg
+      unfold Game.ZoneOK at hb
+      have h0 : ((({ g.board with normalSummoned := false } : Board).modify g.active Player.resetMonsters).modify
+          g.active.other Player.resetMonsters).Bounded (fun v => spellTrapZones - ownST g.chain v) := by
+        have hr : ∀ (b : Board) (w : PlayerId), b.Dec (b.modify w Player.resetMonsters) := fun b w =>
+          b.dec_modify w _ (Nat.le_of_eq (Player.resetMonsters_emz _).1)
+            (Nat.le_of_eq (Player.resetMonsters_emz _).2) (Nat.le_refl _)
+        exact (((hb.bounded).with_ns false).dec (hr _ _)).dec (hr _ _)
+      split at h
+      · simp only [pure, Except.pure, Except.ok.injEq] at h; subst h
+        exact ZoneOK.of_bounded (ch := g.chain) h0 (fun v => by have := hb.ownST_le v; omega)
+      · rename_i p hp
+        simp only [pure, Except.pure, Except.ok.injEq] at h; subst h
+        refine ZoneOK.of_bounded (ch := g.chain) (h0.set_same (Player.monsters_drawOne hp) ?_)
+          (fun v => by have := hb.ownST_le v; omega)
+        rw [Player.backrow_drawOne hp]; exact Nat.le_refl _
+
+/-- **1手進めても、ゾーンの上限を超えない** -/
+theorem step_zoneOK {g g' : Game} {a : Action} (hg : g.ZoneOK) (h : step g a = .ok g') : g'.ZoneOK := by
+  unfold step at h
+  split at h
+  · cases h
+  · split at h
+    · split at h
+      · exact zone_nextPhase hg h
+      · cases h
+    · cases ha : act g.ctx g.cs a <;> simp only [ha, Except.map] at h
+      · cases h
+      · rename_i s0
+        simp only [Except.ok.injEq] at h; subst h
+        exact zone_processTriggers g.ctx (zone_act (s := g.cs) hg ha)
+
+/-- **到達可能な全状態で、ゾーンの上限を超えない**（初期状態でフィールドが空であることから） -/
+theorem reachable_zoneOK {g : Game} (hr : Reachable g) : g.ZoneOK := by
+  induction hr with
+  | init d1 d2 e1 e2 =>
+    intro v; cases v <;> simp [Game.init, Board.get, Player.mainCnt, Player.emzCnt, ownST, monsterZones,
+      spellTrapZones]
+  | step a _ hs ih => exact step_zoneOK ih hs
+
 end YGO
