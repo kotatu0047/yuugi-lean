@@ -969,3 +969,531 @@ theorem play_count {g g' : Game} {as : List Action} (h : play g as = .ok g') : g
     · rename_i g1; rw [ih h, step_count hs]
 
 end YGO
+
+namespace YGO
+
+/-! ## uid が重複しないこと -/
+
+def Board.uidsOf (b : Board) (v : PlayerId) : List Nat := (b.get v).monsters.map (·.uid)
+
+def Board.uids (b : Board) : List Nat := b.uidsOf .one ++ b.uidsOf .two
+
+/-- フィールドのモンスターの uid は互いに異なり、すべて `nextUid` 未満 -/
+def Board.UidOK (b : Board) : Prop := b.uids.Nodup ∧ ∀ u ∈ b.uids, u < b.nextUid
+
+/-- モンスターが減るか変わらないだけ（uid は増えない） -/
+def Board.Shrink (b b' : Board) : Prop :=
+  (∀ v, (b'.uidsOf v).Sublist (b.uidsOf v)) ∧ b.nextUid ≤ b'.nextUid
+
+theorem Board.Shrink.refl (b : Board) : b.Shrink b := ⟨fun _ => List.Sublist.refl _, Nat.le_refl _⟩
+
+theorem Board.Shrink.trans {b b' b'' : Board} (h1 : b.Shrink b') (h2 : b'.Shrink b'') : b.Shrink b'' :=
+  ⟨fun v => (h2.1 v).trans (h1.1 v), Nat.le_trans h1.2 h2.2⟩
+
+theorem Board.UidOK.shrink {b b' : Board} (h : b.UidOK) (hs : b.Shrink b') : b'.UidOK := by
+  have hsub : b'.uids.Sublist b.uids := (hs.1 .one).append (hs.1 .two)
+  exact ⟨h.1.sublist hsub, fun u hu => Nat.lt_of_lt_of_le (h.2 u (hsub.subset hu)) hs.2⟩
+
+theorem Board.Shrink.same {b b' : Board} (h1 : b'.p1.monsters = b.p1.monsters)
+    (h2 : b'.p2.monsters = b.p2.monsters) (hn : b.nextUid ≤ b'.nextUid) : b.Shrink b' := by
+  refine ⟨fun v => ?_, hn⟩
+  cases v <;> simp [Board.uidsOf, Board.get, h1, h2]
+
+theorem Board.shrink_modify (b : Board) (w : PlayerId) (f : Player → Player)
+    (hf : ((f (b.get w)).monsters.map (·.uid)).Sublist ((b.get w).monsters.map (·.uid))) :
+    b.Shrink (b.modify w f) := by
+  refine ⟨fun v => ?_, by cases w <;> exact Nat.le_refl _⟩
+  by_cases hv : v = w
+  · subst hv; simp only [Board.uidsOf, Board.get_modify_same]; exact hf
+  · simp only [Board.uidsOf, Board.get_modify_other _ _ _ _ hv]; exact List.Sublist.refl _
+
+theorem Board.shrink_modify_eq (b : Board) (w : PlayerId) (f : Player → Player)
+    (hf : (f (b.get w)).monsters = (b.get w).monsters) : b.Shrink (b.modify w f) :=
+  b.shrink_modify w f (by rw [hf]; exact List.Sublist.refl _)
+
+theorem Board.shrink_set (b : Board) (w : PlayerId) (p : Player) (hp : p.monsters = (b.get w).monsters) :
+    b.Shrink (b.set w p) := b.shrink_modify_eq w (fun _ => p) hp
+
+theorem Board.uidOK_place {b : Board} (h : b.UidOK) (w : PlayerId) (c : MonsterCard) (pos : Position)
+    (t : Nat) (emz : Bool) (ev : Option Event) (ov : List Card) :
+    (b.place w c pos t emz ev ov).UidOK := by
+  obtain ⟨hn, hb⟩ := h
+  have hfresh : b.nextUid ∉ b.uids := fun hm => Nat.lt_irrefl _ (hb _ hm)
+  cases w <;> simp only [Board.UidOK, Board.uids, Board.uidsOf, Board.place, Board.modify, Board.set,
+    Board.get, List.map_append, List.map_cons, List.map_nil] at hn hb hfresh ⊢
+  · constructor
+    · rw [List.append_assoc]
+      refine List.nodup_append.mpr ⟨hn.sublist (List.sublist_append_left _ _), ?_, ?_⟩
+      · refine List.nodup_append.mpr ⟨(by simp : [b.nextUid].Nodup), hn.sublist (List.sublist_append_right _ _), ?_⟩
+        intro a ha b' hb' hab; simp at ha; subst ha; subst hab; exact hfresh (List.mem_append_right _ hb')
+      · intro a ha b' hb' hab
+        simp only [List.mem_append, List.mem_singleton] at hb'
+        rcases hb' with rfl | hb'
+        · subst hab; exact hfresh (List.mem_append_left _ ha)
+        · exact (List.nodup_append.mp hn).2.2 a ha b' hb' hab
+    · intro u hu
+      simp only [List.mem_append, List.mem_singleton] at hu
+      rcases hu with (hu | rfl) | hu
+      · exact Nat.lt_succ_of_lt (hb u (List.mem_append_left _ hu))
+      · exact Nat.lt_succ_self _
+      · exact Nat.lt_succ_of_lt (hb u (List.mem_append_right _ hu))
+  · constructor
+    · refine List.nodup_append.mpr ⟨hn.sublist (List.sublist_append_left _ _),
+        List.nodup_append.mpr ⟨hn.sublist (List.sublist_append_right _ _), (by simp : [b.nextUid].Nodup), ?_⟩, ?_⟩
+      · intro a ha b' hb' hab; simp at hb'; subst hb'; subst hab; exact hfresh (List.mem_append_right _ ha)
+      · intro a ha b' hb' hab
+        simp only [List.mem_append, List.mem_singleton] at hb'
+        rcases hb' with hb' | rfl
+        · exact (List.nodup_append.mp hn).2.2 a ha b' hb' hab
+        · subst hab; exact hfresh (List.mem_append_left _ ha)
+    · intro u hu
+      simp only [List.mem_append, List.mem_singleton] at hu
+      rcases hu with hu | hu | rfl
+      · exact Nat.lt_succ_of_lt (hb u (List.mem_append_left _ hu))
+      · exact Nat.lt_succ_of_lt (hb u (List.mem_append_right _ hu))
+      · exact Nat.lt_succ_self _
+
+theorem Board.Shrink.with {b b' : Board} (h1 : b'.p1 = b.p1) (h2 : b'.p2 = b.p2) (hn : b'.nextUid = b.nextUid) :
+    b.Shrink b' := Board.Shrink.same (by rw [h1]) (by rw [h2]) (Nat.le_of_eq hn.symm)
+
+theorem Board.shrink_detach {b b' : Board} {u : Nat} {w : PlayerId} {m : FieldMonster}
+    (h : b.detach u = some (b', w, m)) : b.Shrink b' := by
+  unfold Board.detach at h
+  cases hf : b.findMonIdx u with
+  | none => simp [hf] at h
+  | some wi =>
+    obtain ⟨w0, i⟩ := wi
+    cases hm : (b.get w0).monsters[i]? with
+    | none => simp [hf, hm] at h
+    | some m0 =>
+      simp only [hf, hm, Option.bind_eq_bind, Option.bind_some, Option.pure_def, Option.some.injEq,
+        Prod.mk.injEq] at h
+      obtain ⟨rfl, rfl, rfl⟩ := h
+      refine ((b.shrink_modify w0 _ ?_).trans (Board.shrink_modify_eq _ _ _ (by rfl))).trans
+        (Board.shrink_modify_eq _ _ _ (by rfl))
+      exact (List.eraseIdx_sublist _ _).map _
+
+theorem Board.shrink_toGraveMon (b : Board) (u : Nat) (cause : LeaveCause) :
+    b.Shrink (b.toGraveMon u cause) := by
+  unfold Board.toGraveMon
+  split
+  · exact Board.Shrink.refl _
+  · rename_i b' w m hd
+    refine (Board.shrink_detach hd).trans ((b'.shrink_modify_eq w
+      (fun p => { p with grave := p.grave ++ m.overlays ++ [.monster m.card] }) rfl).trans ?_)
+    by_cases hc : (cause == LeaveCause.sent) = true
+    · simp only [hc, ite_true]; exact Board.Shrink.with rfl rfl rfl
+    · simp only [hc, Bool.false_eq_true, ite_false]
+      refine ⟨fun v => ?_, ?_⟩
+      · cases v <;> cases w <;> simp [Board.uidsOf, Board.modify, Board.set, Board.get] <;>
+          exact List.Sublist.refl _
+      · cases w <;> simp [Board.modify, Board.set]
+
+theorem Board.shrink_foldl_toGraveMon {α : Type} (xs : List α) (f : α → Nat) (cause : LeaveCause)
+    (b : Board) : b.Shrink (xs.foldl (fun b x => b.toGraveMon (f x) cause) b) := by
+  induction xs generalizing b with
+  | nil => exact Board.Shrink.refl _
+  | cons x xs ih => exact (Board.shrink_toGraveMon _ _ _).trans (ih _)
+
+theorem Board.shrink_foldl_toGraveMonN (us : List Nat) (cause : LeaveCause) (b : Board) :
+    b.Shrink (us.foldl (fun b u => b.toGraveMon u cause) b) :=
+  Board.shrink_foldl_toGraveMon us id cause b
+
+theorem Board.shrink_destroyAllOf (b : Board) (w : PlayerId) : b.Shrink (b.destroyAllOf w) :=
+  Board.shrink_foldl_toGraveMon _ _ _ _
+
+theorem Board.shrink_destroyAllBackrow (b : Board) (ws : List PlayerId) : b.Shrink (b.destroyAllBackrow ws) := by
+  unfold Board.destroyAllBackrow
+  simp only
+  refine Board.Shrink.trans ?_ (Board.shrink_foldl_toGraveMonN _ _ _)
+  generalize b = b0
+  induction ws generalizing b0 with
+  | nil => exact Board.Shrink.refl _
+  | cons w ws ih => exact (Board.shrink_modify_eq _ _ _ (by rfl)).trans (ih _)
+
+theorem Board.shrink_updMon (b : Board) (w : PlayerId) (u : Nat) (f : FieldMonster → FieldMonster)
+    (hf : ∀ x, (f x).uid = x.uid) : b.Shrink (b.updMon w u f) := by
+  unfold Board.updMon
+  apply Board.shrink_modify
+  simp only [List.map_map]
+  rw [show ((·.uid) ∘ fun m : FieldMonster => if m.uid = u then f m else m) = (·.uid) from by
+    funext x; simp only [Function.comp]; split <;> simp [hf]]
+  exact List.Sublist.refl _
+
+theorem Board.shrink_setMonAt {b : Board} {w : PlayerId} {i : Nat} {m m' : FieldMonster}
+    (h : (b.get w).monsters[i]? = some m) (hu : m'.uid = m.uid) : b.Shrink (b.setMonAt w i m') := by
+  unfold Board.setMonAt
+  apply Board.shrink_modify
+  have : ((b.get w).monsters.set i m').map (·.uid) = (b.get w).monsters.map (·.uid) := by
+    rw [List.map_set]
+    have hi := List.getElem?_eq_some_iff.mp h
+    rw [hu]
+    apply List.ext_getElem? ; intro j
+    by_cases hj : j = i
+    · subst hj; simp [hi.1, ← hi.2]
+    · simp [Ne.symm hj]
+  simp only; rw [this]; exact List.Sublist.refl _
+
+theorem Board.shrink_damage (b : Board) (w : PlayerId) (n : Nat) : b.Shrink (b.modify w (·.damage n)) :=
+  Board.shrink_modify_eq _ _ _ rfl
+
+theorem Player.monsters_drawN {n : Nat} {p p' : Player} (h : p.drawN n = some p') : p'.monsters = p.monsters := by
+  induction n generalizing p with
+  | zero => simp [Player.drawN] at h; subst h; rfl
+  | succ n ih =>
+    simp only [Player.drawN, Option.bind_eq_some_iff] at h
+    obtain ⟨q, hq, hr⟩ := h
+    rw [ih hr]
+    unfold Player.drawOne at hq; split at hq <;> simp at hq; subst hq; rfl
+
+theorem Player.monsters_drawOne {p p' : Player} (h : p.drawOne = some p') : p'.monsters = p.monsters :=
+  Player.monsters_drawN (n := 1) (by simp [Player.drawN, h])
+
+/-- **効果を適用しても uid は重複しない** -/
+theorem Board.uidOK_applyEffect {c : Ctx} {l : ChainLink} {b : Board} (h : b.UidOK) :
+    (applyEffect c l b).UidOK := by
+  unfold applyEffect
+  cases he : l.eff <;> simp only
+  case noop => exact h
+  case burn => exact h.shrink (Board.shrink_damage _ _ _)
+  case heal => exact h.shrink (Board.shrink_modify_eq _ _ _ (by rfl))
+  case draw n =>
+    split
+    · exact h
+    · rename_i p hp; exact h.shrink (Board.shrink_set _ _ _ (Player.monsters_drawN hp))
+  case destroyOppMonsters => exact h.shrink (Board.shrink_destroyAllOf _ _)
+  case destroyAllMonsters => exact h.shrink ((Board.shrink_destroyAllOf _ _).trans (Board.shrink_destroyAllOf _ _))
+  case burnPerOppMonster => exact h.shrink (Board.shrink_damage _ _ _)
+  case negate n =>
+    split
+    · exact h
+    · rename_i p hp; exact h.shrink (Board.shrink_set _ _ _ (Player.monsters_drawN hp))
+  case destroyTarget => exact h.shrink (Board.shrink_foldl_toGraveMonN _ _ _)
+  case revive own =>
+    split
+    · exact h
+    · exact Board.uidOK_place (h.shrink (Board.shrink_modify_eq _ _ _ (by rfl))) _ _ _ _ _ _ _
+  case fusionSummon =>
+    split
+    · exact h
+    · have h1 := h.shrink ((Board.shrink_modify_eq b l.owner (fun p =>
+          let r := removeIdxs p.hand (l.handMats.map (·.1))
+          { p with hand := r.1, grave := p.grave ++ r.2 }) rfl).trans
+        (Board.shrink_foldl_toGraveMonN l.fieldMats LeaveCause.sent _))
+      split
+      · exact Board.uidOK_place (h1.shrink (Board.shrink_modify_eq _ _ _ (by rfl))) _ _ _ _ _ _ _
+      · exact h1
+  case destroyAttacker =>
+    split
+    · exact (h.shrink (Board.shrink_toGraveMon _ _ _)).shrink (Board.Shrink.with rfl rfl rfl)
+    · exact h
+  case negateAttack => exact h.shrink (Board.Shrink.with rfl rfl rfl)
+  case destroyOppSpellTraps => exact h.shrink (Board.shrink_destroyAllBackrow _ _)
+  case destroyAllSpellTraps => exact h.shrink (Board.shrink_destroyAllBackrow _ _)
+  case millOpp => exact h.shrink (Board.shrink_modify_eq _ _ _ (by rfl))
+  case recruit =>
+    split
+    · split
+      · split
+        · exact Board.uidOK_place (h.shrink (Board.shrink_set _ _ _ (by rfl))) _ _ _ _ _ _ _
+        · exact h
+      · exact h
+    · exact h
+  case searchMaxDef =>
+    split
+    · split
+      · exact h.shrink (Board.shrink_set _ _ _ (by rfl))
+      · exact h
+    · exact h
+
+theorem Board.UidOK.same {b b' : Board} (h : b.UidOK) (h1 : b'.p1 = b.p1) (h2 : b'.p2 = b.p2)
+    (hn : b'.nextUid = b.nextUid) : b'.UidOK := h.shrink (Board.Shrink.with h1 h2 hn)
+
+theorem Board.UidOK.modify_eq {b : Board} {w : PlayerId} {f : Player → Player} (h : b.UidOK)
+    (hf : (f (b.get w)).monsters = (b.get w).monsters) : (b.modify w f).UidOK :=
+  h.shrink (b.shrink_modify_eq w f hf)
+
+theorem Board.UidOK.set_eq {b : Board} {w : PlayerId} {p : Player} (h : b.UidOK)
+    (hp : p.monsters = (b.get w).monsters) : (b.set w p).UidOK :=
+  h.shrink (b.shrink_set w p hp)
+
+theorem Board.UidOK.toGraveMon {b : Board} (h : b.UidOK) (u : Nat) (c : LeaveCause) :
+    (b.toGraveMon u c).UidOK := h.shrink (Board.shrink_toGraveMon _ _ _)
+
+theorem Board.UidOK.updMon {b : Board} (h : b.UidOK) (w : PlayerId) (u : Nat) (f : FieldMonster → FieldMonster)
+    (hf : ∀ x, (f x).uid = x.uid) : (b.updMon w u f).UidOK := h.shrink (Board.shrink_updMon _ _ _ _ hf)
+
+theorem Board.uidOK_resolveLink {c : Ctx} {b : Board} {l : ChainLink} (h : b.UidOK) :
+    (resolveLink c b l).UidOK := by
+  have hA : (if b.effectNegated l then b else applyEffect c l b).UidOK := by
+    split
+    · exact h
+    · exact Board.uidOK_applyEffect h
+  unfold resolveLink
+  simp only
+  generalize (if b.effectNegated l then b else applyEffect c l b) = b1 at hA
+  split
+  · exact hA
+  · have hg : (toGrave b1 l).UidOK := by
+      unfold toGrave; split
+      · exact hA
+      · exact hA.modify_eq (by rfl)
+    have hk : ∀ eq bond : Option Nat, ({ b1.modify l.owner (fun p => { p with backrow := p.backrow ++
+            [{ card := l.card, setTurn := c.turn, faceUp := true, equipTo := eq, bond,
+               since := b1.clock + 1 }] }) with clock := b1.clock + 1 } : Board).UidOK := by
+      intro eq bond
+      exact (hA.modify_eq (by rfl)).same rfl rfl rfl
+    split
+    · exact hk _ _
+    · exact hk _ _
+    · split
+      · split
+        · split
+          · exact hg
+          · exact hk _ _
+        · exact hg
+      · exact hg
+    · exact hg
+
+theorem Board.uidOK_resolveChain (c : Ctx) (ls : List ChainLink) {b : Board} (neg : Bool) (h : b.UidOK) :
+    (resolveChain c b neg ls).UidOK := by
+  induction ls generalizing b neg with
+  | nil => exact h
+  | cons l rest ih =>
+    simp only [resolveChain]
+    apply ih
+    split
+    · unfold toGrave; split
+      · exact h
+      · exact h.modify_eq (by rfl)
+    · exact Board.uidOK_resolveLink h
+
+theorem Board.UidOK.with_attack {b : Board} (h : b.UidOK) (a : Option AttackDecl) :
+    ({ b with attack := a } : Board).UidOK := h.same rfl rfl rfl
+theorem Board.UidOK.with_log {b : Board} (h : b.UidOK) (l : List Happened) :
+    ({ b with log := l } : Board).UidOK := h.same rfl rfl rfl
+theorem Board.UidOK.with_clock {b : Board} (h : b.UidOK) (n : Nat) :
+    ({ b with clock := n } : Board).UidOK := h.same rfl rfl rfl
+theorem Board.UidOK.with_clock_log {b : Board} (h : b.UidOK) (n : Nat) (l : List Happened) :
+    ({ b with clock := n, log := l } : Board).UidOK := h.same rfl rfl rfl
+theorem Board.UidOK.with_ns {b : Board} (h : b.UidOK) (x : Bool) :
+    ({ b with normalSummoned := x } : Board).UidOK := h.same rfl rfl rfl
+theorem Board.UidOK.foldl_toGraveMon {α : Type} {xs : List α} {f : α → Nat} {cause : LeaveCause}
+    {b : Board} (h : b.UidOK) : (xs.foldl (fun b x => b.toGraveMon (f x) cause) b).UidOK :=
+  h.shrink (Board.shrink_foldl_toGraveMon _ _ _ _)
+theorem Board.UidOK.foldl_toGraveMonN {us : List Nat} {cause : LeaveCause}
+    {b : Board} (h : b.UidOK) : (us.foldl (fun b u => b.toGraveMon u cause) b).UidOK :=
+  h.shrink (Board.shrink_foldl_toGraveMonN _ _ _)
+
+/-- 盤面への操作を外側から1つずつ剥がして、元の盤面の `UidOK` に帰着させる -/
+macro "uid_peel" : tactic => `(tactic| repeat' (first
+  | with_reducible assumption
+  | split
+  | with_reducible apply Board.UidOK.toGraveMon
+  | with_reducible apply Board.uidOK_place
+  | with_reducible apply Board.UidOK.foldl_toGraveMon
+  | with_reducible apply Board.UidOK.foldl_toGraveMonN
+  | with_reducible refine Board.UidOK.updMon ?_ _ _ _ (fun x => by first | rfl | (split <;> rfl))
+  | with_reducible refine Board.UidOK.modify_eq ?_ (by with_unfolding_all rfl)
+  | with_reducible refine Board.UidOK.set_eq ?_ (by with_unfolding_all rfl)
+  | with_reducible apply Board.UidOK.with_attack
+  | with_reducible apply Board.UidOK.with_log
+  | with_reducible apply Board.UidOK.with_clock
+  | with_reducible apply Board.UidOK.with_ns
+  | with_reducible apply Board.UidOK.with_clock_log))
+
+theorem Board.uidOK_performBattle (c : Ctx) {b : Board} (h : b.UidOK) : (performBattle c b).UidOK := by
+  unfold performBattle
+  dsimp only
+  uid_peel
+  all_goals exact h.same rfl rfl rfl
+
+theorem Board.shrink_detachAllAux (ms : List FieldMonster) (acc : Board × List FieldMonster) :
+    acc.1.Shrink (Board.detachAllAux acc ms).1 := by
+  induction ms generalizing acc with
+  | nil => exact Board.Shrink.refl _
+  | cons m ms ih =>
+    simp only [Board.detachAllAux]
+    refine Board.Shrink.trans ?_ (ih _)
+    split
+    · rename_i b x hd; exact Board.shrink_detach hd
+    · exact Board.Shrink.refl _
+
+theorem Board.UidOK.detachAll {b : Board} (h : b.UidOK) (ms : List FieldMonster) : (b.detachAll ms).1.UidOK :=
+  h.shrink (Board.shrink_detachAllAux ms (b, []))
+
+theorem Board.UidOK.setMonAt {b : Board} {w : PlayerId} {i : Nat} {m m' : FieldMonster} (h : b.UidOK)
+    (hm : (b.get w).monsters[i]? = some m) (hu : m'.uid = m.uid) : (b.setMonAt w i m').UidOK :=
+  h.shrink (Board.shrink_setMonAt hm hu)
+
+theorem uidOK_pushLink {s s' : ChainState} {b : Board} {l : ChainLink} (hb : b.UidOK)
+    (h : pushLink s b l = .ok s') : s'.board.UidOK := by
+  rw [(pushLink_ok h).1]; exact hb
+
+theorem uidOK_activateSpellAct {c : Ctx} {s s' : ChainState} {hd : Nat} {args : Args} (hs : s.board.UidOK)
+    (h : activateSpellAct c s hd args = .ok s') : s'.board.UidOK := by
+  unfold activateSpellAct at h
+  simp only [bind, Except.bind, throw, throwThe, MonadExceptOf.throw] at h
+  repeat' split at h
+  all_goals try (cases h; done)
+  all_goals exact uidOK_pushLink (hs.set_eq (by rfl)) h
+
+theorem uidOK_activateSetAct {c : Ctx} {s s' : ChainState} {who : PlayerId} {z : Nat} {args : Args}
+    (hs : s.board.UidOK) (h : activateSetAct c s who z args = .ok s') : s'.board.UidOK := by
+  unfold activateSetAct at h
+  simp only [bind, Except.bind, throw, throwThe, MonadExceptOf.throw] at h
+  repeat' split at h
+  all_goals try (cases h; done)
+  all_goals exact uidOK_pushLink ((hs.set_eq (by rfl)).modify_eq (by rfl)) h
+
+theorem Board.UidOK.setMonAt_used {b : Board} {w : PlayerId} {i : Nat} {m : FieldMonster} (h : b.UidOK)
+    (hm : (b.get w).monsters[i]? = some m) : (b.setMonAt w i { m with effectUsed := true }).UidOK :=
+  h.setMonAt hm rfl
+
+theorem uidOK_activateMonsterAct {c : Ctx} {s s' : ChainState} {who : PlayerId} {z i : Nat} {args : Args}
+    (hs : s.board.UidOK) (h : activateMonsterAct c s who z i args = .ok s') : s'.board.UidOK := by
+  unfold activateMonsterAct at h
+  simp only [bind, Except.bind] at h
+  repeat' split at h
+  all_goals try (simp_all [throw, throwThe, MonadExceptOf.throw]; done)
+  all_goals
+    apply uidOK_pushLink _ h
+    rename_i hv
+    simp only [pure, Except.pure, Except.ok.injEq] at hv
+    subst hv
+  · exact hs.setMonAt_used (by assumption)
+  · exact (hs.setMonAt_used (by assumption)).toGraveMon _ _
+  · exact (hs.setMonAt_used (by assumption)).modify_eq (by rfl)
+  · exact ((hs.setMonAt_used (by assumption)).setMonAt (Board.getElem_setMonAt (by assumption)) (by rfl)).modify_eq
+      (by rfl)
+  · exact hs.setMonAt_used (by assumption)
+  · exact (hs.setMonAt_used (by assumption)).toGraveMon _ _
+  · exact (hs.setMonAt_used (by assumption)).modify_eq (by rfl)
+  · exact ((hs.setMonAt_used (by assumption)).setMonAt (Board.getElem_setMonAt (by assumption)) (by rfl)).modify_eq
+      (by rfl)
+
+theorem uidOK_summonCore {c : Ctx} {b b' : Board} {hd : Nat} {ts : List Nat} {pos : Position}
+    (hb : b.UidOK) (h : summonCore c b hd ts pos = .ok b') : b'.UidOK := by
+  unfold summonCore at h
+  simp only [bind, Except.bind, throw, throwThe, MonadExceptOf.throw] at h
+  repeat' split at h
+  all_goals try (cases h; done)
+  all_goals simp only [pure, Except.pure, Except.ok.injEq] at h
+  all_goals subst h
+  all_goals uid_peel
+
+theorem uidOK_extraSummonAct {c : Ctx} {b b' : Board} {ei : Nat} {ms : List Nat}
+    (hb : b.UidOK) (h : extraSummonAct c b ei ms = .ok b') : b'.UidOK := by
+  unfold extraSummonAct at h
+  simp only [bind, Except.bind, throw, throwThe, MonadExceptOf.throw] at h
+  repeat' split at h
+  all_goals try (cases h; done)
+  all_goals simp only [pure, Except.pure, Except.ok.injEq] at h
+  all_goals subst h
+  · exact Board.uidOK_place (((hb.detachAll _).modify_eq (by rfl)).modify_eq (by rfl)) _ _ _ _ _ _ _
+  · exact Board.uidOK_place (hb.foldl_toGraveMon.modify_eq (by rfl)) _ _ _ _ _ _ _
+  · exact Board.uidOK_place (((hb.detachAll _).modify_eq (by rfl)).modify_eq (by rfl)) _ _ _ _ _ _ _
+  · exact Board.uidOK_place (hb.foldl_toGraveMon.modify_eq (by rfl)) _ _ _ _ _ _ _
+  · exact Board.uidOK_place (((hb.detachAll _).modify_eq (by rfl)).modify_eq (by rfl)) _ _ _ _ _ _ _
+  · exact Board.uidOK_place (hb.foldl_toGraveMon.modify_eq (by rfl)) _ _ _ _ _ _ _
+  · exact Board.uidOK_place (((hb.detachAll _).modify_eq (by rfl)).modify_eq (by rfl)) _ _ _ _ _ _ _
+  · exact Board.uidOK_place (hb.foldl_toGraveMon.modify_eq (by rfl)) _ _ _ _ _ _ _
+
+theorem uidOK_boardAct {c : Ctx} {b b' : Board} {a : Action} (hb : b.UidOK) (h : boardAct c b a = .ok b') :
+    b'.UidOK := by
+  cases a <;> simp only [boardAct] at h
+  case normalSummon => exact uidOK_summonCore hb h
+  case normalSet => exact uidOK_summonCore hb h
+  case extraSummon => exact uidOK_extraSummonAct hb h
+  all_goals try (cases h; done)
+  all_goals
+    simp only [flipSummonAct, changePositionAct, setSpellTrapAct, declareAttack, discardAct, bind, Except.bind,
+      throw, throwThe, MonadExceptOf.throw] at h
+    repeat' split at h
+    all_goals try (cases h; done)
+    all_goals simp only [pure, Except.pure, Except.ok.injEq] at h
+    all_goals subst h
+    all_goals uid_peel
+
+theorem uidOK_passAct (c : Ctx) {s : ChainState} (hs : s.board.UidOK) : (passAct c s).board.UidOK := by
+  unfold passAct
+  split
+  · split
+    · exact Board.uidOK_performBattle c hs
+    · exact Board.uidOK_resolveChain c _ _ hs
+  · exact hs
+
+theorem uidOK_act {c : Ctx} {s s' : ChainState} {a : Action} (hs : s.board.UidOK) (h : act c s a = .ok s') :
+    s'.board.UidOK := by
+  cases a <;> simp only [act] at h
+  case pass => simp only [pure, Except.pure, Except.ok.injEq] at h; subst h; exact uidOK_passAct c hs
+  case activateSpell => exact uidOK_activateSpellAct hs h
+  case activateSet => exact uidOK_activateSetAct hs h
+  case activateMonster => exact uidOK_activateMonsterAct hs h
+  all_goals try simp only [throw, throwThe, MonadExceptOf.throw] at h
+  all_goals repeat' split at h
+  all_goals try (cases h; done)
+  all_goals
+    obtain ⟨b, hb, rfl⟩ := Except.map_ok h
+    exact uidOK_boardAct hs hb
+
+theorem uidOK_processTriggers (c : Ctx) {s : ChainState} (hs : s.board.UidOK) :
+    (processTriggers c s).board.UidOK := by
+  unfold processTriggers
+  split
+  · exact hs
+  · dsimp only
+    split
+    · exact hs.with_log _
+    · exact hs.with_log _
+
+theorem Player.monsters_resetMonsters_uid (p : Player) :
+    p.resetMonsters.monsters.map (·.uid) = p.monsters.map (·.uid) := by
+  simp [Player.resetMonsters]
+
+def Game.UidOK (g : Game) : Prop := g.board.UidOK
+
+theorem uidOK_nextPhase {g g' : Game} (hg : g.UidOK) (h : nextPhase g = .ok g') : g'.UidOK := by
+  unfold nextPhase at h
+  split at h
+  all_goals try (simp only [pure, Except.pure, Except.ok.injEq] at h; subst h; exact hg)
+  · split at h <;> (simp only [pure, Except.pure, Except.ok.injEq] at h; subst h; exact hg)
+  · split at h
+    · cases h
+    · dsimp only at h
+      have h0 : (({ g.board with normalSummoned := false } : Board).modify g.active Player.resetMonsters).modify
+          g.active.other Player.resetMonsters |>.UidOK := by
+        refine Board.UidOK.shrink (hg.with_ns false) ?_
+        refine (Board.shrink_modify _ _ _ ?_).trans (Board.shrink_modify _ _ _ ?_) <;>
+          rw [Player.monsters_resetMonsters_uid] <;> exact List.Sublist.refl _
+      split at h
+      · simp only [pure, Except.pure, Except.ok.injEq] at h; subst h; exact h0
+      · rename_i p hp
+        simp only [pure, Except.pure, Except.ok.injEq] at h; subst h
+        exact h0.set_eq (Player.monsters_drawOne hp)
+
+/-- **1手進めても、フィールドのモンスターの uid は重複しない** -/
+theorem step_uidOK {g g' : Game} {a : Action} (hg : g.UidOK) (h : step g a = .ok g') : g'.UidOK := by
+  unfold step at h
+  split at h
+  · cases h
+  · split at h
+    · split at h
+      · exact uidOK_nextPhase hg h
+      · cases h
+    · cases ha : act g.ctx g.cs a <;> simp only [ha, Except.map] at h
+      · cases h
+      · rename_i s0
+        simp only [Except.ok.injEq] at h; subst h
+        exact uidOK_processTriggers g.ctx (uidOK_act (show g.cs.board.UidOK from hg) ha)
+
+theorem init_uidOK (d1 d2 e1 e2 : List Card) : (Game.init d1 d2 e1 e2).UidOK := by
+  simp [Game.UidOK, Board.UidOK, Board.uids, Board.uidsOf, Board.get, Game.init]
+
+/-- **到達可能な全状態で、フィールドのモンスターの uid は重複しない** -/
+theorem reachable_uidOK {g : Game} (hr : Reachable g) : g.UidOK := by
+  induction hr with
+  | init d1 d2 e1 e2 => exact init_uidOK d1 d2 e1 e2
+  | step a _ hs ih => exact step_uidOK ih hs
+
+end YGO
