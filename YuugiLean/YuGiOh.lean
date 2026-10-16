@@ -20,6 +20,7 @@ Lean 4 コアのみ（Mathlib 不要）で動く、遊戯王OCGの基本ルー�
 * 誘発効果は、チェーンが空になった時点で SEGOC（ターンプレイヤーの効果が先）の順にチェーンを組む
 * 効果の無効化（スキルドレイン）：処理時にフィールドに表側表示で存在するモンスターの効果のみ無効
 * 罠の封殺（サイコ・ショッカー、王宮のお触れ）：罠の発動の禁止、フィールドの罠の効果の無効化
+* 同時に有効に戻る永続効果は、ターンプレイヤーのものから1つずつ適用する（同じプレイヤーのものは先に適用されていた順）
 * 永続効果どうしの無効化は適用が始まった順番（タイムスタンプ）で判定する：
   一方的に無効にする効果は順番に関係なく優先され、互いに無効にし合う効果は先に適用された方が優先される。
   無効にしている側が無効化されれば、無効にされていた側は有効に戻り、その時点で新たに適用されたものとして扱う。
@@ -102,6 +103,7 @@ inductive Aura where
   | oppAtkDownPerLevel (n : Nat)            -- 相手の表側モンスターの攻撃力はレベル×n ダウン
   | noAttackLevelGE (n : Nat)               -- レベル n 以上のモンスターは攻撃宣言できない
   | negateMonsterEffects                    -- フィールドの表側表示モンスターの効果を無効にする
+  | negateOppMonsterEffects                 -- 相手フィールドの表側表示モンスターの効果を無効にする
   | noTrapActivation                        -- お互いに罠カードを発動できない
   | negateTraps                             -- （このカード以外の）フィールドの罠カードの効果を無効にする
   deriving Repr, DecidableEq
@@ -323,6 +325,7 @@ structure Board where
   normalSummoned : Bool := false
   nextUid : Nat := 0
   clock   : Nat := 0             -- 永続効果の適用順を決める時刻
+  turnPlayer : PlayerId := .one  -- ターンプレイヤー（同時に有効に戻る永続効果の適用順を決める）
   attack  : Option AttackDecl := none
   log     : List Happened := []
   deriving Repr, DecidableEq
@@ -545,6 +548,7 @@ def AuraSrc.negates (t s : AuraSrc) : Bool :=
   t.key != s.key && t.auras.any fun a =>
     match a, s.kind with
     | .negateMonsterEffects, .monster => true
+    | .negateOppMonsterEffects, .monster => t.who != s.who
     | .negateTraps, .trap => true
     | _, _ => false
 
@@ -563,39 +567,62 @@ def beatenIn (srcs : List AuraSrc) (s : AuraSrc) : Bool :=
 def newestTime (srcs : List AuraSrc) (clock : Nat) : Nat :=
   srcs.foldr (fun s m => max s.since m) clock + 1
 
-/-- 永続効果の有効・無効を1つだけ変える。
+/-- 条件 p を満たすカードのうち、適用の時刻が最も古いもの（同じ時刻なら前のもの）の位置 -/
+def oldestIdx (srcs : List AuraSrc) (p : AuraSrc → Bool) : Option Nat :=
+  (List.range srcs.length).foldl (fun acc j =>
+    match srcs[j]? with
+    | some s =>
+      if p s then
+        match acc with
+        | some k => if s.since < (srcs[k]?.map (·.since)).getD 0 then some j else acc
+        | none => some j
+      else acc
+    | none => acc) none
+
+/-- 有効に戻すカードを選ぶ。どの適用中のカードにも無効にされない無効なカードは、同時に有効に戻る。
+同時に適用される永続効果は1つずつ順に適用する（遊戯王カードWiki「永続効果」）。
+* ② 異なるプレイヤーのカードなら、ターンプレイヤーのカードを先に適用する
+* ① 同じプレイヤーのカードはそのコントローラーが順番を決めるが、ここでは無効になる前に先に適用されていた
+  （適用の時刻が古い）ものから適用する -/
+def returnIdx (srcs : List AuraSrc) (tp : PlayerId) : Option Nat :=
+  match oldestIdx srcs (fun s => s.who == tp && !s.on && !beatenIn srcs s) with
+  | some i => some i
+  | none => oldestIdx srcs (fun s => !s.on && !beatenIn srcs s)
+
+/-- 永続効果の有効・無効を1つだけ変える。`tp` はターンプレイヤー。
 * 適用中のカードを無効にする適用中のカードがあれば、そのカードを無効にする
-* なければ、どの適用中のカードにも無効にされない無効なカードを、新しい時刻で有効に戻す
-  （時刻はどのカードよりも新しくする。`play` で進める限り `clock + 1` と同じ）
+* なければ、どの適用中のカードにも無効にされない無効なカードを1枚（`returnIdx`）、新しい時刻で有効に戻す
+  （時刻はどのカードよりも新しくする。`play` で進める限り `clock + 1` と同じ）。
+  そのカードの効果で無効になるカードを無効にしてから、次のカードを有効に戻す
 * どちらもなければ、状態は決まっている（`none`）
 
 有効に戻ったカードは「その時点で新たに適用された」ので、互いに無効にし合う相手が先に適用中なら
 すぐにまた無効になる（スキルドレイン → サイコ・ショッカー → 王宮のお触れの3すくみ）。 -/
-def settleOnce (srcs : List AuraSrc) (clock : Nat) : Option (List AuraSrc × Nat) :=
+def settleOnce (srcs : List AuraSrc) (clock : Nat) (tp : PlayerId) : Option (List AuraSrc × Nat) :=
   match srcs.findIdx? (fun s => s.on && beatenIn srcs s) with
   | some i => some (srcs.modify i ({ · with on := false }), clock)
   | none =>
-    match srcs.findIdx? (fun s => !s.on && !beatenIn srcs s) with
+    match returnIdx srcs tp with
     | some i =>
       let t := newestTime srcs clock
       some (srcs.modify i ({ · with on := true, since := t }), t)
     | none => none
 
-def settleAux : Nat → List AuraSrc → Nat → List AuraSrc × Nat
+def settleAux (tp : PlayerId) : Nat → List AuraSrc → Nat → List AuraSrc × Nat
   | 0, srcs, c => (srcs, c)
   | n + 1, srcs, c =>
-    match settleOnce srcs c with
-    | some (srcs', c') => settleAux n srcs' c'
+    match settleOnce srcs c tp with
+    | some (srcs', c') => settleAux tp n srcs' c'
     | none => (srcs, c)
 
 /-- 状態が決まるまで `settleOnce` を繰り返す。カードが `AuraSrc.Simple` を満たせば、この回数までに
 必ず決まる（`settle_settled`）。満たさないカードの組み合わせでは、決まらずに回り続けることがある。 -/
-def settle (srcs : List AuraSrc) (clock : Nat) : List AuraSrc × Nat :=
-  settleAux (4 * (3 * srcs.length + 1) ^ 4) srcs clock
+def settle (srcs : List AuraSrc) (clock : Nat) (tp : PlayerId) : List AuraSrc × Nat :=
+  settleAux tp (4 * (3 * srcs.length + 1) ^ 4) srcs clock
 
 /-- 無効化されていないカード -/
-def effectiveSources (srcs : List AuraSrc) (clock : Nat) : List AuraSrc :=
-  (settle srcs clock).1.filter (·.on)
+def effectiveSources (srcs : List AuraSrc) (clock : Nat) (tp : PlayerId) : List AuraSrc :=
+  (settle srcs clock tp).1.filter (·.on)
 
 /-- 魔法・罠ゾーンの i 番目のカードの識別 -/
 def stKey (w : PlayerId) (i : Nat) : Nat × Nat × Nat := (1, w.code, i)
@@ -630,7 +657,7 @@ def updMon (b : Board) (w : PlayerId) (uid : Nat) (f : FieldMonster → FieldMon
 def sources (b : Board) : List AuraSrc := b.p1.sources .one ++ b.p2.sources .two
 
 /-- 無効化されていないカード -/
-def effective (b : Board) : List AuraSrc := effectiveSources b.sources b.clock
+def effective (b : Board) : List AuraSrc := effectiveSources b.sources b.clock b.turnPlayer
 
 /-- 適用中の永続効果とそのコントローラー。前回書き込んだ判定結果とその時点の盤面から計算する。 -/
 def auras (b : Board) : List (PlayerId × Aura) :=
@@ -666,7 +693,7 @@ def _root_.YGO.Player.commitAuras (p : Player) (w : PlayerId) (r : List AuraSrc)
 /-- 永続効果の有効・無効の判定結果を盤面に書き込む。1手進めるたびに行う。
 有効・無効は前回の判定結果から順に変わっていくので（`settleOnce`）、盤面だけからは決まらない。 -/
 def commitAuras (b : Board) : Board :=
-  let r := settle b.sources b.clock
+  let r := settle b.sources b.clock b.turnPlayer
   { b with p1 := b.p1.commitAuras .one r.1, p2 := b.p2.commitAuras .two r.1, clock := r.2 }
 
 /-- チェーン上の罠カードの効果が無効化されるか（フィールドの罠を無効にする効果が適用中か） -/
@@ -1353,7 +1380,8 @@ def nextPhase (g : Game) : Except String Game :=
       throw "手札が7枚以上あるので、6枚になるまで捨てなければならない"
     else
       let nxt := g.active.other
-      let b := ({ g.board with normalSummoned := false }.modify g.active Player.resetMonsters).modify
+      let b := ({ g.board with normalSummoned := false, turnPlayer := nxt }.modify g.active
+        Player.resetMonsters).modify
         nxt Player.resetMonsters
       let g' := { g with turn := g.turn + 1, active := nxt, phase := .draw, priority := nxt,
                          passed := false }
@@ -1727,6 +1755,10 @@ def sacredCrane : MonsterCard :=
 def jinzo : MonsterCard :=
   { name := "人造人間－サイコ・ショッカー", level := 6, atk := 2400, dfs := 1500, attr := .dark,
     race := .machine, effects := [.continuous .noTrapActivation, .continuous .negateTraps] }
+/-- 相手フィールドの表側表示モンスターの効果を無効にする（特殊召喚の条件・装備の効果は省略） -/
+def bloo : MonsterCard :=
+  { name := "D－HERO Bloo－D", level := 8, atk := 1900, dfs := 600, attr := .dark,
+    race := .warrior, effects := [.continuous .negateOppMonsterEffects] }
 
 -- エクストラデッキのモンスター
 def bSkullDragon : MonsterCard :=
@@ -1958,7 +1990,7 @@ def xyzStart : Game where
 def hopeDefense : Game where
   board := { p1 := { deck := [], monsters := [fm 0 hope .attack 3 [.monster celticGuardian, .monster mysticalElf]],
                      backrow := [{ card := sakuretsu, setTurn := 3 }] },
-             p2 := { deck := [], monsters := [fm 1 blueEyes .attack 2] }, nextUid := 2 }
+             p2 := { deck := [], monsters := [fm 1 blueEyes .attack 2] }, nextUid := 2, turnPlayer := .two }
   turn := 4
   active := .two
   phase := .battle
@@ -2009,7 +2041,7 @@ def linkStart : Game where
 def tomatoStart : Game where
   board := { p1 := { deck := [.monster blueEyes, .monster witch, .monster kuriboh],
                      monsters := [fm 0 killerTomato .attack 3] },
-             p2 := { deck := [], monsters := [fm 1 blueEyes .attack 2] }, nextUid := 2 }
+             p2 := { deck := [], monsters := [fm 1 blueEyes .attack 2] }, nextUid := 2, turnPlayer := .two }
   turn := 4
   active := .two
   phase := .battle
@@ -2030,7 +2062,7 @@ example : tomatoEnd.toOption.map (fun g => (g.board.p1.lp, names g.board.p1.mons
 def wormStart : Game where
   board := { p1 := { deck := [], monsters := [fm 0 needleWorm .faceDownDefense 3] },
              p2 := { deck := List.replicate 6 (.monster kuriboh), monsters := [fm 1 blueEyes .attack 2] },
-             nextUid := 2 }
+             nextUid := 2, turnPlayer := .two }
   turn := 4
   active := .two
   phase := .battle
@@ -2106,7 +2138,7 @@ example : auraEnd.toOption.map (fun g => g.board.p1.monsters.map (g.board.atkOf 
 /-- グラヴィティ・バインド：レベル4以上は攻撃できないが、ランクを持つホープは攻撃できる -/
 def gravityStart : Game where
   board := { p1 := { deck := [], backrow := [{ card := gravityBind, setTurn := 1, faceUp := true }] },
-             p2 := { deck := [], monsters := [fm 0 blueEyes .attack 2, fm 1 hope .attack 2] }, nextUid := 2 }
+             p2 := { deck := [], monsters := [fm 0 blueEyes .attack 2, fm 1 hope .attack 2] }, nextUid := 2, turnPlayer := .two }
   turn := 4
   active := .two
   phase := .battle
@@ -2460,6 +2492,47 @@ example : cycloneChain.toOption.map (fun g => (backrowNames g .one, backrowNames
 /-- info: Except.error "速攻魔法はセットしたターンには発動できない" -/
 #guard_msgs in
 #eval (play cycloneStart [.setSpellTrap 0, .activateSet .one 0 { backrow := some (.two, 0) }]).map (fun _ => ())
+
+/-! ### スキルドレイン・王宮のお触れ・サイコ・ショッカー・D－HERO Bloo－D の4すくみ
+同時に有効に戻る永続効果は、ターンプレイヤーのものから1つずつ適用する。同じプレイヤーのものは、
+コントローラーが順番を決める代わりに、無効になる前に先に適用されていたものから適用する。 -/
+
+/-- P1：スキルドレイン（先に適用）とショッカー、お触れをセット。P2：墓地に Bloo－D、手札に死者蘇生 -/
+def quadStart : Game where
+  board := { p1 := { deck := [.monster kuriboh], monsters := [{ fm 0 jinzo with since := 2 }],
+                     backrow := [{ card := skillDrain, setTurn := 1, faceUp := true, since := 1, id := 1 },
+                                 { card := royalDecree, setTurn := 1, id := 3 }] },
+             p2 := { deck := [.monster kuriboh], hand := [monsterReborn], grave := [.monster bloo] },
+             nextUid := 1, clock := 3 }
+  turn := 3
+  active := .one
+  phase := .main1
+
+/-- (スキルドレイン, お触れ, ショッカー, Bloo－D) の効果が無効化されているか -/
+def quadNegated (g : Game) : List Bool :=
+  [g.board.stNegated .one 0, g.board.stNegated .one 1, g.board.monNegated 0, g.board.monNegated 1]
+
+/-- P1 がお触れを発動して3すくみ（ショッカーだけが有効）にし、P2 のターンに Bloo－D を蘇生する -/
+def quadTri : Except String Game := play quadStart (resolve (.activateSet .one 1))
+
+/-- info: Except.ok [true, true, false] -/
+#guard_msgs in
+#eval quadTri.map (fun g => (quadNegated g).take 3)
+
+/-- Bloo－D がショッカーを無効にすると、スキルドレインとお触れが同時に有効に戻る。
+お触れの方が先に適用されていた（スキルドレインは3すくみの途中で一度有効に戻っている）ので、お触れを先に適用し、
+スキルドレインは無効のまま。ショッカーは Bloo－D に無効にされたまま。
+
+Bloo－D とお触れが有効、ショッカーとスキルドレインが無効になる（`4すくみ考察.md`） -/
+def quadBloo : Except String Game :=
+  play quadStart (resolve (.activateSet .one 1) ++ [np, np, np, np, np, np] ++
+    resolve (.activateSpell 0 { grave := some (.two, 0) }))
+
+/-- info: Except.ok (YGO.PlayerId.two, ["D－HERO Bloo－D"], [true, false, true, false]) -/
+#guard_msgs in
+#eval quadBloo.map (fun g => (g.board.turnPlayer, names g.board.p2.monsters, quadNegated g))
+
+example : quadBloo.toOption.map quadNegated = some [true, false, true, false] := by decide
 
 end Demo
 

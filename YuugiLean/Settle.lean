@@ -17,7 +17,8 @@ import YuugiLean.Invariants
 * D：罠を無効にするモンスター（サイコ・ショッカー）
 * P：何も無効にしないカード
 
-`settleOnce` で1回変えるたびに、次の量が辞書式に減る（`settleMeasure_lt`）。
+`settleOnce` で1回変えるたびに、次の量が辞書式に減る（`settleMeasure_lt`）。この証明は、同時に有効に戻る
+カードのうちどれを先に適用するか（`returnIdx`：ターンプレイヤー優先など）によらず成り立つ。
 1. 適用中の種類：D があれば 0、なければ A があれば 1、なければ B があれば 2、なければ 3
 2. 適用されていない D・B の枚数
 3. 「その種類の、適用中のどのカードよりも適用の時刻が古い」カードの枚数（B は D より、A は A より、D は B より）
@@ -31,16 +32,22 @@ namespace YGO
 def AuraSrc.nt (s : AuraSrc) : Bool := s.auras.contains .negateTraps
 /-- モンスターの効果を無効にする効果を持つ -/
 def AuraSrc.nm (s : AuraSrc) : Bool := s.auras.contains .negateMonsterEffects
+/-- 相手のモンスターの効果を無効にする効果を持つ -/
+def AuraSrc.nmo (s : AuraSrc) : Bool := s.auras.contains .negateOppMonsterEffects
 
 theorem AuraSrc.negates_eq (t s : AuraSrc) :
     t.negates s = (decide (t.key ≠ s.key) &&
-      ((t.nm && decide (s.kind = .monster)) || (t.nt && decide (s.kind = .trap)))) := by
-  unfold AuraSrc.negates AuraSrc.nm AuraSrc.nt
+      ((t.nm && decide (s.kind = .monster)) || (t.nmo && decide (s.kind = .monster) && decide (t.who ≠ s.who)) ||
+        (t.nt && decide (s.kind = .trap)))) := by
+  unfold AuraSrc.negates AuraSrc.nm AuraSrc.nt AuraSrc.nmo
   by_cases hk : t.key = s.key
   · simp [hk]
+  have hk' : (t.key != s.key) = true := by simp [hk]
+  rw [hk', Bool.true_and]
   simp only [hk, ne_eq, not_false_eq_true, decide_true, Bool.true_and]
   generalize t.auras = as
-  cases s.kind <;> simp <;> induction as <;> simp_all <;> rename_i a _ _ <;> cases a <;> simp_all
+  cases s.kind <;> induction as <;> simp_all <;> rename_i a _ _ <;> cases a <;> simp_all <;>
+    cases t.who <;> cases s.who <;> simp_all
 
 /-- 永続効果の種類 -/
 inductive Cat where
@@ -55,7 +62,7 @@ def AuraSrc.cat (s : AuraSrc) : Cat :=
 
 /-- 判定が必ず決まるカードの条件 -/
 def AuraSrc.Simple (s : AuraSrc) : Prop :=
-  (s.nm = true → s.kind = .trap ∧ s.nt = false) ∧ (s.nt = true → s.kind ≠ .spell)
+  (s.nm = true → s.kind = .trap ∧ s.nt = false) ∧ (s.nt = true → s.kind ≠ .spell) ∧ s.nmo = false
 
 instance : DecidablePred AuraSrc.Simple := fun s => by unfold AuraSrc.Simple; infer_instance
 
@@ -63,7 +70,7 @@ theorem AuraSrc.negates_iff {t s : AuraSrc} (ht : t.Simple) :
     t.negates s = true ↔ t.key ≠ s.key ∧
       ((t.cat = .B ∧ s.kind = .monster) ∨ ((t.cat = .A ∨ t.cat = .D) ∧ s.kind = .trap)) := by
   rw [AuraSrc.negates_eq]
-  obtain ⟨h1, h2⟩ := ht
+  obtain ⟨h1, h2, h3⟩ := ht
   unfold AuraSrc.cat
   cases hnt : t.nt <;> cases hnm : t.nm <;> cases hk : t.kind <;> simp_all
 
@@ -71,13 +78,13 @@ theorem AuraSrc.kind_A {s : AuraSrc} (h : s.cat = .A) : s.kind = .trap := by
   unfold AuraSrc.cat at h
   cases hnt : s.nt <;> cases hnm : s.nm <;> cases hk : s.kind <;> simp_all
 theorem AuraSrc.kind_B {s : AuraSrc} (hs : s.Simple) (h : s.cat = .B) : s.kind = .trap := by
-  unfold AuraSrc.cat at h; obtain ⟨h1, h2⟩ := hs
+  unfold AuraSrc.cat at h; obtain ⟨h1, h2, -⟩ := hs
   cases hnt : s.nt <;> cases hnm : s.nm <;> cases hk : s.kind <;> simp_all
 theorem AuraSrc.kind_D {s : AuraSrc} (hs : s.Simple) (h : s.cat = .D) : s.kind = .monster := by
-  unfold AuraSrc.cat at h; obtain ⟨h1, h2⟩ := hs
+  unfold AuraSrc.cat at h; obtain ⟨h1, h2, -⟩ := hs
   cases hnt : s.nt <;> cases hnm : s.nm <;> cases hk : s.kind <;> simp_all
-theorem AuraSrc.negates_P {t s : AuraSrc} (h : t.cat = .P) : t.negates s = false := by
-  rw [AuraSrc.negates_eq]; unfold AuraSrc.cat at h
+theorem AuraSrc.negates_P {t s : AuraSrc} (ht : t.Simple) (h : t.cat = .P) : t.negates s = false := by
+  rw [AuraSrc.negates_eq, ht.2.2]; unfold AuraSrc.cat at h
   cases hnt : t.nt <;> cases hnm : t.nm <;> cases hk : t.kind <;> simp_all
 
 theorem AuraSrc.negates_cat {t s : AuraSrc} (ht : t.Simple) (hk : t.key ≠ s.key) :
@@ -225,7 +232,7 @@ theorem since_lt_newestTime {l : List AuraSrc} {c : Nat} : ∀ s ∈ l, s.since 
 
 /-- `settleOnce` で変わるのは、無効にされているカードを1枚無効にするか、無効なカードを1枚有効に戻すか -/
 theorem settleOnce_some {l : List AuraSrc} {c : Nat} {l' : List AuraSrc} {c' : Nat}
-    (h : settleOnce l c = some (l', c')) :
+    {tp : PlayerId} (h : settleOnce l c tp = some (l', c')) :
     (∃ i, ∃ hi : i < l.length, l[i].on = true ∧ beatenIn l l[i] = true ∧
       l' = l.modify i (fun s => { s with on := false })) ∨
     ((∀ s ∈ l, s.on = true → beatenIn l s = false) ∧
@@ -242,11 +249,10 @@ theorem settleOnce_some {l : List AuraSrc} {c : Nat} {l' : List AuraSrc} {c' : N
   · rename_i hn
     split at h
     · rename_i i hi
-      obtain ⟨hlt, hp, -⟩ := List.findIdx?_eq_some_iff_getElem.mp hi
+      obtain ⟨hlt, hp1, hp2⟩ := returnIdx_some hi
       simp only [Option.some.injEq, Prod.mk.injEq] at h
       obtain ⟨rfl, -⟩ := h
-      simp only [Bool.and_eq_true, Bool.not_eq_true'] at hp
-      refine .inr ⟨fun s hs hon => ?_, i, hlt, hp.1, hp.2, rfl⟩
+      refine .inr ⟨fun s hs hon => ?_, i, hlt, hp1, hp2, rfl⟩
       have := List.findIdx?_eq_none_iff.mp hn s hs
       simpa [hon] using this
     · cases h
@@ -799,12 +805,12 @@ theorem measure_lt : settleMeasure (lOn l i T) < settleMeasure l := by
   cases hxc : l[i].cat with
   | P =>
     -- 何も無効にしないカード：適用中になるだけ
-    have hu : ∀ y, uni l[i] y = false := fun y => by simp [uni, AuraSrc.negates_P hxc]
+    have hu : ∀ y, uni l[i] y = false := fun y => by simp [uni, AuraSrc.negates_P hxS hxc]
     have he : effIn (lOn l i T) (l[i].turnOn T) = true := by
       rw [C.eff_x']
       rintro ⟨s, hs, hon, hn⟩
       have := (C.unb' hs hon hn).1
-      rw [AuraSrc.negates_P hxc] at this; cases this
+      rw [AuraSrc.negates_P hxS hxc] at this; cases this
     have hr : rankOf (lOn l i T) = rankOf l := by
       unfold rankOf
       rw [C.hasEff_lOn_eq (k := .D) (fun _ _ _ _ _ => hu _) (by simp [hxc]),
@@ -1107,7 +1113,7 @@ theorem settleMeasure_lt_fuel (L : List AuraSrc) : settleMeasure L < 4 * (3 * L.
   unfold settleMeasure; omega
 
 /-- **`settleOnce` で1回変えるたびに、量が減る** -/
-theorem settleMeasure_lt {l l' : List AuraSrc} {c c' : Nat} (h : settleOnce l c = some (l', c'))
+theorem settleMeasure_lt {l l' : List AuraSrc} {c c' : Nat} {tp : PlayerId} (h : settleOnce l c tp = some (l', c'))
     (hS : ∀ s ∈ l, s.Simple) (hk : (l.map (·.key)).Nodup) : settleMeasure l' < settleMeasure l := by
   rcases settleOnce_some h with ⟨i, hi, hon, hb, rfl⟩ | ⟨hK, i, hi, hoff, hunb, rfl⟩
   · exact kill_measure hi hon hb
@@ -1115,7 +1121,7 @@ theorem settleMeasure_lt {l l' : List AuraSrc} {c c' : Nat} (h : settleOnce l c 
       { simple := hS, nodup := hk, off := hoff, unb := hunb, kst := hK, newer := since_lt_newestTime }
     exact C.measure_lt
 
-theorem settleOnce_preserve {l l' : List AuraSrc} {c c' : Nat} (h : settleOnce l c = some (l', c'))
+theorem settleOnce_preserve {l l' : List AuraSrc} {c c' : Nat} {tp : PlayerId} (h : settleOnce l c tp = some (l', c'))
     (hS : ∀ s ∈ l, s.Simple) (hk : (l.map (·.key)).Nodup) :
     (∀ s ∈ l', s.Simple) ∧ (l'.map (·.key)).Nodup ∧ l'.length = l.length := by
   have hm := settleOnce_keys h
@@ -1125,7 +1131,7 @@ theorem settleOnce_preserve {l l' : List AuraSrc} {c c' : Nat} (h : settleOnce l
     obtain ⟨t, ht, he⟩ := List.mem_map.mp this
     simp only [Prod.mk.injEq] at he
     have := hS t ht
-    unfold AuraSrc.Simple AuraSrc.nm AuraSrc.nt at this ⊢
+    unfold AuraSrc.Simple AuraSrc.nm AuraSrc.nt AuraSrc.nmo at this ⊢
     rw [← he.2.1, ← he.2.2.2]; exact this
   · have : l'.map (·.key) = l.map (·.key) := by
       have := congrArg (List.map (fun p : PlayerId × SrcKind × (Nat × Nat × Nat) × List Aura => p.2.2.1)) hm
@@ -1133,9 +1139,9 @@ theorem settleOnce_preserve {l l' : List AuraSrc} {c c' : Nat} (h : settleOnce l
     rw [this]; exact hk
   · have := congrArg List.length hm; simpa using this
 
-theorem settleAux_settled (n : Nat) (l : List AuraSrc) (c : Nat) (hS : ∀ s ∈ l, s.Simple)
+theorem settleAux_settled (tp : PlayerId) (n : Nat) (l : List AuraSrc) (c : Nat) (hS : ∀ s ∈ l, s.Simple)
     (hk : (l.map (·.key)).Nodup) (hn : settleMeasure l < n) :
-    settleOnce (settleAux n l c).1 (settleAux n l c).2 = none := by
+    settleOnce (settleAux tp n l c).1 (settleAux tp n l c).2 tp = none := by
   induction n generalizing l c with
   | zero => omega
   | succ n ih =>
@@ -1149,9 +1155,9 @@ theorem settleAux_settled (n : Nat) (l : List AuraSrc) (c : Nat) (hS : ∀ s ∈
 
 /-- **判定は必ず決まる**：カードが `AuraSrc.Simple` を満たし、識別が重ならなければ、`settle` の結果は
 もう `settleOnce` で変わらない -/
-theorem settle_settled (l : List AuraSrc) (c : Nat) (hS : ∀ s ∈ l, s.Simple) (hk : (l.map (·.key)).Nodup) :
-    settleOnce (settle l c).1 (settle l c).2 = none :=
-  settleAux_settled _ l c hS hk (settleMeasure_lt_fuel l)
+theorem settle_settled (l : List AuraSrc) (c : Nat) (tp : PlayerId) (hS : ∀ s ∈ l, s.Simple)
+    (hk : (l.map (·.key)).Nodup) : settleOnce (settle l c tp).1 (settle l c tp).2 tp = none :=
+  settleAux_settled tp _ l c hS hk (settleMeasure_lt_fuel l)
 
 /-! ## 盤面での判定 -/
 
@@ -1220,12 +1226,14 @@ theorem Board.sources_keys_nodup (b : Board) (hu : b.UidOK) : (b.sources.map (·
 
 /-- **盤面の永続効果の判定は必ず決まる**（カードが `AuraSrc.Simple` を満たし、モンスターの uid が重ならないとき） -/
 theorem Board.settled (b : Board) (hu : b.UidOK) (hS : ∀ s ∈ b.sources, s.Simple) :
-    settleOnce (settle b.sources b.clock).1 (settle b.sources b.clock).2 = none :=
-  settle_settled _ _ hS (b.sources_keys_nodup hu)
+    settleOnce (settle b.sources b.clock b.turnPlayer).1 (settle b.sources b.clock b.turnPlayer).2 b.turnPlayer
+      = none :=
+  settle_settled _ _ _ hS (b.sources_keys_nodup hu)
 
 /-- 対戦の途中のどの盤面でも、判定は決まっている -/
 theorem reachable_settled {g : Game} (hr : Reachable g) (hS : ∀ s ∈ g.board.sources, s.Simple) :
-    settleOnce (settle g.board.sources g.board.clock).1 (settle g.board.sources g.board.clock).2 = none :=
+    settleOnce (settle g.board.sources g.board.clock g.board.turnPlayer).1
+      (settle g.board.sources g.board.clock g.board.turnPlayer).2 g.board.turnPlayer = none :=
   g.board.settled (reachable_uidOK hr) hS
 
 /-- **対戦の途中のどの盤面でも、有効なカード同士は互いに無効にしない** -/
@@ -1237,7 +1245,7 @@ theorem reachable_consistent {g : Game} (hr : Reachable g) (hS : ∀ s ∈ g.boa
 
 /-- **対戦の途中のどの盤面でも、無効なカードには、それを無効にする有効なカードがある** -/
 theorem reachable_negated_has_reason {g : Game} (hr : Reachable g) (hS : ∀ s ∈ g.board.sources, s.Simple)
-    {s : AuraSrc} (hs : s ∈ (settle g.board.sources g.board.clock).1) (hso : s.on = false) :
+    {s : AuraSrc} (hs : s ∈ (settle g.board.sources g.board.clock g.board.turnPlayer).1) (hso : s.on = false) :
     ∃ t ∈ g.board.effective, t.beats s = true := by
   obtain ⟨t, ht, hto, hb⟩ := negated_has_reason (reachable_settled hr hS) hs hso
   refine ⟨t, ?_, hb⟩
@@ -1262,12 +1270,12 @@ def loopSrcs : List AuraSrc :=
 
 example : ¬ ∀ s ∈ loopSrcs, s.Simple := by decide
 
-example : (settleAux 9 loopSrcs 4).1.map (·.on) = (settleAux 1 loopSrcs 4).1.map (·.on) ∧
-    (settleAux 1 loopSrcs 4).1.map (·.on) = [true, false, false, false] := by decide
+example : (settleAux .one 9 loopSrcs 4).1.map (·.on) = (settleAux .one 1 loopSrcs 4).1.map (·.on) ∧
+    (settleAux .one 1 loopSrcs 4).1.map (·.on) = [true, false, false, false] := by decide
 
 -- 上限の回数まで繰り返しても決まらない
 /-- info: true -/
 #guard_msgs in
-#eval (settleOnce (settle loopSrcs 4).1 (settle loopSrcs 4).2).isSome
+#eval (settleOnce (settle loopSrcs 4 .one).1 (settle loopSrcs 4 .one).2 .one).isSome
 
 end YGO

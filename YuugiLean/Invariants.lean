@@ -1534,10 +1534,11 @@ theorem uidOK_nextPhase {g g' : Game} (hg : g.UidOK) (h : nextPhase g = .ok g') 
   · split at h
     · cases h
     · dsimp only at h
-      have h0 : (({ g.board with normalSummoned := false } : Board).modify g.active Player.resetMonsters).modify
+      have h0 : (({ g.board with normalSummoned := false, turnPlayer := g.active.other } : Board).modify g.active Player.resetMonsters).modify
           g.active.other Player.resetMonsters |>.UidOK := by
-        refine Board.UidOK.shrink (hg.with_ns false) ?_
-        refine (Board.shrink_modify _ _ _ ?_).trans (Board.shrink_modify _ _ _ ?_) <;>
+        refine Board.UidOK.shrink (hg.same rfl rfl rfl) ?_
+        refine (Board.shrink_modify ({ g.board with normalSummoned := false, turnPlayer := g.active.other } : Board)
+          g.active _ ?_).trans (Board.shrink_modify _ _ _ ?_) <;>
           rw [Player.monsters_resetMonsters_uid] <;> exact List.Sublist.refl _
       split at h
       · simp only [pure, Except.pure, Except.ok.injEq] at h; subst h; exact h0
@@ -2304,12 +2305,13 @@ theorem zone_nextPhase {g g' : Game} (hg : g.ZoneOK) (h : nextPhase g = .ok g') 
     · dsimp only at h
       have hb := hg
       unfold Game.ZoneOK at hb
-      have h0 : ((({ g.board with normalSummoned := false } : Board).modify g.active Player.resetMonsters).modify
+      have h0 : ((({ g.board with normalSummoned := false, turnPlayer := g.active.other } : Board).modify g.active Player.resetMonsters).modify
           g.active.other Player.resetMonsters).Bounded (fun v => spellTrapZones - ownST g.chain v) := by
         have hr : ∀ (b : Board) (w : PlayerId), b.Dec (b.modify w Player.resetMonsters) := fun b w =>
           b.dec_modify w _ (Nat.le_of_eq (Player.resetMonsters_emz _).1)
             (Nat.le_of_eq (Player.resetMonsters_emz _).2) (Nat.le_refl _)
-        exact (((hb.bounded).with_ns false).dec (hr _ _)).dec (hr _ _)
+        exact (((hb.bounded).with_same (b' := ({ g.board with normalSummoned := false, turnPlayer := g.active.other } : Board)) rfl rfl).dec
+          (hr _ g.active)).dec (hr _ _)
       split at h
       · simp only [pure, Except.pure, Except.ok.injEq] at h; subst h
         exact ZoneOK.of_bounded (ch := g.chain) h0 (fun v => by have := hb.ownST_le v; omega)
@@ -2327,10 +2329,10 @@ theorem ZoneOK.commitAuras {b : Board} {ch : List ChainLink} (h : ZoneOK b ch) :
   intro v
   obtain ⟨h1, h2, h3⟩ := h v
   cases v
-  · obtain ⟨e1, e2, e3⟩ := he b.p1 .one (settle b.sources b.clock).1
+  · obtain ⟨e1, e2, e3⟩ := he b.p1 .one (settle b.sources b.clock b.turnPlayer).1
     exact ⟨by simpa [Board.commitAuras, Board.get, e1] using h1, by simpa [Board.commitAuras, Board.get, e2] using h2,
       by simpa [Board.commitAuras, Board.get, e3] using h3⟩
-  · obtain ⟨e1, e2, e3⟩ := he b.p2 .two (settle b.sources b.clock).1
+  · obtain ⟨e1, e2, e3⟩ := he b.p2 .two (settle b.sources b.clock b.turnPlayer).1
     exact ⟨by simpa [Board.commitAuras, Board.get, e1] using h1, by simpa [Board.commitAuras, Board.get, e2] using h2,
       by simpa [Board.commitAuras, Board.get, e3] using h3⟩
 
@@ -2444,7 +2446,104 @@ theorem reachable_lp_zero_decided {g : Game} (hr : Reachable g)
 /-! ## 永続効果の有効・無効の判定（settle）の正しさ
 `settleOnce` がこれ以上状態を変えない（判定が決まった）とき、次が成り立つ。 -/
 
-theorem settleOnce_none {srcs : List AuraSrc} {c : Nat} (h : settleOnce srcs c = none) :
+theorem oldestIdx_foldl {srcs : List AuraSrc} {p : AuraSrc → Bool} (js : List Nat) (acc : Option Nat)
+    (hacc : ∀ k, acc = some k → ∃ hk : k < srcs.length, p srcs[k] = true) :
+    let r := js.foldl (fun acc j =>
+      match srcs[j]? with
+      | some s =>
+        if p s then
+          match acc with
+          | some k => if s.since < (srcs[k]?.map (·.since)).getD 0 then some j else acc
+          | none => some j
+        else acc
+      | none => acc) acc
+    (∀ k, r = some k → ∃ hk : k < srcs.length, p srcs[k] = true) ∧
+    (r = none → acc = none ∧ ∀ j ∈ js, ∀ s, srcs[j]? = some s → p s = false) := by
+  induction js generalizing acc with
+  | nil => exact ⟨hacc, fun h => ⟨h, by simp⟩⟩
+  | cons j js ih =>
+    simp only [List.foldl_cons]
+    have step : ∀ k, (match srcs[j]? with
+      | some s =>
+        if p s then
+          match acc with
+          | some k => if s.since < (srcs[k]?.map (·.since)).getD 0 then some j else acc
+          | none => some j
+        else acc
+      | none => acc) = some k → ∃ hk : k < srcs.length, p srcs[k] = true := by
+      intro k hk
+      cases hj : srcs[j]? with
+      | none => rw [hj] at hk; exact hacc k hk
+      | some s =>
+        rw [hj] at hk
+        have hjl : j < srcs.length := by
+          rcases List.getElem?_eq_some_iff.mp hj with ⟨h, _⟩; exact h
+        have hjs : srcs[j] = s := by
+          rcases List.getElem?_eq_some_iff.mp hj with ⟨_, h⟩; exact h
+        by_cases hp : p s
+        · simp only [hp, ite_true] at hk
+          cases acc with
+          | none => simp at hk; subst hk; exact ⟨hjl, hjs ▸ hp⟩
+          | some k' =>
+            simp only at hk
+            split at hk
+            · simp at hk; subst hk; exact ⟨hjl, hjs ▸ hp⟩
+            · exact hacc k hk
+        · simp only [hp, Bool.false_eq_true, ite_false] at hk; exact hacc k hk
+    obtain ⟨h1, h2⟩ := ih _ step
+    refine ⟨h1, fun hn => ?_⟩
+    obtain ⟨hn', hall⟩ := h2 hn
+    cases hj : srcs[j]? with
+    | none =>
+      rw [hj] at hn'
+      refine ⟨hn', fun j' hj' s hs => ?_⟩
+      rcases List.mem_cons.mp hj' with rfl | hj'
+      · rw [hj] at hs; cases hs
+      · exact hall j' hj' s hs
+    | some s0 =>
+      rw [hj] at hn'
+      by_cases hp : p s0
+      · simp only [hp, ite_true] at hn'
+        cases acc <;> simp at hn'
+        split at hn' <;> cases hn'
+      · simp only [hp, Bool.false_eq_true, ite_false] at hn'
+        refine ⟨hn', fun j' hj' s hs => ?_⟩
+        rcases List.mem_cons.mp hj' with rfl | hj'
+        · rw [hj] at hs; cases hs; simpa using hp
+        · exact hall j' hj' s hs
+
+theorem oldestIdx_some {srcs : List AuraSrc} {p : AuraSrc → Bool} {i : Nat} (h : oldestIdx srcs p = some i) :
+    ∃ hi : i < srcs.length, p srcs[i] = true :=
+  (oldestIdx_foldl (List.range srcs.length) none (by simp)).1 i h
+
+theorem oldestIdx_none {srcs : List AuraSrc} {p : AuraSrc → Bool} (h : oldestIdx srcs p = none) :
+    ∀ s ∈ srcs, p s = false := by
+  have := ((oldestIdx_foldl (srcs := srcs) (p := p) (List.range srcs.length) none (by simp)).2 h).2
+  intro s hs
+  obtain ⟨j, hj, rfl⟩ := List.mem_iff_getElem.mp hs
+  exact this j (List.mem_range.mpr hj) _ (List.getElem?_eq_getElem hj)
+
+theorem returnIdx_none {srcs : List AuraSrc} {tp : PlayerId} (h : returnIdx srcs tp = none) :
+    ∀ s ∈ srcs, (!s.on && !beatenIn srcs s) = false := by
+  unfold returnIdx at h
+  split at h
+  · cases h
+  · exact oldestIdx_none h
+
+theorem returnIdx_some {srcs : List AuraSrc} {tp : PlayerId} {i : Nat} (h : returnIdx srcs tp = some i) :
+    ∃ hi : i < srcs.length, srcs[i].on = false ∧ beatenIn srcs srcs[i] = false := by
+  unfold returnIdx at h
+  split at h
+  · rename_i j hj
+    cases h
+    obtain ⟨hlt, hp⟩ := oldestIdx_some hj
+    simp only [Bool.and_eq_true, Bool.not_eq_true'] at hp
+    exact ⟨hlt, hp.1.2, hp.2⟩
+  · obtain ⟨hlt, hp⟩ := oldestIdx_some h
+    simp only [Bool.and_eq_true, Bool.not_eq_true'] at hp
+    exact ⟨hlt, hp.1, hp.2⟩
+
+theorem settleOnce_none {srcs : List AuraSrc} {c : Nat} {tp : PlayerId} (h : settleOnce srcs c tp = none) :
     (∀ s ∈ srcs, s.on = true → beatenIn srcs s = false) ∧
     (∀ s ∈ srcs, s.on = false → beatenIn srcs s = true) := by
   unfold settleOnce at h
@@ -2454,13 +2553,14 @@ theorem settleOnce_none {srcs : List AuraSrc} {c : Nat} (h : settleOnce srcs c =
     split at h
     · cases h
     · rename_i h2
-      rw [List.findIdx?_eq_none_iff] at h1 h2
+      have h2 := returnIdx_none h2
+      rw [List.findIdx?_eq_none_iff] at h1
       refine ⟨fun s hs ho => ?_, fun s hs ho => ?_⟩
       · simpa [ho] using h1 s hs
       · simpa [ho] using h2 s hs
 
 /-- **有効なカード同士は、互いに無効にしない** -/
-theorem settled_consistent {srcs : List AuraSrc} {c : Nat} (h : settleOnce srcs c = none)
+theorem settled_consistent {srcs : List AuraSrc} {c : Nat} {tp : PlayerId} (h : settleOnce srcs c tp = none)
     {s t : AuraSrc} (hs : s ∈ srcs) (ht : t ∈ srcs) (hso : s.on = true) (hto : t.on = true) :
     t.beats s = false := by
   have := (settleOnce_none h).1 s hs hso
@@ -2470,14 +2570,14 @@ theorem settled_consistent {srcs : List AuraSrc} {c : Nat} (h : settleOnce srcs 
   · exact absurd hb (this t ht hto)
 
 /-- **無効なカードには、それを無効にする有効なカードがある** -/
-theorem negated_has_reason {srcs : List AuraSrc} {c : Nat} (h : settleOnce srcs c = none)
+theorem negated_has_reason {srcs : List AuraSrc} {c : Nat} {tp : PlayerId} (h : settleOnce srcs c tp = none)
     {s : AuraSrc} (hs : s ∈ srcs) (hso : s.on = false) :
     ∃ t ∈ srcs, t.on = true ∧ t.beats s = true := by
   have := (settleOnce_none h).2 s hs hso
   simpa [beatenIn] using this
 
 /-- **どのカードにも無効にされないカードは有効** -/
-theorem unbeaten_effective {srcs : List AuraSrc} {c : Nat} (h : settleOnce srcs c = none)
+theorem unbeaten_effective {srcs : List AuraSrc} {c : Nat} {tp : PlayerId} (h : settleOnce srcs c tp = none)
     {s : AuraSrc} (hs : s ∈ srcs) (hn : ∀ t ∈ srcs, t.beats s = false) : s.on = true := by
   cases hso : s.on
   · obtain ⟨t, ht, _, hb⟩ := negated_has_reason h hs hso
@@ -2491,7 +2591,7 @@ theorem map_modify_eq {α β : Type} (l : List α) (f : α → α) (g : α → �
   | cons x xs ih => cases i <;> simp [hf, ih]
 
 /-- `settleOnce` は有効・無効と適用の時刻だけを変える -/
-theorem settleOnce_keys {srcs srcs' : List AuraSrc} {c c' : Nat} (h : settleOnce srcs c = some (srcs', c')) :
+theorem settleOnce_keys {srcs srcs' : List AuraSrc} {c c' : Nat} {tp : PlayerId} (h : settleOnce srcs c tp = some (srcs', c')) :
     srcs'.map (fun s => (s.who, s.kind, s.key, s.auras)) = srcs.map (fun s => (s.who, s.kind, s.key, s.auras)) := by
   unfold settleOnce at h
   split at h
@@ -2503,8 +2603,8 @@ theorem settleOnce_keys {srcs srcs' : List AuraSrc} {c c' : Nat} (h : settleOnce
     · cases h
 
 /-- **判定で変わるのは有効・無効と適用の時刻だけで、カードの集まりは変わらない** -/
-theorem settle_keys (srcs : List AuraSrc) (c : Nat) :
-    (settle srcs c).1.map (fun s => (s.who, s.kind, s.key, s.auras)) =
+theorem settle_keys (srcs : List AuraSrc) (c : Nat) (tp : PlayerId) :
+    (settle srcs c tp).1.map (fun s => (s.who, s.kind, s.key, s.auras)) =
       srcs.map (fun s => (s.who, s.kind, s.key, s.auras)) := by
   unfold settle
   generalize 4 * (3 * srcs.length + 1) ^ 4 = n
