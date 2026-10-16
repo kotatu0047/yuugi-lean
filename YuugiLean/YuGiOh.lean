@@ -13,7 +13,7 @@ Lean 4 コアのみ（Mathlib 不要）で動く、遊戯王OCGの基本ルー�
 * 反転召喚・表示形式の変更（召喚したターン不可、1ターン1度、リンクモンスターは守備表示にできない）
 * 特殊召喚：融合（「融合」の効果）・シンクロ・エクシーズ・リンク召喚、効果による特殊召喚（蘇生・リクルート）
 * 戦闘：攻撃宣言 → 両者のパス → ダメージ計算（攻撃表示／守備表示／裏側守備の反転、相打ち、攻撃力0同士）
-* 魔法・罠：通常・永続・装備魔法、通常・永続・カウンター罠（罠はセットした次のターン以降）
+* 魔法・罠：通常・速攻・永続・装備魔法、通常・永続・カウンター罠（罠・速攻魔法はセットした次のターン以降）
 * モンスター効果：起動効果・誘発即時効果（1ターンに1度）、誘発効果、永続効果、コスト（自身のリリース・X素材）
 * チェーン：スペルスピード1〜3、両者のパスで逆順に解決、カウンター罠による発動の無効化
 * 優先権：空きチェーンでもターンプレイヤーが優先権を持ち、相手はターンプレイヤーのパスを受けて発動する
@@ -33,7 +33,7 @@ Lean 4 コアのみ（Mathlib 不要）で動く、遊戯王OCGの基本ルー�
 * 勝敗：LP 0、デッキ切れ（ドローできない）
 
 ## 範囲外・簡略化
-* ペンデュラム、トークン、儀式、フィールド魔法、速攻魔法、コントロール奪取
+* ペンデュラム、トークン、儀式、フィールド魔法、コントロール奪取
 * リンクマーカー：リンクモンスターはエクストラモンスターゾーンにのみ出せる（各プレイヤー1体まで）
 * 誘発効果はすべて強制効果として扱う（任意効果も必ず発動する。そのためタイミングを逃さない）
 * デッキからのサーチ・リクルートは、デッキの上から最初に条件を満たすカードを選ぶ
@@ -83,6 +83,7 @@ inductive Effect where
   | destroyAttacker              -- 攻撃してきた相手モンスターを破壊
   | destroyOppSpellTraps         -- 相手の魔法・罠ゾーンのカードを全て破壊
   | destroyAllSpellTraps         -- フィールドの魔法・罠カードを全て破壊
+  | destroySpellTrap             -- 対象の魔法・罠ゾーンのカード1枚を破壊
   | negateAttack                 -- 相手モンスターの攻撃を無効にする
   | millOpp (n : Nat)            -- 相手のデッキの上から n 枚を墓地へ送る
   | recruit (attr : Attribute) (maxAtk : Nat) -- デッキから攻撃力 maxAtk 以下の attr 属性モンスターを特殊召喚
@@ -157,6 +158,7 @@ inductive SpellKind where
   | normal (e : Effect)
   | continuous (a : Aura)
   | equip (atk : Int)       -- 装備モンスターの攻撃力を atk 変化
+  | quickPlay (e : Effect)  -- 速攻魔法：スペルスピード2
   deriving Repr, DecidableEq
 
 inductive TrapKind where
@@ -180,6 +182,7 @@ def Card.name : Card → String
 /-- スペルスピード（モンスターは発動しないので 0） -/
 def Card.spellSpeed : Card → Nat
   | .monster _ => 0
+  | .spell _ (.quickPlay _) => 2
   | .spell .. => 1
   | .trap _ (.counter _) => 3
   | .trap .. => 2
@@ -187,6 +190,7 @@ def Card.spellSpeed : Card → Nat
 /-- 魔法・罠を発動したときの効果 -/
 def Card.activationEffect : Card → Effect
   | .spell _ (.normal e) => e
+  | .spell _ (.quickPlay e) => e
   | .trap _ (.normal e) => e
   | .trap _ (.counter e) => e
   | .trap _ (.continuous _ _ e _) => e
@@ -210,6 +214,10 @@ def Card.isTrap : Card → Bool
 /-- 特殊召喚したモンスターと関係を持つ永続罠か -/
 def Card.bonds : Card → Bool
   | .trap _ (.continuous _ _ _ b) => b
+  | _ => false
+
+def Card.isQuickPlay : Card → Bool
+  | .spell _ (.quickPlay _) => true
   | _ => false
 
 def Card.isEquip : Card → Bool
@@ -249,6 +257,7 @@ structure SetCard where
   bond    : Option Nat := none   -- 関係を持つモンスターの uid（リビングデッドの呼び声）
   since   : Nat := 0             -- 効果が適用された時刻（永続効果の適用順）
   negated : Bool := false        -- 前回の判定で永続効果が無効化されていた
+  id      : Nat := 0             -- 識別番号（魔法・罠ゾーンに置かれた時刻。対象を解決時に確認する）
   deriving Repr, DecidableEq
 
 def initialLP      : Nat := 8000
@@ -333,6 +342,7 @@ structure Args where
   mine    : List Nat := []                  -- 自分のモンスター（融合素材）
   targets : List (PlayerId × Nat) := []     -- 対象とするフィールドのモンスター
   grave   : Option (PlayerId × Nat) := none -- 対象とする墓地のカード
+  backrow : Option (PlayerId × Nat) := none -- 対象とする魔法・罠ゾーンのカード
   extra   : Option Nat := none              -- エクストラデッキのカード
   deriving Repr, DecidableEq
 
@@ -346,6 +356,7 @@ structure ChainLink where
   src         : Option Nat := none               -- 効果を発動したモンスターの uid
   targets     : List Nat := []                   -- 対象モンスターの uid
   graveTarget : Option (PlayerId × Nat × Card) := none
+  stTarget    : Option (PlayerId × Nat) := none  -- 対象の魔法・罠ゾーンのカード（プレイヤーと識別番号）
   handMats    : List (Nat × Card) := []
   fieldMats   : List Nat := []
   extra       : Option (Nat × Card) := none
@@ -872,6 +883,13 @@ def applyEffect (c : Ctx) (l : ChainLink) (b : Board) : Board :=
   | .negateAttack => { b with attack := none }
   | .destroyOppSpellTraps => b.destroyAllBackrow [self.other]
   | .destroyAllSpellTraps => b.destroyAllBackrow [.one, .two]
+  | .destroySpellTrap =>
+    match l.stTarget with
+    | some (w, id) =>
+      match (b.get w).backrow.findIdx? (·.id == id) with
+      | some i => b.destroyBackrow w i
+      | none => b
+    | none => b
   | .millOpp n =>
     b.modify self.other fun p => { p with deck := p.deck.drop n, grave := p.grave ++ p.deck.take n }
   | .recruit attr mx =>
@@ -923,6 +941,10 @@ def canActivate (b : Board) (chain : List ChainLink) (l : ChainLink) : Except St
     match l.targets with
     | [u] => unless (b.findMon u).isSome do throw "対象が存在しない"
     | _ => throw "モンスター1体を対象にする"
+  | .destroySpellTrap =>
+    match l.stTarget with
+    | some (w, id) => unless (b.get w).backrow.any (·.id == id) do throw "対象が存在しない"
+    | none => throw "魔法・罠ゾーンのカード1枚を対象にする"
   | .revive _ => unless (reviveOk b l).isSome do throw "蘇生できるモンスターがいない、またはゾーンに空きがない"
   | .fusionSummon => unless (fusionPlan b l).isSome do throw "融合召喚の条件を満たしていない"
   | .destroyAttacker | .negateAttack =>
@@ -947,6 +969,12 @@ def mkLink (b : Board) (who : PlayerId) (card : Card) (eff : Effect) (speed : Na
       match (b.get w).grave[i]? with
       | some cd => pure (some (w, i, cd))
       | none => throw "墓地にそのカードがない"
+  let st ← match args.backrow with
+    | none => pure none
+    | some (w, i) =>
+      match (b.get w).backrow[i]? with
+      | some sc => pure (some (w, sc.id))
+      | none => throw "対象が存在しない"
   let hm ← args.hand.mapM fun i => do
     let j ← match shift with
       | none => pure i
@@ -967,7 +995,7 @@ def mkLink (b : Board) (who : PlayerId) (card : Card) (eff : Effect) (speed : Na
       match (b.get who).extra[i]? with
       | some cd => pure (some (i, cd))
       | none => throw "エクストラデッキにそのカードがない"
-  pure { owner := who, card, eff, speed, targets := tg, graveTarget := gt, handMats := hm,
+  pure { owner := who, card, eff, speed, targets := tg, graveTarget := gt, stTarget := st, handMats := hm,
          fieldMats := fm, extra := ex }
 
 /-- 魔法・罠を墓地へ送る（モンスター効果ならそのまま） -/
@@ -996,7 +1024,7 @@ def resolveLink (c : Ctx) (b : Board) (l : ChainLink) : Board :=
     let since := b.clock + 1
     { b.modify l.owner (fun p =>
         { p with backrow := p.backrow ++
-            [{ card := l.card, setTurn := c.turn, faceUp := true, equipTo := eq, bond, since }] })
+            [{ card := l.card, setTurn := c.turn, faceUp := true, equipTo := eq, bond, since, id := since }] })
       with clock := since }
   match l.card with
   | .spell _ (.continuous _) => keep none none
@@ -1030,10 +1058,11 @@ def pushLink (s : ChainState) (b : Board) (l : ChainLink) : Except String ChainS
 
 def activateSpellAct (c : Ctx) (s : ChainState) (h : Nat) (args : Args) :
     Except String ChainState := do
-  unless c.phase.isMain do throw "魔法カードはメインフェイズに発動する"
   let me := s.board.get c.active
   let some card := me.hand[h]? | throw "手札にそのカードがない"
   let .spell .. := card | throw "魔法カードではない"
+  -- 速攻魔法は自分のターンならどのフェイズでも発動できる
+  unless c.phase.isMain || card.isQuickPlay do throw "魔法カードはメインフェイズに発動する"
   -- チェーン上の自分の魔法・罠も魔法・罠ゾーンを使っている
   unless me.backrow.length + (s.chain.filter (fun l => l.owner = c.active && !l.mon)).length
       < spellTrapZones do
@@ -1052,6 +1081,8 @@ def activateSetAct (c : Ctx) (s : ChainState) (who : PlayerId) (z : Nat) (args :
   | .trap .. =>
     if s.board.trapsLocked then throw "罠カードを発動できない（永続効果）"
     unless sc.setTurn < c.turn do throw "罠はセットしたターンには発動できない"
+  | .spell _ (.quickPlay _) =>
+    unless sc.setTurn < c.turn do throw "速攻魔法はセットしたターンには発動できない"
   | .spell .. =>
     unless who = c.active ∧ c.phase.isMain do throw "魔法は自分のメインフェイズにしか発動できない"
   | .monster _ => throw "モンスターは発動できない"
@@ -1225,8 +1256,10 @@ def setSpellTrapAct (c : Ctx) (b : Board) (h : Nat) : Except String Board := do
   let some card := me.hand[h]? | throw "手札にそのカードがない"
   if let .monster _ := card then throw "モンスターは魔法・罠ゾーンにセットできない"
   unless me.backrow.length < spellTrapZones do throw "魔法・罠ゾーンに空きがない"
-  return b.set c.active { me with hand := me.hand.eraseIdx h
-                                  backrow := me.backrow ++ [{ card, setTurn := c.turn }] }
+  let id := b.clock + 1
+  return { b.set c.active { me with hand := me.hand.eraseIdx h
+                                    backrow := me.backrow ++ [{ card, setTurn := c.turn, id }] }
+           with clock := id }
 
 def discardAct (c : Ctx) (b : Board) (h : Nat) : Except String Board := do
   unless c.phase = .ending do throw "手札を捨てるのはエンドフェイズのみ"
@@ -1714,6 +1747,7 @@ def axeOfDespair : Card := .spell "デーモンの斧" (.equip 1000)
 def burdenOfMighty : Card := .spell "強者の苦痛" (.continuous (.oppAtkDownPerLevel 100))
 def harpieFeather : Card := .spell "ハーピィの羽根帚" (.normal .destroyOppSpellTraps)
 def heavyStorm : Card := .spell "大嵐" (.normal .destroyAllSpellTraps)
+def cyclone : Card := .spell "サイクロン" (.quickPlay .destroySpellTrap)
 
 -- 罠
 def justDesserts : Card := .trap "仕込みマシンガン" (.normal (.burnPerOppMonster 500))
@@ -2350,17 +2384,72 @@ def triDecree : Except String Game := play triStart ([.pass] ++ resolve (.activa
 
 example : triDecree.toOption.map triNegated = some [true, false, true] := by decide
 
-/-- 3すくみの後にお触れを除去する（P1 の手札に羽根帚） -/
+/-- 3すくみの後にサイクロンでお触れを破壊する -/
 def triRemove : Except String Game :=
   play { triStart with board := { triStart.board with
-           p1 := { triStart.board.p1 with hand := [harpieFeather] } } }
-    ([.pass] ++ resolve (.activateSet .two 0) ++ resolve (.activateSpell 0))
+           p1 := { triStart.board.p1 with hand := [cyclone] } } }
+    ([.pass] ++ resolve (.activateSet .two 0) ++ resolve (.activateSpell 0 { backrow := some (.two, 0) }))
 
 /-- お触れがなくなっても、スキルドレインは先に適用されたショッカーに無効にされたまま。
 ショッカーが有効でスキルドレインは無効のまま（マスターデュエルで確認） -/
 example : triRemove.toOption.map (fun g =>
     (g.board.p2.backrow.length, g.board.stNegated .one 0, g.board.monNegated 0))
     = some (0, true, false) := by decide
+
+/-! ### サイクロン（速攻魔法）
+魔法・罠ゾーンのカード1枚を対象にして破壊する。対象は発動時に選び、解決時に確認する。 -/
+
+/-- P1 の手札にサイクロン。P2 は仕込みマシンガンと炸裂装甲をセット済み -/
+def cycloneStart : Game where
+  board := { p1 := { deck := [], hand := [cyclone], monsters := [fm 0 celticGuardian] },
+             p2 := { deck := [], backrow := [{ card := justDesserts, setTurn := 2, id := 1 },
+                                             { card := sakuretsu, setTurn := 2, id := 2 }] },
+             nextUid := 1, clock := 2 }
+  turn := 3
+  active := .one
+  phase := .main1
+
+def backrowNames (g : Game) (w : PlayerId) : List String := (g.board.get w).backrow.map (·.card.name)
+
+-- 炸裂装甲を破壊する
+/-- info: Except.ok (["仕込みマシンガン"], ["炸裂装甲"]) -/
+#guard_msgs in
+#eval (play cycloneStart (resolve (.activateSpell 0 { backrow := some (.two, 1) }))).map
+  (fun g => (backrowNames g .two, g.board.p2.grave.map (·.name)))
+
+/-- 対象の仕込みマシンガンにチェーンして発動されると、対象がいないので何も破壊しない -/
+def cycloneMiss : Except String Game :=
+  play cycloneStart ([.activateSpell 0 { backrow := some (.two, 0) }, .activateSet .two 0, .pass, .pass])
+
+/-- info: Except.ok (["炸裂装甲"], 7500) -/
+#guard_msgs in
+#eval cycloneMiss.map (fun g => (backrowNames g .two, g.board.p1.lp))
+
+example : cycloneMiss.toOption.map (fun g => backrowNames g .two) = some ["炸裂装甲"] := by decide
+
+/-- 速攻魔法はスペルスピード2なので、セットしておけば相手のターンにチェーンして発動できる。
+P1 のサイクロン（対象：P2 のセットしたサイクロン）に、P2 はそのサイクロン（対象：P1 のグラヴィティ・バインド）で
+チェーンする。P1 のサイクロンは対象がいないので何も破壊しない -/
+def cycloneChain : Except String Game :=
+  play { cycloneStart with board := { cycloneStart.board with
+           p1 := { cycloneStart.board.p1 with
+                   backrow := [{ card := gravityBind, setTurn := 1, faceUp := true, since := 1, id := 1 }] },
+           p2 := { cycloneStart.board.p2 with
+                   backrow := cycloneStart.board.p2.backrow ++ [{ card := cyclone, setTurn := 2, id := 3 }] } } }
+    [.activateSpell 0 { backrow := some (.two, 2) }, .activateSet .two 2 { backrow := some (.one, 0) },
+     .pass, .pass]
+
+/-- info: Except.ok ([], ["仕込みマシンガン", "炸裂装甲"]) -/
+#guard_msgs in
+#eval cycloneChain.map (fun g => (backrowNames g .one, backrowNames g .two))
+
+example : cycloneChain.toOption.map (fun g => (backrowNames g .one, backrowNames g .two))
+    = some ([], ["仕込みマシンガン", "炸裂装甲"]) := by decide
+
+-- セットしたターンには発動できない
+/-- info: Except.error "速攻魔法はセットしたターンには発動できない" -/
+#guard_msgs in
+#eval (play cycloneStart [.setSpellTrap 0, .activateSet .one 0 { backrow := some (.two, 0) }]).map (fun _ => ())
 
 end Demo
 

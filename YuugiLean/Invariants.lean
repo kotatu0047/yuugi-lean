@@ -199,6 +199,24 @@ theorem Board.count_destroyAllOf (b : Board) (w : PlayerId) : (b.destroyAllOf w)
   unfold Board.destroyAllOf
   exact Board.count_foldl_toGraveMon' _ _ _ _
 
+theorem Board.count_destroyBackrow (b : Board) (w : PlayerId) (i : Nat) :
+    (b.destroyBackrow w i).count = b.count := by
+  unfold Board.destroyBackrow
+  split
+  · rfl
+  · rename_i s hs
+    have h0 : (b.modify w fun p => { p with backrow := p.backrow.eraseIdx i, grave := p.grave ++ [s.card] }).count
+        = b.count := by
+      apply Board.count_modify_eq
+      have := length_eraseIdx_of_getElem? hs
+      simp only [Player.count, List.length_append, List.length_cons, List.length_nil] at this ⊢; omega
+    simp only
+    split
+    · split
+      · exact h0
+      · rw [Board.count_toGraveMon]; exact h0
+    · exact h0
+
 theorem Board.count_destroyAllBackrow (b : Board) (ws : List PlayerId) :
     (b.destroyAllBackrow ws).count = b.count := by
   unfold Board.destroyAllBackrow
@@ -392,6 +410,12 @@ theorem Board.count_applyEffect (c : Ctx) (l : ChainLink) (b : Board) :
   case negateAttack => rfl
   case destroyOppSpellTraps => exact Board.count_destroyAllBackrow _ _
   case destroyAllSpellTraps => exact Board.count_destroyAllBackrow _ _
+  case destroySpellTrap =>
+    split
+    · split
+      · exact Board.count_destroyBackrow _ _ _
+      · rfl
+    · rfl
   case millOpp n =>
     apply Board.count_modify_eq
     simp [Player.count]; omega
@@ -451,11 +475,11 @@ theorem Board.count_resolveLink (c : Ctx) (b : Board) (l : ChainLink) :
     have hkeep : ∀ (eq bond : Option Nat),
         ({ b1.modify l.owner (fun p => { p with backrow := p.backrow ++
             [{ card := l.card, setTurn := c.turn, faceUp := true, equipTo := eq, bond,
-               since := b1.clock + 1 }] }) with clock := b1.clock + 1 } : Board).count = b.count + 1 := by
+               since := b1.clock + 1, id := b1.clock + 1 }] }) with clock := b1.clock + 1 } : Board).count = b.count + 1 := by
       intro eq bond
       have := b1.count_modify l.owner (fun p => { p with backrow := p.backrow ++
             [{ card := l.card, setTurn := c.turn, faceUp := true, equipTo := eq, bond,
-               since := b1.clock + 1 }] })
+               since := b1.clock + 1, id := b1.clock + 1 }] })
       simp [Player.count] at this
       show (b1.modify _ _).count = _
       omega
@@ -770,16 +794,16 @@ theorem count_extraSummonAct {c : Ctx} {b b' : Board} {ei : Nat} {ms : List Nat}
   · exact Board.count_extra_xyz (by assumption)
   · exact Board.count_extra_other (by assumption)
 
-theorem Board.count_setST {b : Board} {w : PlayerId} {i t : Nat} {x : Card}
+theorem Board.count_setST {b : Board} {w : PlayerId} {i : Nat} {x : Card} {y : SetCard}
     (h : (b.get w).hand[i]? = some x) :
     (b.set w { lp := (b.get w).lp, deck := (b.get w).deck, extra := (b.get w).extra,
                hand := (b.get w).hand.eraseIdx i, monsters := (b.get w).monsters,
-               backrow := (b.get w).backrow ++ [{ card := x, setTurn := t }],
+               backrow := (b.get w).backrow ++ [y],
                grave := (b.get w).grave }).count = b.count := by
   have h1 := b.count_set w
     ({ lp := (b.get w).lp, deck := (b.get w).deck, extra := (b.get w).extra,
        hand := (b.get w).hand.eraseIdx i, monsters := (b.get w).monsters,
-       backrow := (b.get w).backrow ++ [{ card := x, setTurn := t }],
+       backrow := (b.get w).backrow ++ [y],
        grave := (b.get w).grave })
   have h2 := length_eraseIdx_of_getElem? h
   simp only [Player.count, List.length_append, List.length_cons, List.length_nil] at h1
@@ -836,7 +860,7 @@ theorem count_setSpellTrapAct {c : Ctx} {b b' : Board} {hd : Nat}
   all_goals try (cases h; done)
   all_goals simp only [pure, Except.pure, Except.ok.injEq] at h
   all_goals subst h
-  all_goals exact Board.count_setST (by assumption)
+  all_goals exact (Board.count_clock _ _).trans (Board.count_setST (by assumption))
 
 theorem count_discardAct {c : Ctx} {b b' : Board} {hd : Nat}
     (h : discardAct c b hd = .ok b') : b'.count = b.count := by
@@ -1130,6 +1154,20 @@ theorem Board.shrink_foldl_toGraveMonN (us : List Nat) (cause : LeaveCause) (b :
 theorem Board.shrink_destroyAllOf (b : Board) (w : PlayerId) : b.Shrink (b.destroyAllOf w) :=
   Board.shrink_foldl_toGraveMon _ _ _ _
 
+theorem Board.shrink_destroyBackrow (b : Board) (w : PlayerId) (i : Nat) : b.Shrink (b.destroyBackrow w i) := by
+  unfold Board.destroyBackrow
+  split
+  · exact Board.Shrink.refl _
+  · rename_i s _
+    have h0 := Board.shrink_modify_eq b w
+      (fun p => { p with backrow := p.backrow.eraseIdx i, grave := p.grave ++ [s.card] }) rfl
+    simp only
+    split
+    · split
+      · exact h0
+      · exact h0.trans (Board.shrink_toGraveMon _ _ _)
+    · exact h0
+
 theorem Board.shrink_destroyAllBackrow (b : Board) (ws : List PlayerId) : b.Shrink (b.destroyAllBackrow ws) := by
   unfold Board.destroyAllBackrow
   simp only
@@ -1218,6 +1256,12 @@ theorem Board.uidOK_applyEffect {c : Ctx} {l : ChainLink} {b : Board} (h : b.Uid
   case negateAttack => exact h.shrink (Board.Shrink.with rfl rfl rfl)
   case destroyOppSpellTraps => exact h.shrink (Board.shrink_destroyAllBackrow _ _)
   case destroyAllSpellTraps => exact h.shrink (Board.shrink_destroyAllBackrow _ _)
+  case destroySpellTrap =>
+    split
+    · split
+      · exact h.shrink (Board.shrink_destroyBackrow _ _ _)
+      · exact h
+    · exact h
   case millOpp => exact h.shrink (Board.shrink_modify_eq _ _ _ (by rfl))
   case recruit =>
     split
@@ -1268,7 +1312,7 @@ theorem Board.uidOK_resolveLink {c : Ctx} {b : Board} {l : ChainLink} (h : b.Uid
       · exact hA.modify_eq (by rfl)
     have hk : ∀ eq bond : Option Nat, ({ b1.modify l.owner (fun p => { p with backrow := p.backrow ++
             [{ card := l.card, setTurn := c.turn, faceUp := true, equipTo := eq, bond,
-               since := b1.clock + 1 }] }) with clock := b1.clock + 1 } : Board).UidOK := by
+               since := b1.clock + 1, id := b1.clock + 1 }] }) with clock := b1.clock + 1 } : Board).UidOK := by
       intro eq bond
       exact (hA.modify_eq (by rfl)).same rfl rfl rfl
     split
@@ -1632,6 +1676,21 @@ theorem Board.dec_foldl_toGraveMon {α : Type} (xs : List α) (f : α → Nat) (
 theorem Board.dec_foldl_toGraveMonN (us : List Nat) (cause : LeaveCause) (b : Board) :
     b.Dec (us.foldl (fun b u => b.toGraveMon u cause) b) := Board.dec_foldl_toGraveMon us id cause b
 
+theorem Board.dec_destroyBackrow (b : Board) (w : PlayerId) (i : Nat) : b.Dec (b.destroyBackrow w i) := by
+  unfold Board.destroyBackrow
+  split
+  · exact Board.Dec.refl _
+  · rename_i s _
+    have h0 := Board.dec_modify_same b w
+      (fun p => { p with backrow := p.backrow.eraseIdx i, grave := p.grave ++ [s.card] }) rfl
+      (by simp only [List.length_eraseIdx]; split <;> omega)
+    simp only
+    split
+    · split
+      · exact h0
+      · exact h0.trans (Board.dec_toGraveMon _ _ _)
+    · exact h0
+
 theorem Board.dec_destroyAllBackrow (b : Board) (ws : List PlayerId) : b.Dec (b.destroyAllBackrow ws) := by
   unfold Board.destroyAllBackrow
   simp only
@@ -1894,6 +1953,12 @@ theorem Board.Bounded.applyEffect {c : Ctx} {l : ChainLink} {b : Board} {B : Pla
   case negateAttack => exact h.with_attack _
   case destroyOppSpellTraps => exact h.destroyAllBackrow _
   case destroyAllSpellTraps => exact h.destroyAllBackrow _
+  case destroySpellTrap =>
+    split
+    · split
+      · exact h.dec (Board.dec_destroyBackrow _ _ _)
+      · exact h
+    · exact h
   case searchMaxDef =>
     split
     · split
@@ -1922,7 +1987,7 @@ theorem Board.Bounded.resolveLink {c : Ctx} {b : Board} {l : ChainLink} {B : Pla
   have hk : ∀ eq bond : Option Nat, l.mon = false →
       ({ b1.modify l.owner (fun p => { p with backrow := p.backrow ++
             [{ card := l.card, setTurn := c.turn, faceUp := true, equipTo := eq, bond,
-               since := b1.clock + 1 }] }) with clock := b1.clock + 1 } : Board).Bounded (addST B l) := by
+               since := b1.clock + 1, id := b1.clock + 1 }] }) with clock := b1.clock + 1 } : Board).Bounded (addST B l) := by
     intro eq bond hm
     apply Board.Bounded.with_clock
     intro v
@@ -2132,6 +2197,7 @@ theorem zone_boardAct {c : Ctx} {b b' : Board} {a : Action} (hb : b.Bounded full
     simp only [pure, Except.pure, Except.ok.injEq] at h
     subst h
     rename_i hlt
+    apply Board.Bounded.with_clock
     intro v
     have hv := hb v
     by_cases hvw : v = c.active
