@@ -10,10 +10,12 @@ import YuugiLean.YuGiOh
 * ゾーンの上限を超えない：メインモンスターゾーン5・エクストラモンスターゾーン1・
   魔法罠ゾーン（チェーン上の魔法・罠を含む）5（`step_zoneOK`、`reachable_zoneOK`）
 * どちらかの LP が 0 なら決着している（`reachable_lp_zero_decided`）
-* 永続効果の有効・無効の判定（`decideAll`）について
-  * 無効と判定されたカードには、それを無効にする有効なカードがある（`negated_has_reason`）
-  * 有効と判定されたカード同士は互いに無効にしない（`effective_consistent`）
-  * どのカードにも無効にされないカードは有効（`unbeaten_effective`）
+* 永続効果の有効・無効の判定（`settle`）について
+  * 判定で変わるのは有効・無効と適用の時刻だけ（`settle_keys`）
+  * 判定が決まった状態では
+    * 無効なカードには、それを無効にする有効なカードがある（`negated_has_reason`）
+    * 有効なカード同士は互いに無効にしない（`settled_consistent`）
+    * どのカードにも無効にされないカードは有効（`unbeaten_effective`）
 -/
 
 namespace YGO
@@ -948,6 +950,23 @@ theorem count_nextPhase {g g' : Game} (h : nextPhase g = .ok g') : g'.count = g.
           Board.count_modify_eq _ _ _ (Player.count_resetMonsters _)]
         rfl
 
+/-! ### 永続効果の判定結果の書き込み（`commitAuras`）はカードを動かさない -/
+
+@[simp] theorem FieldMonster.commitAura_uid (r : List AuraSrc) (m : FieldMonster) :
+    (m.commitAura r).uid = m.uid := by unfold FieldMonster.commitAura; split <;> rfl
+@[simp] theorem FieldMonster.commitAura_emz (r : List AuraSrc) (m : FieldMonster) :
+    (m.commitAura r).emz = m.emz := by unfold FieldMonster.commitAura; split <;> rfl
+@[simp] theorem FieldMonster.commitAura_overlays (r : List AuraSrc) (m : FieldMonster) :
+    (m.commitAura r).overlays = m.overlays := by unfold FieldMonster.commitAura; split <;> rfl
+
+theorem Player.count_commitAuras (p : Player) (w : PlayerId) (r : List AuraSrc) :
+    (p.commitAuras w r).count = p.count := by
+  simp only [Player.commitAuras, Player.count, List.length_mapIdx]
+  rw [monCount_map (FieldMonster.commitAura_overlays r)]
+
+theorem Board.count_commitAuras (b : Board) : b.commitAuras.count = b.count := by
+  simp only [Board.commitAuras, Board.count, Player.count_commitAuras]
+
 /-- **1手進めてもカードの総数は変わらない** -/
 theorem step_count {g g' : Game} {a : Action} (h : step g a = .ok g') : g'.count = g.count := by
   unfold step at h
@@ -962,8 +981,9 @@ theorem step_count {g g' : Game} {a : Action} (h : step g a = .ok g') : g'.count
       · rename_i s0
         simp only [Except.ok.injEq] at h; subst h
         have h1 := count_act ha
-        have h2 := count_processTriggers g.ctx s0
-        simp only [Game.count, checkResult, Game.setCs, ChainState.count, Game.cs] at h1 h2 ⊢
+        have h2 := count_processTriggers g.ctx { s0 with board := s0.board.commitAuras }
+        have h3 := Board.count_commitAuras s0.board
+        simp only [Game.count, checkResult, Game.setCs, ChainState.count, Game.cs] at h1 h2 h3 ⊢
         omega
 
 /-- **合法な手順を何手進めても、カードの総数は最初と同じ** -/
@@ -1480,6 +1500,12 @@ theorem uidOK_nextPhase {g g' : Game} (hg : g.UidOK) (h : nextPhase g = .ok g') 
         simp only [pure, Except.pure, Except.ok.injEq] at h; subst h
         exact h0.set_eq (Player.monsters_drawOne hp)
 
+theorem Board.UidOK.commitAuras {b : Board} (h : b.UidOK) : b.commitAuras.UidOK := by
+  have hu : ∀ (p : Player) w r, (p.commitAuras w r).monsters.map (·.uid) = p.monsters.map (·.uid) := by
+    intro p w r; simp [Player.commitAuras, List.map_map, Function.comp_def]
+  unfold Board.UidOK Board.uids Board.uidsOf at *
+  simpa only [Board.commitAuras, Board.get, hu] using h
+
 /-- **1手進めても、フィールドのモンスターの uid は重複しない** -/
 theorem step_uidOK {g g' : Game} {a : Action} (hg : g.UidOK) (h : step g a = .ok g') : g'.UidOK := by
   unfold step at h
@@ -1493,7 +1519,7 @@ theorem step_uidOK {g g' : Game} {a : Action} (hg : g.UidOK) (h : step g a = .ok
       · cases h
       · rename_i s0
         simp only [Except.ok.injEq] at h; subst h
-        exact uidOK_processTriggers g.ctx (uidOK_act (show g.cs.board.UidOK from hg) ha)
+        exact uidOK_processTriggers g.ctx (uidOK_act (show g.cs.board.UidOK from hg) ha).commitAuras
 
 theorem init_uidOK (d1 d2 e1 e2 : List Card) : (Game.init d1 d2 e1 e2).UidOK := by
   simp [Game.UidOK, Board.UidOK, Board.uids, Board.uidsOf, Board.get, Game.init]
@@ -2226,6 +2252,21 @@ theorem zone_nextPhase {g g' : Game} (hg : g.ZoneOK) (h : nextPhase g = .ok g') 
           (fun v => by have := hb.ownST_le v; omega)
         rw [Player.backrow_drawOne hp]; exact Nat.le_refl _
 
+theorem ZoneOK.commitAuras {b : Board} {ch : List ChainLink} (h : ZoneOK b ch) : ZoneOK b.commitAuras ch := by
+  have he : ∀ (p : Player) w r, (p.commitAuras w r).mainCnt = p.mainCnt ∧
+      (p.commitAuras w r).emzCnt = p.emzCnt ∧ (p.commitAuras w r).backrow.length = p.backrow.length := by
+    intro p w r
+    simp [Player.commitAuras, Player.mainCnt, Player.emzCnt, List.filter_map, Function.comp_def]
+  intro v
+  obtain ⟨h1, h2, h3⟩ := h v
+  cases v
+  · obtain ⟨e1, e2, e3⟩ := he b.p1 .one (settle b.sources b.clock).1
+    exact ⟨by simpa [Board.commitAuras, Board.get, e1] using h1, by simpa [Board.commitAuras, Board.get, e2] using h2,
+      by simpa [Board.commitAuras, Board.get, e3] using h3⟩
+  · obtain ⟨e1, e2, e3⟩ := he b.p2 .two (settle b.sources b.clock).1
+    exact ⟨by simpa [Board.commitAuras, Board.get, e1] using h1, by simpa [Board.commitAuras, Board.get, e2] using h2,
+      by simpa [Board.commitAuras, Board.get, e3] using h3⟩
+
 /-- **1手進めても、ゾーンの上限を超えない** -/
 theorem step_zoneOK {g g' : Game} {a : Action} (hg : g.ZoneOK) (h : step g a = .ok g') : g'.ZoneOK := by
   unfold step at h
@@ -2239,7 +2280,7 @@ theorem step_zoneOK {g g' : Game} {a : Action} (hg : g.ZoneOK) (h : step g a = .
       · cases h
       · rename_i s0
         simp only [Except.ok.injEq] at h; subst h
-        exact zone_processTriggers g.ctx (zone_act (s := g.cs) hg ha)
+        exact zone_processTriggers g.ctx (zone_act (s := g.cs) hg ha).commitAuras
 
 /-- **到達可能な全状態で、ゾーンの上限を超えない**（初期状態でフィールドが空であることから） -/
 theorem reachable_zoneOK {g : Game} (hr : Reachable g) : g.ZoneOK := by
@@ -2318,7 +2359,7 @@ theorem step_LPOK {g g' : Game} {a : Action} (hg : g.LPOK) (h : step g a = .ok g
       · cases h
       · rename_i s0
         simp only [Except.ok.injEq] at h; subst h
-        exact checkResult_none (g := g.setCs (processTriggers g.ctx s0)) hr
+        exact checkResult_none (g := g.setCs (processTriggers g.ctx { s0 with board := s0.board.commitAuras })) hr
 
 theorem reachable_LPOK {g : Game} (hr : Reachable g) : g.LPOK := by
   induction hr with
@@ -2333,96 +2374,79 @@ theorem reachable_lp_zero_decided {g : Game} (hr : Reachable g)
   | some _ => rfl
   | none => obtain ⟨h1, h2⟩ := this hres; omega
 
-/-! ## 永続効果の有効・無効の判定（effectiveSources）の正しさ -/
+/-! ## 永続効果の有効・無効の判定（settle）の正しさ
+`settleOnce` がこれ以上状態を変えない（判定が決まった）とき、次が成り立つ。 -/
 
-/-- 判定の途中経過が満たす性質：
-* 無効と決まったカードには、それを無効にする有効なカードがある
-* 有効と決まったカードを無効にするカードは、すべて無効と決まっている -/
-def DInv (srcs : List AuraSrc) (st : Nat → Option Bool) : Prop :=
-  ∀ i s, srcs[i]? = some s →
-    (st i = some false → ∃ j t, srcs[j]? = some t ∧ t.beats s = true ∧ st j = some true) ∧
-    (st i = some true → ∀ j t, srcs[j]? = some t → t.beats s = true → st j = some false)
+theorem settleOnce_none {srcs : List AuraSrc} {c : Nat} (h : settleOnce srcs c = none) :
+    (∀ s ∈ srcs, s.on = true → beatenIn srcs s = false) ∧
+    (∀ s ∈ srcs, s.on = false → beatenIn srcs s = true) := by
+  unfold settleOnce at h
+  split at h
+  · cases h
+  · rename_i h1
+    split at h
+    · cases h
+    · rename_i h2
+      rw [List.findIdx?_eq_none_iff] at h1 h2
+      refine ⟨fun s hs ho => ?_, fun s hs ho => ?_⟩
+      · simpa [ho] using h1 s hs
+      · simpa [ho] using h2 s hs
 
-/-- 一度決まった判定は変わらない -/
-theorem decideRound_mono {srcs : List AuraSrc} {st : Nat → Option Bool} {i : Nat} {v : Bool}
-    (h : st i = some v) : decideRound srcs st i = some v := by
-  simp [decideRound, h]
-
-theorem mem_att {srcs : List AuraSrc} {s t : AuraSrc} {j : Nat} (hj : srcs[j]? = some t)
-    (hb : t.beats s = true) :
-    j ∈ (List.range srcs.length).filter (fun j => match srcs[j]? with | some t => t.beats s | none => false) := by
-  have hlt : j < srcs.length := (List.getElem?_eq_some_iff.mp hj).1
-  simp only [List.mem_filter, List.mem_range, hlt, true_and, hj, hb]
-
-theorem decideRound_inv {srcs : List AuraSrc} {st : Nat → Option Bool} (h : DInv srcs st) :
-    DInv srcs (decideRound srcs st) := by
-  intro i s hs
-  cases hst : st i with
-  | some v =>
-    rw [decideRound_mono hst]
-    obtain ⟨h1, h2⟩ := h i s hs
-    constructor
-    · intro hv; obtain ⟨j, t, hj, hb, hjt⟩ := h1 (by rw [hst, hv])
-      exact ⟨j, t, hj, hb, decideRound_mono hjt⟩
-    · intro hv j t hj hb; exact decideRound_mono (h2 (by rw [hst, hv]) j t hj hb)
-  | none =>
-    simp only [decideRound, hst, hs]
-    split
-    · rename_i hany
-      refine ⟨fun _ => ?_, fun h => by simp at h⟩
-      obtain ⟨j, hj, hjt⟩ := List.any_eq_true.mp hany
-      simp only [List.mem_filter, List.mem_range] at hj
-      obtain ⟨_, hj2⟩ := hj
-      split at hj2
-      · rename_i t ht
-        exact ⟨j, t, ht, hj2, decideRound_mono (by simpa using hjt)⟩
-      · simp at hj2
-    · split
-      · rename_i _ hall
-        refine ⟨fun h => by simp at h, fun _ j t hj hb => ?_⟩
-        have := List.all_eq_true.mp hall j (mem_att hj hb)
-        exact decideRound_mono (by simpa using this)
-      · exact ⟨fun h => by simp at h, fun h => by simp at h⟩
-
-theorem repeat_inv (srcs : List AuraSrc) (n : Nat) : DInv srcs (Nat.repeat (decideRound srcs) n (fun _ => none)) := by
-  induction n with
-  | zero => intro i s _; exact ⟨fun h => by simp [Nat.repeat] at h, fun h => by simp [Nat.repeat] at h⟩
-  | succ n ih => exact decideRound_inv ih
-
-theorem repeat_mono (srcs : List AuraSrc) (n m : Nat) (i : Nat) (v : Bool)
-    (h : Nat.repeat (decideRound srcs) n (fun _ => none) i = some v) :
-    Nat.repeat (decideRound srcs) (n + m) (fun _ => none) i = some v := by
-  induction m with
-  | zero => exact h
-  | succ m ih => exact decideRound_mono ih
-
-/-- **無効と判定されたカードには、それを無効にする有効なカードがある** -/
-theorem negated_has_reason {srcs : List AuraSrc} {i : Nat} {s : AuraSrc} (hs : srcs[i]? = some s)
-    (h : decideAll srcs i = some false) :
-    ∃ j t, srcs[j]? = some t ∧ t.beats s = true ∧ decideAll srcs j = some true :=
-  (repeat_inv srcs _ i s hs).1 h
-
-/-- **有効と判定されたカード同士は、互いに無効にしない** -/
-theorem effective_consistent {srcs : List AuraSrc} {i j : Nat} {s t : AuraSrc}
-    (hs : srcs[i]? = some s) (ht : srcs[j]? = some t)
-    (hi : decideAll srcs i = some true) (hj : decideAll srcs j = some true) : t.beats s = false := by
+/-- **有効なカード同士は、互いに無効にしない** -/
+theorem settled_consistent {srcs : List AuraSrc} {c : Nat} (h : settleOnce srcs c = none)
+    {s t : AuraSrc} (hs : s ∈ srcs) (ht : t ∈ srcs) (hso : s.on = true) (hto : t.on = true) :
+    t.beats s = false := by
+  have := (settleOnce_none h).1 s hs hso
+  simp only [beatenIn, List.any_eq_false, Bool.and_eq_true, not_and] at this
   cases hb : t.beats s
   · rfl
-  · have := (repeat_inv srcs _ i s hs).2 hi j t ht hb
-    unfold decideAll at hj
-    rw [hj] at this; cases this
+  · exact absurd hb (this t ht hto)
+
+/-- **無効なカードには、それを無効にする有効なカードがある** -/
+theorem negated_has_reason {srcs : List AuraSrc} {c : Nat} (h : settleOnce srcs c = none)
+    {s : AuraSrc} (hs : s ∈ srcs) (hso : s.on = false) :
+    ∃ t ∈ srcs, t.on = true ∧ t.beats s = true := by
+  have := (settleOnce_none h).2 s hs hso
+  simpa [beatenIn] using this
 
 /-- **どのカードにも無効にされないカードは有効** -/
-theorem unbeaten_effective {srcs : List AuraSrc} {i : Nat} {s : AuraSrc} (hs : srcs[i]? = some s)
-    (hn : ∀ t ∈ srcs, t.beats s = false) : decideAll srcs i = some true := by
-  have h1 : Nat.repeat (decideRound srcs) 1 (fun _ => none) i = some true := by
-    simp [Nat.repeat, decideRound, hs]
-    intro x _
+theorem unbeaten_effective {srcs : List AuraSrc} {c : Nat} (h : settleOnce srcs c = none)
+    {s : AuraSrc} (hs : s ∈ srcs) (hn : ∀ t ∈ srcs, t.beats s = false) : s.on = true := by
+  cases hso : s.on
+  · obtain ⟨t, ht, _, hb⟩ := negated_has_reason h hs hso
+    rw [hn t ht] at hb; cases hb
+  · rfl
+
+theorem map_modify_eq {α β : Type} (l : List α) (f : α → α) (g : α → β) (hf : ∀ x, g (f x) = g x) (i : Nat) :
+    (l.modify i f).map g = l.map g := by
+  induction l generalizing i with
+  | nil => simp
+  | cons x xs ih => cases i <;> simp [hf, ih]
+
+/-- `settleOnce` は有効・無効と適用の時刻だけを変える -/
+theorem settleOnce_keys {srcs srcs' : List AuraSrc} {c c' : Nat} (h : settleOnce srcs c = some (srcs', c')) :
+    srcs'.map (fun s => (s.who, s.kind, s.key, s.auras)) = srcs.map (fun s => (s.who, s.kind, s.key, s.auras)) := by
+  unfold settleOnce at h
+  split at h
+  · simp only [Option.some.injEq, Prod.mk.injEq] at h; obtain ⟨rfl, -⟩ := h
+    apply map_modify_eq; intro; rfl
+  · split at h
+    · simp only [Option.some.injEq, Prod.mk.injEq] at h; obtain ⟨rfl, -⟩ := h
+      apply map_modify_eq; intro; rfl
+    · cases h
+
+/-- **判定で変わるのは有効・無効と適用の時刻だけで、カードの集まりは変わらない** -/
+theorem settle_keys (srcs : List AuraSrc) (c : Nat) :
+    (settle srcs c).1.map (fun s => (s.who, s.kind, s.key, s.auras)) =
+      srcs.map (fun s => (s.who, s.kind, s.key, s.auras)) := by
+  unfold settle
+  generalize 4 * (srcs.length + 1) ^ 2 = n
+  induction n generalizing srcs c with
+  | zero => rfl
+  | succ n ih =>
+    simp only [settleAux]
     split
-    · rename_i t ht; simp [hn t (List.mem_of_getElem? ht)]
+    · rename_i srcs' c' h; rw [ih, settleOnce_keys h]
     · rfl
-  unfold decideAll
-  rw [show srcs.length + 1 = 1 + srcs.length by omega]
-  exact repeat_mono srcs 1 srcs.length i true h1
 
 end YGO

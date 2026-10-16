@@ -22,7 +22,9 @@ Lean 4 コアのみ（Mathlib 不要）で動く、遊戯王OCGの基本ルー�
 * 罠の封殺（サイコ・ショッカー、王宮のお触れ）：罠の発動の禁止、フィールドの罠の効果の無効化
 * 永続効果どうしの無効化は適用が始まった順番（タイムスタンプ）で判定する：
   一方的に無効にする効果は順番に関係なく優先され、互いに無効にし合う効果は先に適用された方が優先される。
-  無効にしている側が無効化されれば、無効にされていた側は有効に戻る。判定はその時点の盤面から毎回行う。
+  無効にしている側が無効化されれば、無効にされていた側は有効に戻り、その時点で新たに適用されたものとして扱う。
+  有効・無効は前回の判定結果から1つずつ順に変わるので（スキルドレイン・サイコ・ショッカー・王宮のお触れの
+  3すくみ）、判定結果は1手ごとに盤面に書き込む。
   処理は1つずつ順番に行われるので、2枚が同じ時刻に適用され始めることはない
 * 対象と関係を持つ永続罠（リビングデッドの呼び声）：このカードが離れた時、または蘇生したモンスターが
   破壊された時にもう一方を破壊する（その時点で効果が無効なら何も起きない）
@@ -234,7 +236,8 @@ structure FieldMonster where
   effectUsed   : Bool := false  -- 起動効果・誘発即時効果を使った（1ターンに1度）
   overlays     : List Card := [] -- X素材
   emz          : Bool := false  -- エクストラモンスターゾーンにいる
-  since        : Nat := 0       -- 表側表示になった時刻（永続効果の適用順）
+  since        : Nat := 0       -- 効果が適用された時刻（永続効果の適用順）
+  negated      : Bool := false  -- 前回の判定で永続効果が無効化されていた
   deriving Repr, DecidableEq
 
 /-- 魔法・罠ゾーンのカード -/
@@ -244,7 +247,8 @@ structure SetCard where
   faceUp  : Bool := false        -- 表側表示（発動済みの永続・装備カード）
   equipTo : Option Nat := none   -- 装備しているモンスターの uid
   bond    : Option Nat := none   -- 関係を持つモンスターの uid（リビングデッドの呼び声）
-  since   : Nat := 0             -- 表側表示になった時刻（永続効果の適用順）
+  since   : Nat := 0             -- 効果が適用された時刻（永続効果の適用順）
+  negated : Bool := false        -- 前回の判定で永続効果が無効化されていた
   deriving Repr, DecidableEq
 
 def initialLP      : Nat := 8000
@@ -518,7 +522,8 @@ structure AuraSrc where
   who   : PlayerId
   kind  : SrcKind
   key   : Nat × Nat × Nat   -- カードの識別（同じカードかどうか）
-  since : Nat               -- 表側表示になった時刻
+  since : Nat               -- 効果が適用された時刻（無効から有効に戻った場合は戻った時刻）
+  on    : Bool              -- 効果が適用されている（無効化されていない）
   auras : List Aura
   deriving Repr, DecidableEq
 
@@ -531,37 +536,45 @@ def AuraSrc.negates (t s : AuraSrc) : Bool :=
     | _, _ => false
 
 /-- t が s を無効にする。互いに無効にし合う場合は、先に適用された方だけが無効にする。
-処理は1つずつ順番に行われるので、2枚が同じ時刻に表側表示になることはない（`play` で進める限り、
-表側表示になるたびに `Board.clock` が進む）。盤面を直接作る場合は `since` が重ならないようにする。 -/
+処理は1つずつ順番に行われるので、2枚が同じ時刻に適用されることはない（`play` で進める限り、
+表側表示になるたび・無効から有効に戻るたびに `Board.clock` が進む）。盤面を直接作る場合は
+`since` が重ならないようにする。 -/
 def AuraSrc.beats (t s : AuraSrc) : Bool :=
   t.negates s && !(s.negates t && s.since < t.since)
 
-/-- 判定の1ラウンド。`st i` は i 番目のカードの判定（`some true` は有効、`some false` は無効、`none` は未定）。
-無効にするカードの中に有効なものがあれば無効、すべて無効なら有効と決める。 -/
-def decideRound (srcs : List AuraSrc) (st : Nat → Option Bool) (i : Nat) : Option Bool :=
-  match st i with
-  | some v => some v
+/-- s を無効にする、適用中のカードがあるか -/
+def beatenIn (srcs : List AuraSrc) (s : AuraSrc) : Bool :=
+  srcs.any fun t => t.on && t.beats s
+
+/-- 永続効果の有効・無効を1つだけ変える。
+* 適用中のカードを無効にする適用中のカードがあれば、そのカードを無効にする
+* なければ、どの適用中のカードにも無効にされない無効なカードを、新しい時刻で有効に戻す
+* どちらもなければ、状態は決まっている（`none`）
+
+有効に戻ったカードは「その時点で新たに適用された」ので、互いに無効にし合う相手が先に適用中なら
+すぐにまた無効になる（スキルドレイン → サイコ・ショッカー → 王宮のお触れの3すくみ）。 -/
+def settleOnce (srcs : List AuraSrc) (clock : Nat) : Option (List AuraSrc × Nat) :=
+  match srcs.findIdx? (fun s => s.on && beatenIn srcs s) with
+  | some i => some (srcs.modify i ({ · with on := false }), clock)
   | none =>
-    match srcs[i]? with
+    match srcs.findIdx? (fun s => !s.on && !beatenIn srcs s) with
+    | some i => some (srcs.modify i ({ · with on := true, since := clock + 1 }), clock + 1)
     | none => none
-    | some s =>
-      let att := (List.range srcs.length).filter fun j =>
-        match srcs[j]? with
-        | some t => t.beats s
-        | none => false
-      if att.any (fun j => st j == some true) then some false
-      else if att.all (fun j => st j == some false) then some true
-      else none
 
-/-- 判定をカードの枚数＋1回繰り返す -/
-def decideAll (srcs : List AuraSrc) : Nat → Option Bool :=
-  Nat.repeat (decideRound srcs) (srcs.length + 1) (fun _ => none)
+def settleAux : Nat → List AuraSrc → Nat → List AuraSrc × Nat
+  | 0, srcs, c => (srcs, c)
+  | n + 1, srcs, c =>
+    match settleOnce srcs c with
+    | some (srcs', c') => settleAux n srcs' c'
+    | none => (srcs, c)
 
-/-- 無効化されていないカード。無効にする側が無効化されていれば、無効にされる側は有効に戻るので、
-状態が決まるまで判定を繰り返す。 -/
-def effectiveSources (srcs : List AuraSrc) : List AuraSrc :=
-  (List.range srcs.length).filterMap fun i =>
-    if decideAll srcs i == some false then none else srcs[i]?
+/-- 状態が決まるまで `settleOnce` を繰り返す（回数の上限は念のため） -/
+def settle (srcs : List AuraSrc) (clock : Nat) : List AuraSrc × Nat :=
+  settleAux (4 * (srcs.length + 1) ^ 2) srcs clock
+
+/-- 無効化されていないカード -/
+def effectiveSources (srcs : List AuraSrc) (clock : Nat) : List AuraSrc :=
+  (settle srcs clock).1.filter (·.on)
 
 /-- 魔法・罠ゾーンの i 番目のカードの識別 -/
 def stKey (w : PlayerId) (i : Nat) : Nat × Nat × Nat := (1, w.code, i)
@@ -575,12 +588,12 @@ def Player.sources (p : Player) (w : PlayerId) : List AuraSrc :=
     | some s =>
       if s.faceUp then
         some { who := w, kind := if s.card.isTrap then .trap else .spell, key := stKey w i,
-               since := s.since, auras := s.card.auras }
+               since := s.since, on := !s.negated, auras := s.card.auras }
       else none
     | none => none) ++
   p.monsters.filterMap fun m =>
     if m.pos = .faceDownDefense then none
-    else some { who := w, kind := .monster, key := monKey m.uid, since := m.since,
+    else some { who := w, kind := .monster, key := monKey m.uid, since := m.since, on := !m.negated,
                 auras := m.card.effects.filterMap MonsterEffect.aura? }
 
 namespace Board
@@ -596,9 +609,9 @@ def updMon (b : Board) (w : PlayerId) (uid : Nat) (f : FieldMonster → FieldMon
 def sources (b : Board) : List AuraSrc := b.p1.sources .one ++ b.p2.sources .two
 
 /-- 無効化されていないカード -/
-def effective (b : Board) : List AuraSrc := effectiveSources b.sources
+def effective (b : Board) : List AuraSrc := effectiveSources b.sources b.clock
 
-/-- 適用中の永続効果とそのコントローラー。その時点の盤面から毎回計算する。 -/
+/-- 適用中の永続効果とそのコントローラー。前回書き込んだ判定結果とその時点の盤面から計算する。 -/
 def auras (b : Board) : List (PlayerId × Aura) :=
   b.effective.flatMap fun s => s.auras.map (s.who, ·)
 
@@ -611,6 +624,29 @@ def stNegated (b : Board) (w : PlayerId) (i : Nat) : Bool := b.srcNegated (stKey
 
 /-- モンスターの効果が無効化されているか -/
 def monNegated (b : Board) (uid : Nat) : Bool := b.srcNegated (monKey uid)
+
+/-- 永続効果の有効・無効の判定結果をモンスターに書き込む -/
+def _root_.YGO.FieldMonster.commitAura (r : List AuraSrc) (m : FieldMonster) : FieldMonster :=
+  match r.find? (·.key == monKey m.uid) with
+  | some s => { m with since := s.since, negated := !s.on }
+  | none => m
+
+/-- 永続効果の有効・無効の判定結果を魔法・罠ゾーンのカードに書き込む -/
+def _root_.YGO.SetCard.commitAura (r : List AuraSrc) (key : Nat × Nat × Nat) (c : SetCard) : SetCard :=
+  match r.find? (·.key == key) with
+  | some s => { c with since := s.since, negated := !s.on }
+  | none => c
+
+/-- 永続効果の有効・無効の判定結果をプレイヤーのカードに書き込む -/
+def _root_.YGO.Player.commitAuras (p : Player) (w : PlayerId) (r : List AuraSrc) : Player :=
+  { p with monsters := p.monsters.map (·.commitAura r),
+           backrow := p.backrow.mapIdx fun i c => c.commitAura r (stKey w i) }
+
+/-- 永続効果の有効・無効の判定結果を盤面に書き込む。1手進めるたびに行う。
+有効・無効は前回の判定結果から順に変わっていくので（`settleOnce`）、盤面だけからは決まらない。 -/
+def commitAuras (b : Board) : Board :=
+  let r := settle b.sources b.clock
+  { b with p1 := b.p1.commitAuras .one r.1, p2 := b.p2.commitAuras .two r.1, clock := r.2 }
 
 /-- チェーン上の罠カードの効果が無効化されるか（フィールドの罠を無効にする効果が適用中か） -/
 def trapsNegated (b : Board) : Bool :=
@@ -1287,7 +1323,8 @@ def step (g : Game) (a : Action) : Except String Game :=
   else if a.isNextPhase then
     if g.chain.isEmpty ∧ g.board.attack.isNone ∧ g.priority = g.active then nextPhase g
     else throw "チェーンや攻撃の処理中、または優先権がないときはフェイズを進められない"
-  else (act g.ctx g.cs a).map (fun s => checkResult (g.setCs (processTriggers g.ctx s)))
+  else (act g.ctx g.cs a).map fun s =>
+    checkResult (g.setCs (processTriggers g.ctx { s with board := s.board.commitAuras }))
 
 def play (g : Game) (as : List Action) : Except String Game :=
   as.foldlM step g
@@ -1743,6 +1780,7 @@ def final : Except String Game := play (Game.init deck1 deck2) script
 #guard_msgs in
 #eval final.map (fun g => (g.turn, g.board.p1.lp, g.board.p2.lp, g.result))
 
+set_option maxRecDepth 2000 in
 /-- この対戦は P1 のデッキ切れ勝ちで終わる（カーネルで検証） -/
 example : (final.toOption.bind (·.result)) = some (.win .one) := by decide
 
@@ -2101,7 +2139,7 @@ example : (play (drainCostStart 1000) [.pass, .activateSet .two 0]).toOption.isN
   (fun g => names g.board.p1.monsters)
 
 /-! ### サイコ・ショッカーとリビングデッドの呼び声
-永続効果はその時点の盤面から毎回計算する。 -/
+永続効果の有効・無効は、前回の判定結果とその時点の盤面から計算する。 -/
 
 /-- P1 の墓地にサイコ・ショッカーとエルフの剣士、呼び声をセット済み。P2 の手札には羽根帚とサンダー・ボルト -/
 def cothStart : Game where
@@ -2274,6 +2312,43 @@ def decreeFirst : Game :=
 #guard_msgs in
 #eval (play decreeFirst (resolve (.activateSet .one 0))).map
   (fun g => (knightAtk g, g.board.p1.backrow.map (·.card.name), g.board.p1.lp))
+
+/-! ### スキルドレイン・サイコ・ショッカー・王宮のお触れの3すくみ
+お触れはスキルドレインを、スキルドレインはショッカーを（先に適用されていれば）、ショッカーはお触れを無効にする。
+有効・無効は1つずつ順に変わり、有効に戻ったカードはその時点で新たに適用されたものとして扱う。 -/
+
+/-- P1：スキルドレイン（先に適用）とショッカー。P2：お触れをセット -/
+def triStart : Game where
+  board := { p1 := { deck := [], monsters := [{ fm 0 jinzo with since := 2 }],
+                     backrow := [{ card := skillDrain, setTurn := 1, faceUp := true, since := 1 }] },
+             p2 := { deck := [], backrow := [{ card := royalDecree, setTurn := 2 }] },
+             nextUid := 1, clock := 2 }
+  turn := 3
+  active := .one
+  phase := .main1
+
+/-- (スキルドレイン, ショッカー, お触れ) の効果が無効化されているか -/
+def triNegated (g : Game) : List Bool :=
+  [g.board.stNegated .one 0, g.board.monNegated 0, g.board.stNegated .two 0]
+
+-- スキルドレインでショッカーの効果は無効なので、罠を発動できる
+/-- info: [false, true, false] -/
+#guard_msgs in
+#eval triNegated triStart
+
+/-- お触れが適用されると
+1. スキルドレインが無効になる
+2. ショッカーの効果が有効に戻り（この時点で適用）、お触れを無効にする
+3. お触れが無効になってスキルドレインが有効に戻るが、先に適用されたショッカーに無効にされる
+
+ショッカーの効果だけが有効になる（マスターデュエルで確認） -/
+def triDecree : Except String Game := play triStart ([.pass] ++ resolve (.activateSet .two 0))
+
+/-- info: Except.ok ([true, false, true], true, true) -/
+#guard_msgs in
+#eval triDecree.map (fun g => (triNegated g, g.board.trapsLocked, g.board.trapsNegated))
+
+example : triDecree.toOption.map triNegated = some [true, false, true] := by decide
 
 end Demo
 

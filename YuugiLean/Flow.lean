@@ -156,7 +156,8 @@ theorem step_prioOK {g g' : Game} {a : Action} (hg : g.PrioOK) (h : step g a = .
       · cases h
       · rename_i s0
         simp only [Except.ok.injEq] at h; subst h
-        exact prioOK_processTriggers g.ctx (prioOK_act (s := g.cs) ha)
+        have h0 := prioOK_act (s := g.cs) ha
+        exact prioOK_processTriggers g.ctx (s := { s0 with board := s0.board.commitAuras }) h0
 
 /-- **到達可能な全状態で、チェーンが空で直前の行動がパスでなければ、優先権はターンプレイヤーにある**。
 相手が空きチェーンで発動できるのは、ターンプレイヤーがパスした直後だけ。 -/
@@ -247,7 +248,7 @@ theorem step_logOK {g g' : Game} {a : Action} (hg : g.LogOK) (h : step g a = .ok
       · cases h
       · rename_i s0
         simp only [Except.ok.injEq] at h; subst h
-        exact logOK_processTriggers g.ctx s0
+        exact logOK_processTriggers g.ctx _
 
 theorem reachable_logOK {g : Game} (hr : Reachable g) : g.LogOK := by
   induction hr with
@@ -262,22 +263,25 @@ theorem reachable_pass_pass {g : Game} (hr : Reachable g) (hn : g.result = none)
   have hlp := reachable_LPOK hr hn
   have hlog := reachable_logOK hr
   -- 1回目のパス：優先権が相手に移るだけ（チェーンが空なら記録も空なので誘発効果は起きない）
-  have hpt : processTriggers g.ctx (passAct g.ctx g.cs) =
+  have hpt : processTriggers g.ctx { passAct g.ctx g.cs with board := (passAct g.ctx g.cs).board.commitAuras } =
       { g.cs with priority := g.priority.other, passed := true,
-                  board := if g.chain = [] then { g.board with log := [] } else g.board } := by
+                  board := if g.chain = [] then { g.board.commitAuras with log := [] }
+                           else g.board.commitAuras } := by
     simp only [passAct, Game.cs, hp, Bool.false_eq_true, ite_false]
     unfold processTriggers
     by_cases hc : g.chain = []
-    · simp [hc, hlog hc]
+    · have : g.board.commitAuras.log = [] := hlog hc
+      simp [hc, this]
     · simp [hc]
-  let g1 := checkResult (g.setCs (processTriggers g.ctx (passAct g.ctx g.cs)))
+  let g1 := checkResult (g.setCs (processTriggers g.ctx
+    { passAct g.ctx g.cs with board := (passAct g.ctx g.cs).board.commitAuras }))
   have h1 : step g .pass = .ok g1 := by
     simp [step, hn, Action.isNextPhase, act, Except.map, pure, Except.pure, g1]
   have hc1 : g1.chain = g.chain := by simp only [g1, checkResult, Game.setCs]; rw [hpt]; rfl
   have hp1 : g1.passed = true := by simp only [g1, checkResult, Game.setCs]; rw [hpt]
   have hn1 : g1.result = none := by
     simp only [g1, checkResult, Game.setCs]; rw [hpt]
-    have : ∀ b : Board, b.p1 = g.board.p1 → b.p2 = g.board.p2 →
+    have : ∀ b : Board, b.p1.lp = g.board.p1.lp → b.p2.lp = g.board.p2.lp →
         (if b.p1.lp = 0 ∧ b.p2.lp = 0 then some Outcome.draw else if b.p1.lp = 0 then some (.win .two)
           else if b.p2.lp = 0 then some (.win .one) else none) = none := by
       intro b e1 e2; rw [e1, e2]; simp only [Nat.pos_iff_ne_zero.mp hlp.1, Nat.pos_iff_ne_zero.mp hlp.2]
