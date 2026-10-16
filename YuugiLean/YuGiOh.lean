@@ -325,7 +325,7 @@ structure Board where
   normalSummoned : Bool := false
   nextUid : Nat := 0
   clock   : Nat := 0             -- 永続効果の適用順を決める時刻
-  turnPlayer : PlayerId := .one  -- ターンプレイヤー（同時に有効に戻る永続効果の適用順を決める）
+  turnPlayer : PlayerId := .one  -- ターンプレイヤー（永続効果の適用順を決める。`Game.active` と一致：`reachable_turnPlayer`）
   attack  : Option AttackDecl := none
   log     : List Happened := []
   deriving Repr, DecidableEq

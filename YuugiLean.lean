@@ -5,3 +5,5 @@ import YuugiLean.YuGiOh
 import YuugiLean.Invariants
 import YuugiLean.Flow
 import YuugiLean.Settle
+import YuugiLean.TurnPlayer
+import YuugiLean.Quad
