@@ -2350,6 +2350,18 @@ def triDecree : Except String Game := play triStart ([.pass] ++ resolve (.activa
 
 example : triDecree.toOption.map triNegated = some [true, false, true] := by decide
 
+/-- 3すくみの後にお触れを除去する（P1 の手札に羽根帚） -/
+def triRemove : Except String Game :=
+  play { triStart with board := { triStart.board with
+           p1 := { triStart.board.p1 with hand := [harpieFeather] } } }
+    ([.pass] ++ resolve (.activateSet .two 0) ++ resolve (.activateSpell 0))
+
+/-- お触れがなくなっても、スキルドレインは先に適用されたショッカーに無効にされたまま。
+ショッカーが有効でスキルドレインは無効のまま（マスターデュエルで確認） -/
+example : triRemove.toOption.map (fun g =>
+    (g.board.p2.backrow.length, g.board.stNegated .one 0, g.board.monNegated 0))
+    = some (0, true, false) := by decide
+
 end Demo
 
 end YGO
