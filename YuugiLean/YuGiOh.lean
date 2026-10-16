@@ -25,6 +25,8 @@ Lean 4 コアのみ（Mathlib 不要）で動く、遊戯王OCGの基本ルー�
   無効にしている側が無効化されれば、無効にされていた側は有効に戻り、その時点で新たに適用されたものとして扱う。
   有効・無効は前回の判定結果から1つずつ順に変わるので（スキルドレイン・サイコ・ショッカー・王宮のお触れの
   3すくみ）、判定結果は1手ごとに盤面に書き込む。
+  今あるカード（モンスターの効果を無効にするのは罠だけ、など）なら判定は必ず決まる（`Settle.lean`）。
+  モンスターの効果を無効にするモンスターなどが加わると、決まらずに回り続けることがある
   処理は1つずつ順番に行われるので、2枚が同じ時刻に適用され始めることはない
 * 対象と関係を持つ永続罠（リビングデッドの呼び声）：このカードが離れた時、または蘇生したモンスターが
   破壊された時にもう一方を破壊する（その時点で効果が無効なら何も起きない）
@@ -557,9 +559,14 @@ def AuraSrc.beats (t s : AuraSrc) : Bool :=
 def beatenIn (srcs : List AuraSrc) (s : AuraSrc) : Bool :=
   srcs.any fun t => t.on && t.beats s
 
+/-- どのカードの適用の時刻よりも新しい時刻（時計 `clock` より後） -/
+def newestTime (srcs : List AuraSrc) (clock : Nat) : Nat :=
+  srcs.foldr (fun s m => max s.since m) clock + 1
+
 /-- 永続効果の有効・無効を1つだけ変える。
 * 適用中のカードを無効にする適用中のカードがあれば、そのカードを無効にする
 * なければ、どの適用中のカードにも無効にされない無効なカードを、新しい時刻で有効に戻す
+  （時刻はどのカードよりも新しくする。`play` で進める限り `clock + 1` と同じ）
 * どちらもなければ、状態は決まっている（`none`）
 
 有効に戻ったカードは「その時点で新たに適用された」ので、互いに無効にし合う相手が先に適用中なら
@@ -569,7 +576,9 @@ def settleOnce (srcs : List AuraSrc) (clock : Nat) : Option (List AuraSrc × Nat
   | some i => some (srcs.modify i ({ · with on := false }), clock)
   | none =>
     match srcs.findIdx? (fun s => !s.on && !beatenIn srcs s) with
-    | some i => some (srcs.modify i ({ · with on := true, since := clock + 1 }), clock + 1)
+    | some i =>
+      let t := newestTime srcs clock
+      some (srcs.modify i ({ · with on := true, since := t }), t)
     | none => none
 
 def settleAux : Nat → List AuraSrc → Nat → List AuraSrc × Nat
@@ -579,9 +588,10 @@ def settleAux : Nat → List AuraSrc → Nat → List AuraSrc × Nat
     | some (srcs', c') => settleAux n srcs' c'
     | none => (srcs, c)
 
-/-- 状態が決まるまで `settleOnce` を繰り返す（回数の上限は念のため） -/
+/-- 状態が決まるまで `settleOnce` を繰り返す。カードが `AuraSrc.Simple` を満たせば、この回数までに
+必ず決まる（`settle_settled`）。満たさないカードの組み合わせでは、決まらずに回り続けることがある。 -/
 def settle (srcs : List AuraSrc) (clock : Nat) : List AuraSrc × Nat :=
-  settleAux (4 * (srcs.length + 1) ^ 2) srcs clock
+  settleAux (4 * (3 * srcs.length + 1) ^ 4) srcs clock
 
 /-- 無効化されていないカード -/
 def effectiveSources (srcs : List AuraSrc) (clock : Nat) : List AuraSrc :=

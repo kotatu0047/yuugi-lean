@@ -16,6 +16,7 @@ import YuugiLean.YuGiOh
     * 無効なカードには、それを無効にする有効なカードがある（`negated_has_reason`）
     * 有効なカード同士は互いに無効にしない（`settled_consistent`）
     * どのカードにも無効にされないカードは有効（`unbeaten_effective`）
+  * 判定が必ず決まることは `Settle.lean`（`settle_settled`、`reachable_settled`）
 -/
 
 namespace YGO
@@ -2506,7 +2507,7 @@ theorem settle_keys (srcs : List AuraSrc) (c : Nat) :
     (settle srcs c).1.map (fun s => (s.who, s.kind, s.key, s.auras)) =
       srcs.map (fun s => (s.who, s.kind, s.key, s.auras)) := by
   unfold settle
-  generalize 4 * (srcs.length + 1) ^ 2 = n
+  generalize 4 * (3 * srcs.length + 1) ^ 4 = n
   induction n generalizing srcs c with
   | zero => rfl
   | succ n ih =>
