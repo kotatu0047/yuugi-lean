@@ -121,6 +121,8 @@ inductive MonsterEffect where
   | quick (cost : Cost) (e : Effect)      -- 誘発即時効果：スペルスピード2
   | trigger (ev : Event) (e : Effect)     -- 誘発効果：出来事が起きると自動でチェーンに積まれる
   | continuous (a : Aura)                 -- 永続効果：表側表示の間、適用され続ける
+  | specialOnly (tributes : Nat)
+    -- 召喚条件：通常召喚できず、自分フィールドのモンスター tributes 体をリリースした場合のみ手札から特殊召喚できる
   deriving Repr, DecidableEq
 
 def MonsterEffect.aura? : MonsterEffect → Option Aura
@@ -146,6 +148,12 @@ structure MonsterCard where
   tuner   : Bool := false
   effects : List MonsterEffect := []
   deriving Repr, DecidableEq
+
+/-- 召喚条件（`MonsterEffect.specialOnly`）で特殊召喚するときにリリースする数 -/
+def MonsterCard.specialTributes? (m : MonsterCard) : Option Nat :=
+  m.effects.findSome? fun
+    | .specialOnly n => some n
+    | _ => none
 
 /-- レベル（エクシーズ・リンクモンスターはレベルを持たない） -/
 def MonsterCard.level? (m : MonsterCard) : Option Nat :=
@@ -567,14 +575,25 @@ def beatenIn (srcs : List AuraSrc) (s : AuraSrc) : Bool :=
 def newestTime (srcs : List AuraSrc) (clock : Nat) : Nat :=
   srcs.foldr (fun s m => max s.since m) clock + 1
 
+/-- 何も無効にしないカード（有効に戻しても、ほかのカードの有効・無効に関わらない） -/
+def AuraSrc.inert (s : AuraSrc) : Bool :=
+  !s.auras.any fun
+    | .negateMonsterEffects | .negateOppMonsterEffects | .negateTraps => true
+    | _ => false
+
 /-- 有効に戻せるカード（無効で、どの適用中のカードにも無効にされないカード）の位置。
 同時に適用される永続効果は1つずつ順に適用する（遊戯王カードWiki「永続効果」）。
-② 異なるプレイヤーのカードなら、ターンプレイヤーのカードを先に適用する。そのため、ターンプレイヤーの
-カードがあればそれだけを返す。返すカードはどれも同じプレイヤーのカードになる。 -/
+* 何も無効にしないカードは、どの順に適用しても結果が変わらないので、先に1枚ずつ戻す
+* ② 異なるプレイヤーのカードなら、ターンプレイヤーのカードを先に適用する。そのため、ターンプレイヤーの
+  カードがあればそれだけを返す。返すカードはどれも同じプレイヤーのカードになる -/
 def returnCands (srcs : List AuraSrc) (tp : PlayerId) : List Nat :=
   let ok (s : AuraSrc) : Bool := !s.on && !beatenIn srcs s
-  let mine := (List.range srcs.length).filter fun j => srcs[j]?.any fun s => s.who == tp && ok s
-  if mine.isEmpty then (List.range srcs.length).filter fun j => srcs[j]?.any ok else mine
+  let all := (List.range srcs.length).filter fun j => srcs[j]?.any ok
+  match all.find? fun j => srcs[j]?.any (·.inert) with
+  | some j => [j]
+  | none =>
+    let mine := all.filter fun j => srcs[j]?.any (·.who == tp)
+    if mine.isEmpty then all else mine
 
 /-- 永続効果の有効・無効を1つだけ変える。`tp` はターンプレイヤー。
 * 適用中のカードを無効にする適用中のカードがあれば、そのカードを無効にする
@@ -842,6 +861,7 @@ inductive Action where
   | pass                                                    -- 優先権を相手に渡す
   | attack          (attacker : Nat) (target : Option Nat)  -- 攻撃宣言
   | discard         (hand : Nat)                            -- エンドフェイズの手札調整
+  | specialSummon   (hand : Nat) (tributes : List Nat)    -- 召喚条件による手札からの特殊召喚
   | chooseAura      (i : Nat)  -- 同時に有効に戻る永続効果のうち先に適用するもの（`Board.chooseAura`）
   deriving Repr, DecidableEq
 
@@ -851,12 +871,13 @@ def Action.isNextPhase : Action → Bool
 
 /-! ### 効果 -/
 
-/-- 対象の墓地のモンスターを蘇生できるか -/
+/-- 対象の墓地のモンスターを蘇生できるか。召喚条件を持つモンスター（`specialOnly`）は、正規の方法で
+特殊召喚された後でなければ蘇生できないが、墓地のカードがそうかどうかは記録していないので、蘇生できないものとする。 -/
 def reviveOk (b : Board) (l : ChainLink) : Option (PlayerId × Nat × MonsterCard) :=
   match l.graveTarget with
   | some (w, i, .monster m) =>
     if (b.get w).grave[i]? = some (.monster m) ∧ (l.eff = .revive true → w = l.owner) ∧
-        (b.get l.owner).mainFree then some (w, i, m) else none
+        (b.get l.owner).mainFree ∧ m.specialTributes? = none then some (w, i, m) else none
   | _ => none
 
 /-- 融合素材の条件を満たすか。満たすなら融合モンスターを出すゾーンを返す。 -/
@@ -943,7 +964,7 @@ def applyEffect (c : Ctx) (l : ChainLink) (b : Board) : Board :=
   | .recruit attr mx =>
     let p := b.get self
     let ok : Card → Bool
-      | .monster m => m.attr == attr && m.atk ≤ mx
+      | .monster m => m.attr == attr && m.atk ≤ mx && m.specialTributes?.isNone
       | _ => false
     match p.deck.findIdx? ok with
     | some i =>
@@ -1173,25 +1194,30 @@ def activateMonsterAct (c : Ctx) (s : ChainState) (who : PlayerId) (z i : Nat) (
 
 /-! ### 召喚・戦闘 -/
 
-/-- 通常召喚・セットの共通処理 -/
-def summonCore (c : Ctx) (b : Board) (h : Nat) (ts : List Nat) (pos : Position) :
+/-- 通常召喚・セットと、召喚条件による手札からの特殊召喚（`special`）の共通処理。
+特殊召喚は通常召喚の回数に数えない。 -/
+def summonCore (c : Ctx) (b : Board) (h : Nat) (ts : List Nat) (pos : Position) (special : Bool := false) :
     Except String Board := do
-  unless c.phase.isMain do throw "通常召喚はメインフェイズにしか行えない"
-  if b.normalSummoned then throw "通常召喚（セット）は1ターンに1度まで"
+  unless c.phase.isMain do throw "召喚はメインフェイズにしか行えない"
+  if !special && b.normalSummoned then throw "通常召喚（セット）は1ターンに1度まで"
   let me := b.get c.active
   let some card := me.hand[h]? | throw "手札にそのカードがない"
   let .monster m := card | throw "モンスターカードではない"
   unless m.kind = .main do throw "エクストラデッキのモンスターは通常召喚できない"
+  unless m.specialTributes?.isSome = special do
+    throw (if special then "このカードはこの方法では特殊召喚できない" else "このカードは通常召喚できない")
   unless ts.eraseDups.length = ts.length do throw "同じモンスターを2回リリースできない"
   let some tms := ts.mapM (me.monsters[·]?) | throw "リリース対象が存在しない"
-  unless ts.length = tributesRequired m.level do
-    throw s!"レベル{m.level}の召喚にはリリースが{tributesRequired m.level}体必要"
+  let need := if special then m.specialTributes?.getD 0 else tributesRequired m.level
+  unless ts.length = need do
+    throw s!"{m.name}の召喚にはリリースが{need}体必要"
   let b := tms.foldl (fun b t => b.toGraveMon t.uid) b
   let b := b.modify c.active fun p => { p with hand := p.hand.eraseIdx h }
   -- リリースしたモンスターが離れた後のゾーンの空きを確認する
   unless (b.get c.active).mainFree do throw "モンスターゾーンに空きがない"
-  let b := b.place c.active m pos c.turn false (if pos = .attack then some .normalSummoned else none)
-  return { b with normalSummoned := true }
+  let b := b.place c.active m pos c.turn false
+    (if special then some .specialSummoned else if pos = .attack then some .normalSummoned else none)
+  return { b with normalSummoned := b.normalSummoned || !special }
 
 /-- シンクロ・エクシーズ・リンク召喚 -/
 def extraSummonAct (c : Ctx) (b : Board) (ei : Nat) (mats : List Nat) : Except String Board := do
@@ -1320,6 +1346,7 @@ def discardAct (c : Ctx) (b : Board) (h : Nat) : Except String Board := do
 def boardAct (c : Ctx) (b : Board) : Action → Except String Board
   | .normalSummon h ts => summonCore c b h ts .attack
   | .normalSet h ts    => summonCore c b h ts .faceDownDefense
+  | .specialSummon h ts => summonCore c b h ts .attack true
   | .flipSummon i      => flipSummonAct c b i
   | .changePosition i  => changePositionAct c b i
   | .extraSummon e ms  => extraSummonAct c b e ms
@@ -1796,7 +1823,7 @@ def jinzo : MonsterCard :=
 /-- 相手フィールドの表側表示モンスターの効果を無効にする（特殊召喚の条件・装備の効果は省略） -/
 def bloo : MonsterCard :=
   { name := "D－HERO Bloo－D", level := 8, atk := 1900, dfs := 600, attr := .dark,
-    race := .warrior, effects := [.continuous .negateOppMonsterEffects] }
+    race := .warrior, effects := [.specialOnly 3, .continuous .negateOppMonsterEffects] }
 
 -- エクストラデッキのモンスター
 def bSkullDragon : MonsterCard :=
@@ -2535,20 +2562,22 @@ example : cycloneChain.toOption.map (fun g => (backrowNames g .one, backrowNames
 同時に有効に戻る永続効果は、ターンプレイヤーのものから1つずつ適用する。同じプレイヤーのものが2枚以上あれば、
 そのコントローラーがどれを先に適用するかを選ぶ（`.chooseAura`）。 -/
 
-/-- P1：スキルドレイン（先に適用）とショッカー、お触れをセット。P2：墓地に Bloo－D、手札に死者蘇生 -/
+/-- P1：スキルドレイン（先に適用）とショッカー、お触れをセット。
+P2：フィールドにモンスター3体、手札に Bloo－D と死者蘇生、墓地に Bloo－D -/
 def quadStart : Game where
   board := { p1 := { deck := [.monster kuriboh], monsters := [{ fm 0 jinzo with since := 2 }],
                      backrow := [{ card := skillDrain, setTurn := 1, faceUp := true, since := 1, id := 1 },
                                  { card := royalDecree, setTurn := 1, id := 3 }] },
-             p2 := { deck := [.monster kuriboh], hand := [monsterReborn], grave := [.monster bloo] },
-             nextUid := 1, clock := 3 }
+             p2 := { deck := [.monster kuriboh], hand := [.monster bloo, monsterReborn], grave := [.monster bloo],
+                     monsters := [fm 1 kuriboh, fm 2 kuriboh, fm 3 kuriboh] },
+             nextUid := 4, clock := 3 }
   turn := 3
   active := .one
   phase := .main1
 
 /-- (スキルドレイン, お触れ, ショッカー, Bloo－D) の効果が無効化されているか -/
 def quadNegated (g : Game) : List Bool :=
-  [g.board.stNegated .one 0, g.board.stNegated .one 1, g.board.monNegated 0, g.board.monNegated 1]
+  [g.board.stNegated .one 0, g.board.stNegated .one 1, g.board.monNegated 0, g.board.monNegated 4]
 
 /-- P1 がお触れを発動して3すくみ（ショッカーだけが有効）にし、P2 のターンに Bloo－D を蘇生する -/
 def quadTri : Except String Game := play quadStart (resolve (.activateSet .one 1))
@@ -2557,11 +2586,24 @@ def quadTri : Except String Game := play quadStart (resolve (.activateSet .one 1
 #guard_msgs in
 #eval quadTri.map (fun g => (quadNegated g).take 3)
 
-/-- Bloo－D がショッカーを無効にすると、スキルドレインとお触れが同時に有効に戻る。どちらも P1 のカードなので、
+-- Bloo－D は通常召喚できず、（正規の方法で特殊召喚されていない）墓地の Bloo－D は蘇生できない
+/-- info: Except.error "このカードは通常召喚できない" -/
+#guard_msgs in
+#eval (play quadStart (toP2Main ++ [.normalSummon 0 [0, 1]])).map (fun _ => ())
+
+/-- info: Except.error "蘇生できるモンスターがいない、またはゾーンに空きがない" -/
+#guard_msgs in
+#eval (play quadStart (toP2Main ++ [.activateSpell 1 { grave := some (.two, 0) }])).map (fun _ => ())
+
+/-- info: Except.error "D－HERO Bloo－Dの召喚にはリリースが3体必要" -/
+#guard_msgs in
+#eval (play quadStart (toP2Main ++ [.specialSummon 0 [0, 1]])).map (fun _ => ())
+
+/-- P1 がお触れを発動して3すくみにし、P2 のターンに自分のモンスター3体をリリースして Bloo－D を特殊召喚する。
+Bloo－D がショッカーを無効にすると、スキルドレインとお触れが同時に有効に戻る。どちらも P1 のカードなので、
 P1 がどちらを先に適用するかを選ぶまで止まる（4枚とも無効のまま。Bloo－D は有効） -/
 def quadBloo : Except String Game :=
-  play quadStart (resolve (.activateSet .one 1) ++ [np, np, np, np, np, np] ++
-    resolve (.activateSpell 0 { grave := some (.two, 0) }))
+  play quadStart (resolve (.activateSet .one 1) ++ toP2Main ++ [.specialSummon 0 [0, 1, 2]])
 
 /-- info: Except.ok (YGO.PlayerId.two, ["D－HERO Bloo－D"], some (YGO.PlayerId.one), [true, true, true, false]) -/
 #guard_msgs in

@@ -689,22 +689,27 @@ theorem Board.count_modify_eraseExtra {b : Board} {w : PlayerId} {i : Nat} {x : 
   simp only [Player.count] at h1; omega
 
 
-theorem count_summonCore {c : Ctx} {b b' : Board} {hd : Nat} {ts : List Nat} {pos : Position}
-    (h : summonCore c b hd ts pos = .ok b') : b'.count = b.count := by
+theorem count_summonCore {c : Ctx} {b b' : Board} {hd : Nat} {ts : List Nat} {pos : Position} {sp : Bool}
+    (h : summonCore c b hd ts pos sp = .ok b') : b'.count = b.count := by
   unfold summonCore at h
   simp only [bind, Except.bind, throw, throwThe, MonadExceptOf.throw] at h
   repeat' split at h
   all_goals try (cases h; done)
   all_goals
-    rename_i tms _ _ _ _
     simp only [pure, Except.pure, Except.ok.injEq] at h
     subst h
     obtain ⟨_, hh⟩ : ∃ x, (b.get c.active).hand[hd]? = some x := ⟨_, by assumption⟩
-    have hf := Board.frame_foldl_toGraveMon tms (·.uid) LeaveCause.sent b
-    have hc := Board.count_foldl_toGraveMon' tms (·.uid) LeaveCause.sent b
-    rw [← (hf c.active).2.2.2] at hh
-    have := Board.count_modify_eraseHand hh
-    rw [Board.count_ns, Board.count_place]; simp; omega
+    rw [Board.count_ns, Board.count_place]
+    have key : ∀ tms : List FieldMonster,
+        ((List.foldl (fun b t => b.toGraveMon t.uid) b tms).modify c.active
+          (fun p => { p with hand := p.hand.eraseIdx hd })).count + 1 = b.count := by
+      intro tms
+      have hf := Board.frame_foldl_toGraveMon tms (·.uid) LeaveCause.sent b
+      have hc := Board.count_foldl_toGraveMon' tms (·.uid) LeaveCause.sent b
+      rw [← (hf c.active).2.2.2] at hh
+      have := Board.count_modify_eraseHand hh
+      omega
+    exact key _
 
 theorem monCount_eq (l : List FieldMonster) : monCount l = (l.flatMap (·.overlays)).length + l.length := by
   induction l with
@@ -879,6 +884,7 @@ theorem count_boardAct {c : Ctx} {b b' : Board} {a : Action} (h : boardAct c b a
   cases a <;> simp only [boardAct] at h
   case normalSummon => exact count_summonCore h
   case normalSet => exact count_summonCore h
+  case specialSummon => exact count_summonCore h
   case flipSummon => exact count_flipSummonAct h
   case changePosition => exact count_changePositionAct h
   case extraSummon => exact count_extraSummonAct h
@@ -1461,8 +1467,8 @@ theorem uidOK_activateMonsterAct {c : Ctx} {s s' : ChainState} {who : PlayerId} 
   · exact ((hs.setMonAt_used (by assumption)).setMonAt (Board.getElem_setMonAt (by assumption)) (by rfl)).modify_eq
       (by rfl)
 
-theorem uidOK_summonCore {c : Ctx} {b b' : Board} {hd : Nat} {ts : List Nat} {pos : Position}
-    (hb : b.UidOK) (h : summonCore c b hd ts pos = .ok b') : b'.UidOK := by
+theorem uidOK_summonCore {c : Ctx} {b b' : Board} {hd : Nat} {ts : List Nat} {pos : Position} {sp : Bool}
+    (hb : b.UidOK) (h : summonCore c b hd ts pos sp = .ok b') : b'.UidOK := by
   unfold summonCore at h
   simp only [bind, Except.bind, throw, throwThe, MonadExceptOf.throw] at h
   repeat' split at h
@@ -1493,6 +1499,7 @@ theorem uidOK_boardAct {c : Ctx} {b b' : Board} {a : Action} (hb : b.UidOK) (h :
   cases a <;> simp only [boardAct] at h
   case normalSummon => exact uidOK_summonCore hb h
   case normalSet => exact uidOK_summonCore hb h
+  case specialSummon => exact uidOK_summonCore hb h
   case extraSummon => exact uidOK_extraSummonAct hb h
   all_goals try (cases h; done)
   all_goals
@@ -1921,7 +1928,7 @@ theorem reviveOk_mainFree {b : Board} {l : ChainLink} {w : PlayerId} {i : Nat} {
   unfold reviveOk at h
   split at h
   · split at h
-    · rename_i hc; exact hc.2.2
+    · rename_i hc; exact hc.2.2.1
     · simp at h
   · simp at h
 
@@ -2183,8 +2190,8 @@ theorem zone_activateSetAct {c : Ctx} {s s' : ChainState} {who : PlayerId} {z : 
 
 abbrev full : PlayerId → Nat := fun _ => spellTrapZones
 
-theorem zone_summonCore {c : Ctx} {b b' : Board} {hd : Nat} {ts : List Nat} {pos : Position}
-    (hb : b.Bounded full) (h : summonCore c b hd ts pos = .ok b') : b'.Bounded full := by
+theorem zone_summonCore {c : Ctx} {b b' : Board} {hd : Nat} {ts : List Nat} {pos : Position} {sp : Bool}
+    (hb : b.Bounded full) (h : summonCore c b hd ts pos sp = .ok b') : b'.Bounded full := by
   unfold summonCore at h
   simp only [bind, Except.bind, throw, throwThe, MonadExceptOf.throw] at h
   repeat' split at h
@@ -2217,6 +2224,7 @@ theorem zone_boardAct {c : Ctx} {b b' : Board} {a : Action} (hb : b.Bounded full
   cases a <;> simp only [boardAct] at h
   case normalSummon => exact zone_summonCore hb h
   case normalSet => exact zone_summonCore hb h
+  case specialSummon => exact zone_summonCore hb h
   case extraSummon => exact zone_extraSummonAct hb h
   case setSpellTrap =>
     simp only [setSpellTrapAct, bind, Except.bind, throw, throwThe, MonadExceptOf.throw] at h
@@ -2503,30 +2511,40 @@ theorem filter_range_mem {n : Nat} {l : List AuraSrc} {P : AuraSrc → Bool} {j 
     obtain ⟨hlt, rfl⟩ := List.getElem?_eq_some_iff.mp hj
     rw [hj] at ha; exact ⟨hlt, by simpa using ha⟩
 
-/-- 有効に戻せるカードは、無効で、どの適用中のカードにも無効にされない -/
-theorem returnCands_mem {srcs : List AuraSrc} {tp : PlayerId} {j : Nat} (h : j ∈ returnCands srcs tp) :
-    ∃ hj : j < srcs.length, srcs[j].on = false ∧ beatenIn srcs srcs[j] = false := by
+theorem returnCands_sub {srcs : List AuraSrc} {tp : PlayerId} {j : Nat} (h : j ∈ returnCands srcs tp) :
+    j ∈ (List.range srcs.length).filter fun j => srcs[j]?.any fun s => !s.on && !beatenIn srcs s := by
   unfold returnCands at h
   simp only at h
   split at h
-  · obtain ⟨hj, ha⟩ := filter_range_mem h
-    simp only [Bool.and_eq_true, Bool.not_eq_true'] at ha
-    exact ⟨hj, ha⟩
-  · obtain ⟨hj, ha⟩ := filter_range_mem h
-    simp only [Bool.and_eq_true, Bool.not_eq_true'] at ha
-    exact ⟨hj, ha.2⟩
+  · rename_i k hk
+    rw [List.mem_singleton] at h; subst h
+    exact List.mem_of_find?_eq_some hk
+  · split at h
+    · exact h
+    · exact (List.mem_filter.mp h).1
+
+/-- 有効に戻せるカードは、無効で、どの適用中のカードにも無効にされない -/
+theorem returnCands_mem {srcs : List AuraSrc} {tp : PlayerId} {j : Nat} (h : j ∈ returnCands srcs tp) :
+    ∃ hj : j < srcs.length, srcs[j].on = false ∧ beatenIn srcs srcs[j] = false := by
+  obtain ⟨hj, ha⟩ := filter_range_mem (returnCands_sub h)
+  simp only [Bool.and_eq_true, Bool.not_eq_true'] at ha
+  exact ⟨hj, ha⟩
 
 /-- 有効に戻せるカードがなければ、無効なカードはどれも適用中のカードに無効にされている -/
 theorem returnCands_nil {srcs : List AuraSrc} {tp : PlayerId} (h : returnCands srcs tp = []) :
     ∀ s ∈ srcs, (!s.on && !beatenIn srcs s) = false := by
-  unfold returnCands at h
-  simp only at h
-  split at h
-  · intro s hs
-    obtain ⟨j, hj, rfl⟩ := List.mem_iff_getElem.mp hs
-    have := List.filter_eq_nil_iff.mp h j (List.mem_range.mpr hj)
-    simpa [List.getElem?_eq_getElem hj] using this
-  · rename_i hm; rw [h] at hm; simp at hm
+  have hall : ((List.range srcs.length).filter fun j => srcs[j]?.any fun s => !s.on && !beatenIn srcs s) = [] := by
+    unfold returnCands at h
+    simp only at h
+    split at h
+    · cases h
+    · split at h
+      · exact h
+      · rename_i hm; rw [h] at hm; simp at hm
+  intro s hs
+  obtain ⟨j, hj, rfl⟩ := List.mem_iff_getElem.mp hs
+  have := List.filter_eq_nil_iff.mp hall j (List.mem_range.mpr hj)
+  simpa [List.getElem?_eq_getElem hj] using this
 
 theorem settleOnce_none {srcs : List AuraSrc} {c : Nat} {tp : PlayerId} (h : settleOnce srcs c tp = none) :
     (∀ s ∈ srcs, s.on = true → beatenIn srcs s = false) ∧

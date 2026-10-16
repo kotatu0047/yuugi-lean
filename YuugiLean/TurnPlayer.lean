@@ -149,8 +149,8 @@ theorem tp_activateMonsterAct {c : Ctx} {s s' : ChainState} {who : PlayerId} {z 
     subst hv
     simp
 
-theorem tp_summonCore {c : Ctx} {b b' : Board} {hd : Nat} {ts : List Nat} {pos : Position}
-    (h : summonCore c b hd ts pos = .ok b') : b'.turnPlayer = b.turnPlayer := by
+theorem tp_summonCore {c : Ctx} {b b' : Board} {hd : Nat} {ts : List Nat} {pos : Position} {sp : Bool}
+    (h : summonCore c b hd ts pos sp = .ok b') : b'.turnPlayer = b.turnPlayer := by
   unfold summonCore at h
   simp only [bind, Except.bind, throw, throwThe, MonadExceptOf.throw] at h
   repeat' split at h
@@ -176,6 +176,7 @@ theorem tp_boardAct {c : Ctx} {b b' : Board} {a : Action} (h : boardAct c b a = 
   cases a <;> simp only [boardAct] at h
   case normalSummon => exact tp_summonCore h
   case normalSet => exact tp_summonCore h
+  case specialSummon => exact tp_summonCore h
   case extraSummon => exact tp_extraSummonAct h
   all_goals try (cases h; done)
   all_goals
