@@ -9,7 +9,7 @@ import YuugiLean.Invariants
   * 発動できるのは優先権を持つプレイヤーだけ（`activate_needs_priority`）
   * チェーンが空で、直前の行動がパスでなければ、優先権はターンプレイヤーにある（`reachable_prioOK`）
 * パスとチェーンの解決
-  * 決着がついていなければ、パスはいつでも行える（`step_pass_ok`）
+  * 決着がついておらず、永続効果の適用順の選択待ちでなければ、パスはいつでも行える（`step_pass_ok`）
   * 相手のパスを受けてパスすると、チェーンは解決されて空になり、優先権はターンプレイヤーに戻る
     （`passAct_resolves`）。その後に残るのは、解決中に起きた出来事による誘発効果だけ（`step_pass_resolves`）
   * 到達可能などの状態からでも、両者が続けてパスすればチェーンは解決される（`reachable_pass_pass`）
@@ -148,6 +148,9 @@ theorem step_prioOK {g g' : Game} {a : Action} (hg : g.PrioOK) (h : step g a = .
   unfold step at h
   split at h
   · cases h
+  split at h
+  · obtain ⟨i, b, -, -, rfl⟩ := chooseStep_ok h
+    exact hg
   · split at h
     · split at h
       · exact prioOK_nextPhase hg h
@@ -168,9 +171,10 @@ theorem reachable_prioOK {g : Game} (hr : Reachable g) : g.PrioOK := by
 
 /-! ## パスとチェーンの解決 -/
 
-/-- **パスはいつでも行える**（決着がついていなければ） -/
-theorem step_pass_ok {g : Game} (hn : g.result = none) : ∃ g', step g .pass = .ok g' := by
-  simp [step, hn, Action.isNextPhase, act, Except.map, pure, Except.pure]
+/-- **パスはいつでも行える**（決着がついておらず、永続効果の適用順の選択待ちでなければ） -/
+theorem step_pass_ok {g : Game} (hn : g.result = none) (hw : g.board.awaiting = none) :
+    ∃ g', step g .pass = .ok g' := by
+  simp [step, hn, hw, Action.isNextPhase, act, Except.map, pure, Except.pure]
 
 /-- **相手のパスを受けてパスすると、チェーンは解決されて空になり、優先権はターンプレイヤーに戻る**。
 攻撃宣言中でチェーンが空なら、ダメージ計算を行う。 -/
@@ -203,6 +207,8 @@ theorem step_pass_resolves {g g' : Game} (hp : g.passed = true) (h : step g .pas
   unfold step at h
   split at h
   · cases h
+  split at h
+  · obtain ⟨i, b, h1, -⟩ := chooseStep_ok h; cases h1
   · simp only [Action.isNextPhase, Bool.false_eq_true, ite_false, act, pure, Except.pure,
       Except.map, Except.ok.injEq] at h
     subst h
@@ -229,6 +235,10 @@ theorem step_logOK {g g' : Game} {a : Action} (hg : g.LogOK) (h : step g a = .ok
   unfold step at h
   split at h
   · cases h
+  split at h
+  · obtain ⟨i, b, -, hb, rfl⟩ := chooseStep_ok h
+    obtain ⟨r, t, rfl⟩ := Board.chooseAura_ok hb
+    exact hg
   · split at h
     · split at h
       · unfold nextPhase at h
@@ -256,8 +266,10 @@ theorem reachable_logOK {g : Game} (hr : Reachable g) : g.LogOK := by
   | step a _ hs ih => exact step_logOK ih hs
 
 /-- **到達可能などの状態からでも、両者が続けてパスすれば、その時点のチェーンは解決される**。
-1回目のパスではチェーンも勝敗も変わらず、2回目のパスの後に残るのは解決中に誘発した効果だけ。 -/
-theorem reachable_pass_pass {g : Game} (hr : Reachable g) (hn : g.result = none) (hp : g.passed = false) :
+1回目のパスではチェーンも勝敗も変わらず、2回目のパスの後に残るのは解決中に誘発した効果だけ。
+ただし、永続効果の適用順の選択待ちでなく、1回目のパスで判定を書き込んでも選択待ちにならないとき。 -/
+theorem reachable_pass_pass {g : Game} (hr : Reachable g) (hn : g.result = none) (hp : g.passed = false)
+    (hw : g.board.awaiting = none) (hw1 : g.board.commitAuras.awaiting = none) :
     ∃ g1 g2, step g .pass = .ok g1 ∧ step g1 .pass = .ok g2 ∧ g1.chain = g.chain ∧ g1.result = none ∧
       TriggeredBy (passAct g1.ctx g1.cs).board.log g2.chain := by
   have hlp := reachable_LPOK hr hn
@@ -276,7 +288,7 @@ theorem reachable_pass_pass {g : Game} (hr : Reachable g) (hn : g.result = none)
   let g1 := checkResult (g.setCs (processTriggers g.ctx
     { passAct g.ctx g.cs with board := (passAct g.ctx g.cs).board.commitAuras }))
   have h1 : step g .pass = .ok g1 := by
-    simp [step, hn, Action.isNextPhase, act, Except.map, pure, Except.pure, g1]
+    simp [step, hn, hw, Action.isNextPhase, act, Except.map, pure, Except.pure, g1]
   have hc1 : g1.chain = g.chain := by simp only [g1, checkResult, Game.setCs]; rw [hpt]; rfl
   have hp1 : g1.passed = true := by simp only [g1, checkResult, Game.setCs]; rw [hpt]
   have hn1 : g1.result = none := by
@@ -288,7 +300,9 @@ theorem reachable_pass_pass {g : Game} (hr : Reachable g) (hn : g.result = none)
       simp
     simp only [hn]
     apply this <;> split <;> rfl
-  obtain ⟨g2, h2⟩ := step_pass_ok hn1
+  have hw2 : g1.board.awaiting = none := by
+    simp only [g1, checkResult, Game.setCs]; rw [hpt]; split <;> exact hw1
+  obtain ⟨g2, h2⟩ := step_pass_ok hn1 hw2
   exact ⟨g1, g2, h1, h2, hc1, hn1, step_pass_resolves hp1 h2⟩
 
 /-! ## 戦闘 -/

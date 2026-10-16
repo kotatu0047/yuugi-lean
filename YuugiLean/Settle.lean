@@ -3,10 +3,10 @@ import YuugiLean.Invariants
 /-!
 # 永続効果の有効・無効の判定は必ず決まる
 
-`settle` は `settleOnce` を繰り返して、有効・無効が変わらなくなるまで進める。カードの組み合わせによっては
-回り続けることがある（例：スキルドレイン・王宮のお触れ・「モンスターの効果を無効にするモンスター」・
-「罠とモンスターの効果を無効にするモンスター」）。ここでは、次の条件（`AuraSrc.Simple`）を満たすカードだけなら
-必ず決まることを証明する。今あるカードはすべてこの条件を満たす。
+`settle` は `settleOnce` を繰り返して、有効・無効が変わらなくなるか、プレイヤーの選択待ちになるまで進める。
+カードの組み合わせによっては回り続けることがある（例：王宮のお触れ・D－HERO Bloo－D と、相手のスキルドレイン・
+サイコ・ショッカー。`loopSrcs`）。ここでは、次の条件（`AuraSrc.Simple`）を満たすカードだけなら必ず止まることを
+証明する。D－HERO Bloo－D 以外の今あるカードはこの条件を満たす。
 
 * モンスターの効果を無効にする効果を持つのは罠カードだけで、その罠は罠の効果を無効にする効果を持たない
 * 罠の効果を無効にする効果を持つのは罠カードかモンスターだけ
@@ -18,7 +18,8 @@ import YuugiLean.Invariants
 * P：何も無効にしないカード
 
 `settleOnce` で1回変えるたびに、次の量が辞書式に減る（`settleMeasure_lt`）。この証明は、同時に有効に戻る
-カードのうちどれを先に適用するか（`returnIdx`：ターンプレイヤー優先など）によらず成り立つ。
+カードのうちどれを先に適用するか（`returnCands`・`Board.chooseAura`：ターンプレイヤー優先、プレイヤーの選択）
+によらず成り立つ。
 1. 適用中の種類：D があれば 0、なければ A があれば 1、なければ B があれば 2、なければ 3
 2. 適用されていない D・B の枚数
 3. 「その種類の、適用中のどのカードよりも適用の時刻が古い」カードの枚数（B は D より、A は A より、D は B より）
@@ -249,7 +250,7 @@ theorem settleOnce_some {l : List AuraSrc} {c : Nat} {l' : List AuraSrc} {c' : N
   · rename_i hn
     split at h
     · rename_i i hi
-      obtain ⟨hlt, hp1, hp2⟩ := returnIdx_some hi
+      obtain ⟨hlt, hp1, hp2⟩ := returnCands_mem (hi ▸ List.mem_singleton_self i : i ∈ returnCands l tp)
       simp only [Option.some.injEq, Prod.mk.injEq] at h
       obtain ⟨rfl, -⟩ := h
       refine .inr ⟨fun s hs hon => ?_, i, hlt, hp1, hp2, rfl⟩
@@ -1153,8 +1154,8 @@ theorem settleAux_settled (tp : PlayerId) (n : Nat) (l : List AuraSrc) (c : Nat)
       exact ih l' c' hS' hk' (by omega)
     · assumption
 
-/-- **判定は必ず決まる**：カードが `AuraSrc.Simple` を満たし、識別が重ならなければ、`settle` の結果は
-もう `settleOnce` で変わらない -/
+/-- **判定は必ず止まる**：カードが `AuraSrc.Simple` を満たし、識別が重ならなければ、`settle` の結果は
+もう `settleOnce` で変わらない（決まっているか、選択待ち） -/
 theorem settle_settled (l : List AuraSrc) (c : Nat) (tp : PlayerId) (hS : ∀ s ∈ l, s.Simple)
     (hk : (l.map (·.key)).Nodup) : settleOnce (settle l c tp).1 (settle l c tp).2 tp = none :=
   settleAux_settled tp _ l c hS hk (settleMeasure_lt_fuel l)
@@ -1224,13 +1225,13 @@ theorem Board.sources_keys_nodup (b : Board) (hu : b.UidOK) : (b.sources.map (·
     · simp only [monKey, ne_eq, Prod.mk.injEq, true_and]
       exact hd _ (List.mem_map_of_mem hm1) _ (List.mem_map_of_mem hm2)
 
-/-- **盤面の永続効果の判定は必ず決まる**（カードが `AuraSrc.Simple` を満たし、モンスターの uid が重ならないとき） -/
+/-- **盤面の永続効果の判定は必ず止まる**（カードが `AuraSrc.Simple` を満たし、モンスターの uid が重ならないとき） -/
 theorem Board.settled (b : Board) (hu : b.UidOK) (hS : ∀ s ∈ b.sources, s.Simple) :
     settleOnce (settle b.sources b.clock b.turnPlayer).1 (settle b.sources b.clock b.turnPlayer).2 b.turnPlayer
       = none :=
   settle_settled _ _ _ hS (b.sources_keys_nodup hu)
 
-/-- 対戦の途中のどの盤面でも、判定は決まっている -/
+/-- 対戦の途中のどの盤面でも、判定は止まっている（決まっているか、選択待ち） -/
 theorem reachable_settled {g : Game} (hr : Reachable g) (hS : ∀ s ∈ g.board.sources, s.Simple) :
     settleOnce (settle g.board.sources g.board.clock g.board.turnPlayer).1
       (settle g.board.sources g.board.clock g.board.turnPlayer).2 g.board.turnPlayer = none :=
@@ -1243,11 +1244,12 @@ theorem reachable_consistent {g : Game} (hr : Reachable g) (hS : ∀ s ∈ g.boa
   rw [List.mem_filter] at hs ht
   exact settled_consistent (reachable_settled hr hS) hs.1 ht.1 hs.2 ht.2
 
-/-- **対戦の途中のどの盤面でも、無効なカードには、それを無効にする有効なカードがある** -/
+/-- **対戦の途中のどの盤面でも、選択待ちでなければ、無効なカードには、それを無効にする有効なカードがある** -/
 theorem reachable_negated_has_reason {g : Game} (hr : Reachable g) (hS : ∀ s ∈ g.board.sources, s.Simple)
+    (hw : awaitingChoice (settle g.board.sources g.board.clock g.board.turnPlayer).1 g.board.turnPlayer = none)
     {s : AuraSrc} (hs : s ∈ (settle g.board.sources g.board.clock g.board.turnPlayer).1) (hso : s.on = false) :
     ∃ t ∈ g.board.effective, t.beats s = true := by
-  obtain ⟨t, ht, hto, hb⟩ := negated_has_reason (reachable_settled hr hS) hs hso
+  obtain ⟨t, ht, hto, hb⟩ := negated_has_reason (reachable_settled hr hS) hw hs hso
   refine ⟨t, ?_, hb⟩
   unfold Board.effective effectiveSources
   exact List.mem_filter.mpr ⟨ht, hto⟩
@@ -1258,24 +1260,31 @@ theorem reachable_negated_has_reason {g : Game} (hr : Reachable g) (hS : ∀ s �
 example : ∀ s ∈ Demo.triStart.board.sources, s.Simple := by decide
 example : ∀ s ∈ (Demo.triDecree.toOption.map (·.board.sources)).getD [], s.Simple := by decide
 
-/-- 条件を満たさないカードの組み合わせでは、判定が決まらないことがある。
-スキルドレイン・王宮のお触れ・「モンスターの効果を無効にするモンスター」・「罠とモンスターの効果を無効にするモンスター」
-をすべて無効の状態から判定すると、有効・無効が8回ごとに同じ並びに戻り、回り続ける。 -/
+/-- 条件を満たさないカードの組み合わせでは、判定が止まらないことがある。
+P1 の王宮のお触れ・D－HERO Bloo－D と、P2 のスキルドレイン・サイコ・ショッカーを、P2 のターンに
+ショッカーだけが有効な状態から判定すると、選択待ちになることなく、有効・無効が12回ごとに同じ並びに戻り、
+回り続ける。①②（ターンプレイヤー優先・プレイヤーの選択）に従っても止まらないので、Bloo－D のような
+「相手のモンスターの効果を無効にするモンスター」は条件に加えられない。 -/
 def loopSrcs : List AuraSrc :=
-  [{ who := .one, kind := .trap, key := (1, 1, 0), since := 1, on := false, auras := [.negateMonsterEffects] },
-   { who := .two, kind := .trap, key := (1, 2, 0), since := 2, on := false, auras := [.negateTraps] },
-   { who := .one, kind := .monster, key := (0, 0, 0), since := 3, on := false, auras := [.negateMonsterEffects] },
-   { who := .two, kind := .monster, key := (0, 0, 1), since := 4, on := false,
-     auras := [.negateTraps, .negateMonsterEffects] }]
+  [{ who := .one, kind := .trap, key := (1, 1, 0), since := 1, on := false, auras := [.negateTraps] },
+   { who := .one, kind := .monster, key := (0, 0, 0), since := 2, on := false, auras := [.negateOppMonsterEffects] },
+   { who := .two, kind := .trap, key := (1, 2, 0), since := 3, on := false, auras := [.negateMonsterEffects] },
+   { who := .two, kind := .monster, key := (0, 0, 1), since := 4, on := true, auras := [.negateTraps] }]
 
 example : ¬ ∀ s ∈ loopSrcs, s.Simple := by decide
 
-example : (settleAux .one 9 loopSrcs 4).1.map (·.on) = (settleAux .one 1 loopSrcs 4).1.map (·.on) ∧
-    (settleAux .one 1 loopSrcs 4).1.map (·.on) = [true, false, false, false] := by decide
+example : (settleAux .two 12 loopSrcs 4).1.map (·.on) = loopSrcs.map (·.on) ∧
+    ∀ n < 12, awaitingChoice (settleAux .two n loopSrcs 4).1 .two = none := by decide
 
--- 上限の回数まで繰り返しても決まらない
+-- 上限の回数まで繰り返しても止まらない
 /-- info: true -/
 #guard_msgs in
-#eval (settleOnce (settle loopSrcs 4 .one).1 (settle loopSrcs 4 .one).2 .one).isSome
+#eval (settleOnce (settle loopSrcs 4 .two).1 (settle loopSrcs 4 .two).2 .two).isSome
+
+-- Bloo－D の代わりに「モンスターの効果を無効にするモンスター」でも同じように回り続ける
+/-- info: true -/
+#guard_msgs in
+#eval let l := loopSrcs.modify 1 ({ · with auras := [.negateMonsterEffects] })
+  (settleOnce (settle l 4 .two).1 (settle l 4 .two).2 .two).isSome
 
 end YGO

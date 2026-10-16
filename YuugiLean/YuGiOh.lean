@@ -567,34 +567,23 @@ def beatenIn (srcs : List AuraSrc) (s : AuraSrc) : Bool :=
 def newestTime (srcs : List AuraSrc) (clock : Nat) : Nat :=
   srcs.foldr (fun s m => max s.since m) clock + 1
 
-/-- 条件 p を満たすカードのうち、適用の時刻が最も古いもの（同じ時刻なら前のもの）の位置 -/
-def oldestIdx (srcs : List AuraSrc) (p : AuraSrc → Bool) : Option Nat :=
-  (List.range srcs.length).foldl (fun acc j =>
-    match srcs[j]? with
-    | some s =>
-      if p s then
-        match acc with
-        | some k => if s.since < (srcs[k]?.map (·.since)).getD 0 then some j else acc
-        | none => some j
-      else acc
-    | none => acc) none
-
-/-- 有効に戻すカードを選ぶ。どの適用中のカードにも無効にされない無効なカードは、同時に有効に戻る。
+/-- 有効に戻せるカード（無効で、どの適用中のカードにも無効にされないカード）の位置。
 同時に適用される永続効果は1つずつ順に適用する（遊戯王カードWiki「永続効果」）。
-* ② 異なるプレイヤーのカードなら、ターンプレイヤーのカードを先に適用する
-* ① 同じプレイヤーのカードはそのコントローラーが順番を決めるが、ここでは無効になる前に先に適用されていた
-  （適用の時刻が古い）ものから適用する -/
-def returnIdx (srcs : List AuraSrc) (tp : PlayerId) : Option Nat :=
-  match oldestIdx srcs (fun s => s.who == tp && !s.on && !beatenIn srcs s) with
-  | some i => some i
-  | none => oldestIdx srcs (fun s => !s.on && !beatenIn srcs s)
+② 異なるプレイヤーのカードなら、ターンプレイヤーのカードを先に適用する。そのため、ターンプレイヤーの
+カードがあればそれだけを返す。返すカードはどれも同じプレイヤーのカードになる。 -/
+def returnCands (srcs : List AuraSrc) (tp : PlayerId) : List Nat :=
+  let ok (s : AuraSrc) : Bool := !s.on && !beatenIn srcs s
+  let mine := (List.range srcs.length).filter fun j => srcs[j]?.any fun s => s.who == tp && ok s
+  if mine.isEmpty then (List.range srcs.length).filter fun j => srcs[j]?.any ok else mine
 
 /-- 永続効果の有効・無効を1つだけ変える。`tp` はターンプレイヤー。
 * 適用中のカードを無効にする適用中のカードがあれば、そのカードを無効にする
-* なければ、どの適用中のカードにも無効にされない無効なカードを1枚（`returnIdx`）、新しい時刻で有効に戻す
+* なければ、有効に戻せるカード（`returnCands`）が1枚だけなら、それを新しい時刻で有効に戻す
   （時刻はどのカードよりも新しくする。`play` で進める限り `clock + 1` と同じ）。
   そのカードの効果で無効になるカードを無効にしてから、次のカードを有効に戻す
 * どちらもなければ、状態は決まっている（`none`）
+* 有効に戻せるカードが2枚以上なら、① どれを先に適用するかはそのコントローラーが決める（`awaitingChoice`）。
+  ここでは進めずに `none` を返し、プレイヤーが選ぶ（`Action.chooseAura`）のを待つ
 
 有効に戻ったカードは「その時点で新たに適用された」ので、互いに無効にし合う相手が先に適用中なら
 すぐにまた無効になる（スキルドレイン → サイコ・ショッカー → 王宮のお触れの3すくみ）。 -/
@@ -602,11 +591,19 @@ def settleOnce (srcs : List AuraSrc) (clock : Nat) (tp : PlayerId) : Option (Lis
   match srcs.findIdx? (fun s => s.on && beatenIn srcs s) with
   | some i => some (srcs.modify i ({ · with on := false }), clock)
   | none =>
-    match returnIdx srcs tp with
-    | some i =>
+    match returnCands srcs tp with
+    | [i] =>
       let t := newestTime srcs clock
       some (srcs.modify i ({ · with on := true, since := t }), t)
-    | none => none
+    | _ => none
+
+/-- 有効に戻すカードの選択待ちなら、選ぶプレイヤー。無効にするカードがなく、有効に戻せるカードが
+2枚以上あるとき（どれも同じプレイヤーのカード）。 -/
+def awaitingChoice (srcs : List AuraSrc) (tp : PlayerId) : Option PlayerId :=
+  if srcs.any (fun s => s.on && beatenIn srcs s) then none else
+  match returnCands srcs tp with
+  | i :: _ :: _ => srcs[i]?.map (·.who)
+  | _ => none
 
 def settleAux (tp : PlayerId) : Nat → List AuraSrc → Nat → List AuraSrc × Nat
   | 0, srcs, c => (srcs, c)
@@ -615,8 +612,9 @@ def settleAux (tp : PlayerId) : Nat → List AuraSrc → Nat → List AuraSrc ×
     | some (srcs', c') => settleAux tp n srcs' c'
     | none => (srcs, c)
 
-/-- 状態が決まるまで `settleOnce` を繰り返す。カードが `AuraSrc.Simple` を満たせば、この回数までに
-必ず決まる（`settle_settled`）。満たさないカードの組み合わせでは、決まらずに回り続けることがある。 -/
+/-- 状態が決まるか、プレイヤーの選択待ちになるまで `settleOnce` を繰り返す。カードが `AuraSrc.Simple` を
+満たせば、この回数までに必ず止まる（`settle_settled`）。満たさないカードの組み合わせでは、止まらずに
+回り続けることがある。 -/
 def settle (srcs : List AuraSrc) (clock : Nat) (tp : PlayerId) : List AuraSrc × Nat :=
   settleAux tp (4 * (3 * srcs.length + 1) ^ 4) srcs clock
 
@@ -695,6 +693,18 @@ def _root_.YGO.Player.commitAuras (p : Player) (w : PlayerId) (r : List AuraSrc)
 def commitAuras (b : Board) : Board :=
   let r := settle b.sources b.clock b.turnPlayer
   { b with p1 := b.p1.commitAuras .one r.1, p2 := b.p2.commitAuras .two r.1, clock := r.2 }
+
+/-- 永続効果の適用順の選択待ちなら、選ぶプレイヤー（判定結果を書き込んだ盤面について） -/
+def awaiting (b : Board) : Option PlayerId := awaitingChoice b.sources b.turnPlayer
+
+/-- 選択待ちのとき、有効に戻せるカードのうち i 番目（`returnCands` の順）を先に適用する。
+その後の判定は `commitAuras` で続ける。 -/
+def chooseAura (b : Board) (i : Nat) : Except String Board := do
+  let some _ := b.awaiting | throw "永続効果の適用順を選ぶ場面ではない"
+  let some j := (returnCands b.sources b.turnPlayer)[i]? | throw "その番号のカードは選べない"
+  let t := newestTime b.sources b.clock
+  let r := b.sources.modify j ({ · with on := true, since := t })
+  pure { b with p1 := b.p1.commitAuras .one r, p2 := b.p2.commitAuras .two r, clock := t }
 
 /-- チェーン上の罠カードの効果が無効化されるか（フィールドの罠を無効にする効果が適用中か） -/
 def trapsNegated (b : Board) : Bool :=
@@ -832,6 +842,7 @@ inductive Action where
   | pass                                                    -- 優先権を相手に渡す
   | attack          (attacker : Nat) (target : Option Nat)  -- 攻撃宣言
   | discard         (hand : Nat)                            -- エンドフェイズの手札調整
+  | chooseAura      (i : Nat)  -- 同時に有効に戻る永続効果のうち先に適用するもの（`Board.chooseAura`）
   deriving Repr, DecidableEq
 
 def Action.isNextPhase : Action → Bool
@@ -1315,6 +1326,7 @@ def boardAct (c : Ctx) (b : Board) : Action → Except String Board
   | .setSpellTrap h    => setSpellTrapAct c b h
   | .attack a t        => declareAttack c b a t
   | .discard h         => discardAct c b h
+  | .chooseAura _      => throw "永続効果の適用順を選ぶ場面ではない"
   | _                  => throw "unreachable"
 
 /-- パス。両者が続けてパスしたら、チェーンがあれば解決し、攻撃宣言中ならダメージ計算を行う。 -/
@@ -1389,8 +1401,15 @@ def nextPhase (g : Game) : Except String Game :=
       | none   => pure { g' with board := b, result := some (.win g.active) }  -- デッキ切れ
       | some p => pure { g' with board := b.set nxt p }
 
+/-- 永続効果の適用順の選択待ちの間は、選ぶこと（`chooseAura`）しかできない。
+選んだカードを適用した後、判定を続ける（また選択待ちになることもある）。 -/
+def chooseStep (g : Game) : Action → Except String Game
+  | .chooseAura i => (g.board.chooseAura i).map fun b => checkResult { g with board := b.commitAuras }
+  | _ => throw "永続効果の適用順の選択待ち"
+
 def step (g : Game) (a : Action) : Except String Game :=
   if g.result.isSome then throw "既に決着がついている"
+  else if g.board.awaiting.isSome then chooseStep g a
   else if a.isNextPhase then
     if g.chain.isEmpty ∧ g.board.attack.isNone ∧ g.priority = g.active then nextPhase g
     else throw "チェーンや攻撃の処理中、または優先権がないときはフェイズを進められない"
@@ -1475,6 +1494,18 @@ theorem no_action_after_result (g : Game) (a : Action) (h : g.result.isSome) :
     step g a = .error "既に決着がついている" := by
   simp [step, h]; rfl
 
+/-- 選択待ちの間にできるのは、有効に戻すカードを選ぶことだけ -/
+theorem chooseStep_ok {g g' : Game} {a : Action} (h : chooseStep g a = .ok g') :
+    ∃ i b, a = .chooseAura i ∧ g.board.chooseAura i = .ok b ∧
+      g' = checkResult { g with board := b.commitAuras } := by
+  unfold chooseStep at h
+  split at h
+  · rename_i i
+    cases hb : g.board.chooseAura i with
+    | error e => simp [hb, Except.map] at h
+    | ok b => simp only [hb, Except.map, Except.ok.injEq] at h; exact ⟨i, b, rfl, hb, h.symm⟩
+  · cases h
+
 /-- フェイズ移行以外の行動はターン・フェイズ・ターンプレイヤーを変えない -/
 theorem step_preserves_turn (g g' : Game) (a : Action) (ha : a.isNextPhase = false)
     (h : step g a = .ok g') :
@@ -1482,6 +1513,9 @@ theorem step_preserves_turn (g g' : Game) (a : Action) (ha : a.isNextPhase = fal
   unfold step at h
   split at h
   · contradiction
+  split at h
+  · obtain ⟨i, b, -, -, rfl⟩ := chooseStep_ok h
+    simp [checkResult]
   · simp only [ha] at h
     cases hb : act g.ctx g.cs a with
     | error e => simp [hb, Except.map] at h
@@ -1539,6 +1573,8 @@ theorem reachable_inv (g : Game) (hr : Reachable g) : Inv g := by
       unfold step at hs
       split at hs
       · cases hs
+      split at hs
+      · obtain ⟨i, b, rfl, -⟩ := chooseStep_ok hs; cases ha
       · split at hs
         · exact nextPhase_inv g g' ih hs
         · cases hs
@@ -1563,6 +1599,8 @@ theorem no_attack_first_turn (g g' : Game) (hr : Reachable g) (ht : g.turn = 1)
   unfold step at h
   split at h
   · cases h
+  split at h
+  · obtain ⟨i, b, h1, -⟩ := chooseStep_ok h; cases h1
   · simp only [Action.isNextPhase] at h
     cases hb : declareAttack g.ctx g.board i t with
     | error e =>
@@ -2494,8 +2532,8 @@ example : cycloneChain.toOption.map (fun g => (backrowNames g .one, backrowNames
 #eval (play cycloneStart [.setSpellTrap 0, .activateSet .one 0 { backrow := some (.two, 0) }]).map (fun _ => ())
 
 /-! ### スキルドレイン・王宮のお触れ・サイコ・ショッカー・D－HERO Bloo－D の4すくみ
-同時に有効に戻る永続効果は、ターンプレイヤーのものから1つずつ適用する。同じプレイヤーのものは、
-コントローラーが順番を決める代わりに、無効になる前に先に適用されていたものから適用する。 -/
+同時に有効に戻る永続効果は、ターンプレイヤーのものから1つずつ適用する。同じプレイヤーのものが2枚以上あれば、
+そのコントローラーがどれを先に適用するかを選ぶ（`.chooseAura`）。 -/
 
 /-- P1：スキルドレイン（先に適用）とショッカー、お触れをセット。P2：墓地に Bloo－D、手札に死者蘇生 -/
 def quadStart : Game where
@@ -2519,20 +2557,54 @@ def quadTri : Except String Game := play quadStart (resolve (.activateSet .one 1
 #guard_msgs in
 #eval quadTri.map (fun g => (quadNegated g).take 3)
 
-/-- Bloo－D がショッカーを無効にすると、スキルドレインとお触れが同時に有効に戻る。
-お触れの方が先に適用されていた（スキルドレインは3すくみの途中で一度有効に戻っている）ので、お触れを先に適用し、
-スキルドレインは無効のまま。ショッカーは Bloo－D に無効にされたまま。
-
-Bloo－D とお触れが有効、ショッカーとスキルドレインが無効になる（`4すくみ考察.md`） -/
+/-- Bloo－D がショッカーを無効にすると、スキルドレインとお触れが同時に有効に戻る。どちらも P1 のカードなので、
+P1 がどちらを先に適用するかを選ぶまで止まる（4枚とも無効のまま。Bloo－D は有効） -/
 def quadBloo : Except String Game :=
   play quadStart (resolve (.activateSet .one 1) ++ [np, np, np, np, np, np] ++
     resolve (.activateSpell 0 { grave := some (.two, 0) }))
 
-/-- info: Except.ok (YGO.PlayerId.two, ["D－HERO Bloo－D"], [true, false, true, false]) -/
+/-- info: Except.ok (YGO.PlayerId.two, ["D－HERO Bloo－D"], some (YGO.PlayerId.one), [true, true, true, false]) -/
 #guard_msgs in
-#eval quadBloo.map (fun g => (g.board.turnPlayer, names g.board.p2.monsters, quadNegated g))
+#eval quadBloo.map (fun g => (g.board.turnPlayer, names g.board.p2.monsters, g.board.awaiting, quadNegated g))
 
-example : quadBloo.toOption.map quadNegated = some [true, false, true, false] := by decide
+-- 選択待ちの間は、ほかの行動はできない
+/-- info: Except.error "永続効果の適用順の選択待ち" -/
+#guard_msgs in
+#eval (quadBloo >>= (play · [.pass])).map (fun _ => ())
+
+/-- お触れを先に適用する：スキルドレインはお触れに無効にされる（`4すくみ考察.md` の手順5） -/
+def quadDecree : Except String Game := quadBloo >>= (play · [.chooseAura 1])
+
+/-- スキルドレインを先に適用する：Bloo－D がスキルドレインに無効にされ、ショッカーを無効にするカードが
+なくなる。お触れとショッカーが同時に有効に戻るので、また P1 が選ぶ（スキルドレインだけが有効） -/
+def quadDrain : Except String Game := quadBloo >>= (play · [.chooseAura 0])
+
+/-- info: Except.ok (some (YGO.PlayerId.one), [false, true, true, true]) -/
+#guard_msgs in
+#eval quadDrain.map (fun g => (g.board.awaiting, quadNegated g))
+
+/-- 続けてお触れを先に適用する：スキルドレインがお触れに無効にされ、Bloo－D とショッカーが同時に有効に戻る。
+② 相手（P2）のターンなので Bloo－D が先に適用され、ショッカーは無効のまま（手順6） -/
+def quadDrainDecree : Except String Game := quadDrain >>= (play · [.chooseAura 0])
+
+/-- 続けてショッカーを先に適用する：ショッカーは有効に戻った時点で新たに適用されたものになるので、
+先に適用されていたスキルドレインに無効にされる。残るお触れが適用され、あとはお触れを選んだ場合と同じ -/
+def quadDrainJinzo : Except String Game := quadDrain >>= (play · [.chooseAura 1])
+
+-- どの順に選んでも、Bloo－D とお触れが有効、ショッカーとスキルドレインが無効になる（手順7）
+/-- info: Except.ok [(none, [true, false, true, false]), (none, [true, false, true, false]), (none, [true, false, true, false])] -/
+#guard_msgs in
+#eval [quadDecree, quadDrainDecree, quadDrainJinzo].mapM
+  (fun r => r.map fun g => (g.board.awaiting, quadNegated g))
+
+example : quadDecree.toOption.map quadNegated = some [true, false, true, false] := by decide
+example : quadDrainDecree.toOption.map quadNegated = some [true, false, true, false] := by decide
+example : quadDrainJinzo.toOption.map quadNegated = some [true, false, true, false] := by decide
+
+-- 選択待ちでないときは選べない
+/-- info: Except.error "永続効果の適用順を選ぶ場面ではない" -/
+#guard_msgs in
+#eval (quadDecree >>= (play · [.chooseAura 0])).map (fun _ => ())
 
 end Demo
 

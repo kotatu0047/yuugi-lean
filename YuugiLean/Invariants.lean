@@ -12,10 +12,10 @@ import YuugiLean.YuGiOh
 * どちらかの LP が 0 なら決着している（`reachable_lp_zero_decided`）
 * 永続効果の有効・無効の判定（`settle`）について
   * 判定で変わるのは有効・無効と適用の時刻だけ（`settle_keys`）
-  * 判定が決まった状態では
-    * 無効なカードには、それを無効にする有効なカードがある（`negated_has_reason`）
+  * 判定が止まった状態（決まったか、プレイヤーの選択待ち）では
     * 有効なカード同士は互いに無効にしない（`settled_consistent`）
-    * どのカードにも無効にされないカードは有効（`unbeaten_effective`）
+    * 選択待ちでなければ、無効なカードには、それを無効にする有効なカードがある（`negated_has_reason`）
+    * 選択待ちでなければ、どのカードにも無効にされないカードは有効（`unbeaten_effective`）
   * 判定が必ず決まることは `Settle.lean`（`settle_settled`、`reachable_settled`）
 -/
 
@@ -992,11 +992,27 @@ theorem Player.count_commitAuras (p : Player) (w : PlayerId) (r : List AuraSrc) 
 theorem Board.count_commitAuras (b : Board) : b.commitAuras.count = b.count := by
   simp only [Board.commitAuras, Board.count, Player.count_commitAuras]
 
+/-- 有効に戻すカードを選ぶと、判定結果を書き込んだ盤面になる -/
+theorem Board.chooseAura_ok {b b' : Board} {i : Nat} (h : b.chooseAura i = .ok b') :
+    ∃ r t, b' = { b with p1 := b.p1.commitAuras .one r, p2 := b.p2.commitAuras .two r, clock := t } := by
+  unfold Board.chooseAura at h
+  repeat' split at h
+  all_goals try (cases h; done)
+  simp only [pure, Except.pure, Except.ok.injEq] at h
+  exact ⟨_, _, h.symm⟩
+
+theorem Board.count_chooseAura {b b' : Board} {i : Nat} (h : b.chooseAura i = .ok b') : b'.count = b.count := by
+  obtain ⟨r, t, rfl⟩ := Board.chooseAura_ok h
+  simp only [Board.count, Player.count_commitAuras]
+
 /-- **1手進めてもカードの総数は変わらない** -/
 theorem step_count {g g' : Game} {a : Action} (h : step g a = .ok g') : g'.count = g.count := by
   unfold step at h
   split at h
   · cases h
+  split at h
+  · obtain ⟨i, b, -, hb, rfl⟩ := chooseStep_ok h
+    simp only [Game.count, checkResult, Board.count_commitAuras, Board.count_chooseAura hb]
   · split at h
     · split at h
       · exact count_nextPhase h
@@ -1552,11 +1568,21 @@ theorem Board.UidOK.commitAuras {b : Board} (h : b.UidOK) : b.commitAuras.UidOK 
   unfold Board.UidOK Board.uids Board.uidsOf at *
   simpa only [Board.commitAuras, Board.get, hu] using h
 
+theorem Board.UidOK.chooseAura {b b' : Board} {i : Nat} (h : b.UidOK) (hc : b.chooseAura i = .ok b') : b'.UidOK := by
+  obtain ⟨r, t, rfl⟩ := Board.chooseAura_ok hc
+  have hu : ∀ (p : Player) w r, (p.commitAuras w r).monsters.map (·.uid) = p.monsters.map (·.uid) := by
+    intro p w r; simp [Player.commitAuras, List.map_map, Function.comp_def]
+  unfold Board.UidOK Board.uids Board.uidsOf at *
+  simpa only [Board.get, hu] using h
+
 /-- **1手進めても、フィールドのモンスターの uid は重複しない** -/
 theorem step_uidOK {g g' : Game} {a : Action} (hg : g.UidOK) (h : step g a = .ok g') : g'.UidOK := by
   unfold step at h
   split at h
   · cases h
+  split at h
+  · obtain ⟨i, b, -, hb, rfl⟩ := chooseStep_ok h
+    exact (Board.UidOK.chooseAura (show g.board.UidOK from hg) hb).commitAuras
   · split at h
     · split at h
       · exact uidOK_nextPhase hg h
@@ -2336,11 +2362,29 @@ theorem ZoneOK.commitAuras {b : Board} {ch : List ChainLink} (h : ZoneOK b ch) :
     exact ⟨by simpa [Board.commitAuras, Board.get, e1] using h1, by simpa [Board.commitAuras, Board.get, e2] using h2,
       by simpa [Board.commitAuras, Board.get, e3] using h3⟩
 
+theorem ZoneOK.chooseAura {b b' : Board} {ch : List ChainLink} {i : Nat} (h : ZoneOK b ch)
+    (hc : b.chooseAura i = .ok b') : ZoneOK b' ch := by
+  obtain ⟨r, t, rfl⟩ := Board.chooseAura_ok hc
+  have he : ∀ (p : Player) w r, (p.commitAuras w r).mainCnt = p.mainCnt ∧
+      (p.commitAuras w r).emzCnt = p.emzCnt ∧ (p.commitAuras w r).backrow.length = p.backrow.length := by
+    intro p w r
+    simp [Player.commitAuras, Player.mainCnt, Player.emzCnt, List.filter_map, Function.comp_def]
+  intro v
+  obtain ⟨h1, h2, h3⟩ := h v
+  cases v
+  · obtain ⟨e1, e2, e3⟩ := he b.p1 .one r
+    exact ⟨by simpa [Board.get, e1] using h1, by simpa [Board.get, e2] using h2, by simpa [Board.get, e3] using h3⟩
+  · obtain ⟨e1, e2, e3⟩ := he b.p2 .two r
+    exact ⟨by simpa [Board.get, e1] using h1, by simpa [Board.get, e2] using h2, by simpa [Board.get, e3] using h3⟩
+
 /-- **1手進めても、ゾーンの上限を超えない** -/
 theorem step_zoneOK {g g' : Game} {a : Action} (hg : g.ZoneOK) (h : step g a = .ok g') : g'.ZoneOK := by
   unfold step at h
   split at h
   · cases h
+  split at h
+  · obtain ⟨i, b, -, hb, rfl⟩ := chooseStep_ok h
+    exact (ZoneOK.chooseAura (ch := g.chain) hg hb).commitAuras
   · split at h
     · split at h
       · exact zone_nextPhase hg h
@@ -2416,8 +2460,11 @@ theorem step_LPOK {g g' : Game} {a : Action} (hg : g.LPOK) (h : step g a = .ok g
   unfold step at h
   split at h
   · cases h
-  · rename_i hn
-    split at h
+  rename_i hn
+  split at h
+  · obtain ⟨i, b, -, -, rfl⟩ := chooseStep_ok h
+    exact checkResult_none (g := { g with board := b.commitAuras }) hr
+  · split at h
     · split at h
       · have hl := nextPhase_lp h
         have hgn : g.result = none := by simpa using hn
@@ -2444,120 +2491,69 @@ theorem reachable_lp_zero_decided {g : Game} (hr : Reachable g)
   | none => obtain ⟨h1, h2⟩ := this hres; omega
 
 /-! ## 永続効果の有効・無効の判定（settle）の正しさ
-`settleOnce` がこれ以上状態を変えない（判定が決まった）とき、次が成り立つ。 -/
+`settleOnce` がこれ以上状態を変えない（判定が決まったか、プレイヤーの選択待ちの）とき、次が成り立つ。 -/
 
-theorem oldestIdx_foldl {srcs : List AuraSrc} {p : AuraSrc → Bool} (js : List Nat) (acc : Option Nat)
-    (hacc : ∀ k, acc = some k → ∃ hk : k < srcs.length, p srcs[k] = true) :
-    let r := js.foldl (fun acc j =>
-      match srcs[j]? with
-      | some s =>
-        if p s then
-          match acc with
-          | some k => if s.since < (srcs[k]?.map (·.since)).getD 0 then some j else acc
-          | none => some j
-        else acc
-      | none => acc) acc
-    (∀ k, r = some k → ∃ hk : k < srcs.length, p srcs[k] = true) ∧
-    (r = none → acc = none ∧ ∀ j ∈ js, ∀ s, srcs[j]? = some s → p s = false) := by
-  induction js generalizing acc with
-  | nil => exact ⟨hacc, fun h => ⟨h, by simp⟩⟩
-  | cons j js ih =>
-    simp only [List.foldl_cons]
-    have step : ∀ k, (match srcs[j]? with
-      | some s =>
-        if p s then
-          match acc with
-          | some k => if s.since < (srcs[k]?.map (·.since)).getD 0 then some j else acc
-          | none => some j
-        else acc
-      | none => acc) = some k → ∃ hk : k < srcs.length, p srcs[k] = true := by
-      intro k hk
-      cases hj : srcs[j]? with
-      | none => rw [hj] at hk; exact hacc k hk
-      | some s =>
-        rw [hj] at hk
-        have hjl : j < srcs.length := by
-          rcases List.getElem?_eq_some_iff.mp hj with ⟨h, _⟩; exact h
-        have hjs : srcs[j] = s := by
-          rcases List.getElem?_eq_some_iff.mp hj with ⟨_, h⟩; exact h
-        by_cases hp : p s
-        · simp only [hp, ite_true] at hk
-          cases acc with
-          | none => simp at hk; subst hk; exact ⟨hjl, hjs ▸ hp⟩
-          | some k' =>
-            simp only at hk
-            split at hk
-            · simp at hk; subst hk; exact ⟨hjl, hjs ▸ hp⟩
-            · exact hacc k hk
-        · simp only [hp, Bool.false_eq_true, ite_false] at hk; exact hacc k hk
-    obtain ⟨h1, h2⟩ := ih _ step
-    refine ⟨h1, fun hn => ?_⟩
-    obtain ⟨hn', hall⟩ := h2 hn
-    cases hj : srcs[j]? with
-    | none =>
-      rw [hj] at hn'
-      refine ⟨hn', fun j' hj' s hs => ?_⟩
-      rcases List.mem_cons.mp hj' with rfl | hj'
-      · rw [hj] at hs; cases hs
-      · exact hall j' hj' s hs
-    | some s0 =>
-      rw [hj] at hn'
-      by_cases hp : p s0
-      · simp only [hp, ite_true] at hn'
-        cases acc <;> simp at hn'
-        split at hn' <;> cases hn'
-      · simp only [hp, Bool.false_eq_true, ite_false] at hn'
-        refine ⟨hn', fun j' hj' s hs => ?_⟩
-        rcases List.mem_cons.mp hj' with rfl | hj'
-        · rw [hj] at hs; cases hs; simpa using hp
-        · exact hall j' hj' s hs
+theorem filter_range_mem {n : Nat} {l : List AuraSrc} {P : AuraSrc → Bool} {j : Nat}
+    (h : j ∈ (List.range n).filter fun j => l[j]?.any P) : ∃ hj : j < l.length, P l[j] = true := by
+  simp only [List.mem_filter, List.mem_range] at h
+  obtain ⟨-, ha⟩ := h
+  cases hj : l[j]? with
+  | none => rw [hj] at ha; cases ha
+  | some s =>
+    obtain ⟨hlt, rfl⟩ := List.getElem?_eq_some_iff.mp hj
+    rw [hj] at ha; exact ⟨hlt, by simpa using ha⟩
 
-theorem oldestIdx_some {srcs : List AuraSrc} {p : AuraSrc → Bool} {i : Nat} (h : oldestIdx srcs p = some i) :
-    ∃ hi : i < srcs.length, p srcs[i] = true :=
-  (oldestIdx_foldl (List.range srcs.length) none (by simp)).1 i h
+/-- 有効に戻せるカードは、無効で、どの適用中のカードにも無効にされない -/
+theorem returnCands_mem {srcs : List AuraSrc} {tp : PlayerId} {j : Nat} (h : j ∈ returnCands srcs tp) :
+    ∃ hj : j < srcs.length, srcs[j].on = false ∧ beatenIn srcs srcs[j] = false := by
+  unfold returnCands at h
+  simp only at h
+  split at h
+  · obtain ⟨hj, ha⟩ := filter_range_mem h
+    simp only [Bool.and_eq_true, Bool.not_eq_true'] at ha
+    exact ⟨hj, ha⟩
+  · obtain ⟨hj, ha⟩ := filter_range_mem h
+    simp only [Bool.and_eq_true, Bool.not_eq_true'] at ha
+    exact ⟨hj, ha.2⟩
 
-theorem oldestIdx_none {srcs : List AuraSrc} {p : AuraSrc → Bool} (h : oldestIdx srcs p = none) :
-    ∀ s ∈ srcs, p s = false := by
-  have := ((oldestIdx_foldl (srcs := srcs) (p := p) (List.range srcs.length) none (by simp)).2 h).2
-  intro s hs
-  obtain ⟨j, hj, rfl⟩ := List.mem_iff_getElem.mp hs
-  exact this j (List.mem_range.mpr hj) _ (List.getElem?_eq_getElem hj)
-
-theorem returnIdx_none {srcs : List AuraSrc} {tp : PlayerId} (h : returnIdx srcs tp = none) :
+/-- 有効に戻せるカードがなければ、無効なカードはどれも適用中のカードに無効にされている -/
+theorem returnCands_nil {srcs : List AuraSrc} {tp : PlayerId} (h : returnCands srcs tp = []) :
     ∀ s ∈ srcs, (!s.on && !beatenIn srcs s) = false := by
-  unfold returnIdx at h
+  unfold returnCands at h
+  simp only at h
   split at h
-  · cases h
-  · exact oldestIdx_none h
-
-theorem returnIdx_some {srcs : List AuraSrc} {tp : PlayerId} {i : Nat} (h : returnIdx srcs tp = some i) :
-    ∃ hi : i < srcs.length, srcs[i].on = false ∧ beatenIn srcs srcs[i] = false := by
-  unfold returnIdx at h
-  split at h
-  · rename_i j hj
-    cases h
-    obtain ⟨hlt, hp⟩ := oldestIdx_some hj
-    simp only [Bool.and_eq_true, Bool.not_eq_true'] at hp
-    exact ⟨hlt, hp.1.2, hp.2⟩
-  · obtain ⟨hlt, hp⟩ := oldestIdx_some h
-    simp only [Bool.and_eq_true, Bool.not_eq_true'] at hp
-    exact ⟨hlt, hp.1, hp.2⟩
+  · intro s hs
+    obtain ⟨j, hj, rfl⟩ := List.mem_iff_getElem.mp hs
+    have := List.filter_eq_nil_iff.mp h j (List.mem_range.mpr hj)
+    simpa [List.getElem?_eq_getElem hj] using this
+  · rename_i hm; rw [h] at hm; simp at hm
 
 theorem settleOnce_none {srcs : List AuraSrc} {c : Nat} {tp : PlayerId} (h : settleOnce srcs c tp = none) :
     (∀ s ∈ srcs, s.on = true → beatenIn srcs s = false) ∧
-    (∀ s ∈ srcs, s.on = false → beatenIn srcs s = true) := by
+    (awaitingChoice srcs tp = none → ∀ s ∈ srcs, s.on = false → beatenIn srcs s = true) := by
   unfold settleOnce at h
   split at h
   · cases h
-  · rename_i h1
-    split at h
-    · cases h
-    · rename_i h2
-      have h2 := returnIdx_none h2
-      rw [List.findIdx?_eq_none_iff] at h1
-      refine ⟨fun s hs ho => ?_, fun s hs ho => ?_⟩
-      · simpa [ho] using h1 s hs
-      · simpa [ho] using h2 s hs
+  rename_i h1
+  rw [List.findIdx?_eq_none_iff] at h1
+  refine ⟨fun s hs ho => by simpa [ho] using h1 s hs, fun hw s hs ho => ?_⟩
+  have hk : srcs.any (fun s => s.on && beatenIn srcs s) = false := by
+    simpa using h1
+  unfold awaitingChoice at hw
+  rw [hk] at hw
+  simp only [Bool.false_eq_true, ite_false] at hw
+  split at h
+  · cases h
+  rename_i h2
+  cases hc : returnCands srcs tp with
+  | nil => simpa [ho] using returnCands_nil hc s hs
+  | cons i rest =>
+    cases rest with
+    | nil => exact absurd hc (h2 i)
+    | cons j rest =>
+      rw [hc] at hw
+      obtain ⟨hi, -⟩ := returnCands_mem (hc ▸ List.mem_cons_self : i ∈ returnCands srcs tp)
+      simp [List.getElem?_eq_getElem hi] at hw
 
 /-- **有効なカード同士は、互いに無効にしない** -/
 theorem settled_consistent {srcs : List AuraSrc} {c : Nat} {tp : PlayerId} (h : settleOnce srcs c tp = none)
@@ -2571,16 +2567,17 @@ theorem settled_consistent {srcs : List AuraSrc} {c : Nat} {tp : PlayerId} (h : 
 
 /-- **無効なカードには、それを無効にする有効なカードがある** -/
 theorem negated_has_reason {srcs : List AuraSrc} {c : Nat} {tp : PlayerId} (h : settleOnce srcs c tp = none)
-    {s : AuraSrc} (hs : s ∈ srcs) (hso : s.on = false) :
+    (hw : awaitingChoice srcs tp = none) {s : AuraSrc} (hs : s ∈ srcs) (hso : s.on = false) :
     ∃ t ∈ srcs, t.on = true ∧ t.beats s = true := by
-  have := (settleOnce_none h).2 s hs hso
+  have := (settleOnce_none h).2 hw s hs hso
   simpa [beatenIn] using this
 
 /-- **どのカードにも無効にされないカードは有効** -/
 theorem unbeaten_effective {srcs : List AuraSrc} {c : Nat} {tp : PlayerId} (h : settleOnce srcs c tp = none)
-    {s : AuraSrc} (hs : s ∈ srcs) (hn : ∀ t ∈ srcs, t.beats s = false) : s.on = true := by
+    (hw : awaitingChoice srcs tp = none) {s : AuraSrc} (hs : s ∈ srcs) (hn : ∀ t ∈ srcs, t.beats s = false) :
+    s.on = true := by
   cases hso : s.on
-  · obtain ⟨t, ht, _, hb⟩ := negated_has_reason h hs hso
+  · obtain ⟨t, ht, _, hb⟩ := negated_has_reason h hw hs hso
     rw [hn t ht] at hb; cases hb
   · rfl
 
