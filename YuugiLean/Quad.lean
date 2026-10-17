@@ -1,4 +1,4 @@
-import YuugiLean.Settle
+import YuugiLean.Order
 
 /-!
 # 4すくみ（スキルドレイン・王宮のお触れ・サイコ・ショッカー・D－HERO Bloo－D）
@@ -13,7 +13,8 @@ Bloo－D を相手がコントロールする）について、次を確かめ�
 
 判定は必ず止まり、止まったときは **Bloo－D とお触れが有効、ショッカーとスキルドレインが無効** になる。
 
-適用の時刻は順番だけが判定に効くので、1〜4 の並べ方24通りで表す（時刻の値そのものを一般にした証明はしていない）。
+適用の時刻は大小関係だけが判定に効く（`Order.lean`）。そこで、まず時刻を 1〜4 の並べ方24通りで表して
+すべての場合を調べ（`quad_allEnd` など）、それを互いに異なるどんな時刻・時計の値にも広げる（`quad_allEnd_any` など）。
 -/
 
 namespace YGO
@@ -96,13 +97,11 @@ theorem allEnds_sound {tp : PlayerId} {E : List (List Bool)} :
 
 /-! ## 4枚のカード -/
 
-/-- `w` がスキルドレイン・お触れ・ショッカーを、`w.other` が Bloo－D をコントロールするときの、
-盤面の順（P1 の魔法・罠ゾーン、P1 のモンスター、P2 の魔法・罠ゾーン、P2 のモンスター）に並べた4枚。
-`drainFirst` はスキルドレインがお触れより左のゾーンにあるか。`on` と `since` はスキルドレイン・お触れ・
-ショッカー・Bloo－D の順の、有効かどうかと適用の時刻。 -/
-def quadSrcs (w : PlayerId) (drainFirst : Bool) (on : List Bool) (since : List Nat) : List AuraSrc :=
-  let mk (i : Nat) (who : PlayerId) (kind : SrcKind) (key : Nat × Nat × Nat) (auras : List Aura) : AuraSrc :=
-    { who, kind, key, since := since.getD i 0, on := on.getD i false, auras }
+/-- `quadSrcs` の4枚の、有効・無効と時刻以外。組の数字は、スキルドレイン・お触れ・ショッカー・Bloo－D の順の番号 -/
+def quadTemplate (w : PlayerId) (drainFirst : Bool) : List (Nat × AuraSrc) :=
+  let mk (i : Nat) (who : PlayerId) (kind : SrcKind) (key : Nat × Nat × Nat) (auras : List Aura) :
+      Nat × AuraSrc :=
+    (i, { who, kind, key, since := 0, on := false, auras })
   let drain (z : Nat) := mk 0 w .trap (stKey w z) [.negateMonsterEffects]
   let decree (z : Nat) := mk 1 w .trap (stKey w z) [.negateTraps]
   let traps := if drainFirst then [drain 0, decree 1] else [decree 0, drain 1]
@@ -111,6 +110,13 @@ def quadSrcs (w : PlayerId) (drainFirst : Bool) (on : List Bool) (since : List N
                       mk 3 .two .monster (monKey 1) [.negateOppMonsterEffects]]
   | .two => [mk 3 .one .monster (monKey 0) [.negateOppMonsterEffects]] ++ traps ++
               [mk 2 .two .monster (monKey 1) [.negateTraps]]
+
+/-- `w` がスキルドレイン・お触れ・ショッカーを、`w.other` が Bloo－D をコントロールするときの、
+盤面の順（P1 の魔法・罠ゾーン、P1 のモンスター、P2 の魔法・罠ゾーン、P2 のモンスター）に並べた4枚。
+`drainFirst` はスキルドレインがお触れより左のゾーンにあるか。`on` と `since` はスキルドレイン・お触れ・
+ショッカー・Bloo－D の順の、有効かどうかと適用の時刻。 -/
+def quadSrcs (w : PlayerId) (drainFirst : Bool) (on : List Bool) (since : List Nat) : List AuraSrc :=
+  (quadTemplate w drainFirst).map fun (i, s) => { s with since := since.getD i 0, on := on.getD i false }
 
 /-- 盤面の順に並べたときの、「Bloo－D とお触れが有効、ショッカーとスキルドレインが無効」の並び -/
 def quadExpected (w : PlayerId) (drainFirst : Bool) : List Bool :=
@@ -283,5 +289,182 @@ example : awaitingChoice quadLoopStart .one = some .one ∧ returnCands quadLoop
     awaitingChoice r2.1 .one = some .one ∧ r2.1.map (·.on) = quadLoopStart.map (·.on) ∧
       timeRanks r2.1 = timeRanks quadLoopStart := by
   decide
+
+/-! ## 時刻の値を一般にする
+
+判定は時刻の大小関係しか見ない（`OrderPairs`）。互いに異なる時刻4つを、その順位（1〜4 の並べ方、`timeOrder`）に
+置き換えても大小関係は変わらないので、上の24通りの結果が、どんな時刻（と時計の値）にもそのまま成り立つ。 -/
+
+/-- 大小関係が同じ2つの状態の一方で、どう選んでも止まり `E` のどれかになるなら、もう一方でも同じ
+（時計の値は何でもよい） -/
+theorem AllEnd.transfer {tp : PlayerId} {E : List (List Bool)} {l : List AuraSrc} {c : Nat}
+    (h : AllEnd tp E l c) : ∀ (P : List (AuraSrc × AuraSrc)), OrderPairs P → P.map (·.1) = l →
+      ∀ c2, AllEnd tp E (P.map (·.2)) c2 := by
+  induction h with
+  | done hs hw hE =>
+    intro P H hl c2
+    subst hl
+    rcases H.settleOnce _ c2 tp with ⟨-, h2⟩ | ⟨P', c1', c2', -, h1, -⟩
+    · exact .done h2 (by rw [H.awaitingChoice]; exact hw) (by rw [H.onList]; exact hE)
+    · rw [hs] at h1; cases h1
+  | auto hs _ ih =>
+    intro P H hl c2
+    subst hl
+    rcases H.settleOnce _ c2 tp with ⟨h1, -⟩ | ⟨P', c1', c2', H', h1, h2⟩
+    · rw [hs] at h1; cases h1
+    · rw [hs] at h1
+      cases h1
+      exact .auto h2 (ih P' H' rfl c2')
+  | choose hs ha _ ih =>
+    intro P H hl c2
+    subst hl
+    rcases H.settleOnce _ c2 tp with ⟨-, h2⟩ | ⟨P', c1', c2', -, h1, -⟩
+    · refine .choose h2 (by rw [H.awaitingChoice]; exact ha) fun j hj => ?_
+      rw [H.returnCands] at hj
+      obtain ⟨P', H', e1, e2⟩ := H.choose _ c2 j
+      rw [e2]
+      exact ih j hj P' H' e1.symm _
+    · rw [hs] at h1; cases h1
+
+/-- `SomeEnd` も同じ -/
+theorem SomeEnd.transfer {tp : PlayerId} {E : List (List Bool)} {l : List AuraSrc} {c : Nat}
+    (h : SomeEnd tp E l c) : ∀ (P : List (AuraSrc × AuraSrc)), OrderPairs P → P.map (·.1) = l →
+      ∀ c2, SomeEnd tp E (P.map (·.2)) c2 := by
+  induction h with
+  | done hs hw hE =>
+    intro P H hl c2
+    subst hl
+    rcases H.settleOnce _ c2 tp with ⟨-, h2⟩ | ⟨P', c1', c2', -, h1, -⟩
+    · exact .done h2 (by rw [H.awaitingChoice]; exact hw) (by rw [H.onList]; exact hE)
+    · rw [hs] at h1; cases h1
+  | auto hs _ ih =>
+    intro P H hl c2
+    subst hl
+    rcases H.settleOnce _ c2 tp with ⟨h1, -⟩ | ⟨P', c1', c2', H', h1, h2⟩
+    · rw [hs] at h1; cases h1
+    · rw [hs] at h1
+      cases h1
+      exact .auto h2 (ih P' H' rfl c2')
+  | @choose l c j hs ha hj _ ih =>
+    intro P H hl c2
+    subst hl
+    rcases H.settleOnce _ c2 tp with ⟨-, h2⟩ | ⟨P', c1', c2', -, h1, -⟩
+    · obtain ⟨P', H', e1, e2⟩ := H.choose c c2 j
+      refine .choose (j := j) h2 (by rw [H.awaitingChoice]; exact ha) (by rw [H.returnCands]; exact hj) ?_
+      rw [e2]
+      exact ih P' H' e1.symm _
+    · rw [hs] at h1; cases h1
+
+/-- 時刻の順位（1 が最も古い）。互いに異なる時刻なら 1〜n の並べ方になる -/
+def timeOrder (s : List Nat) : List Nat := s.map fun x => s.countP (· < x) + 1
+
+theorem countP_lt_iff {s : List Nat} {x y : Nat} (hx : x ∈ s) :
+    x < y ↔ s.countP (· < x) < s.countP (· < y) := by
+  constructor
+  · intro h
+    exact countP_lt_of (fun z _ hz => by simp at hz ⊢; omega) ⟨x, hx, by simp [h], by simp⟩
+  · intro h
+    apply Classical.byContradiction
+    intro hn
+    have : s.countP (· < y) ≤ s.countP (· < x) :=
+      List.countP_mono_left fun z _ hz => by simp at hz ⊢; omega
+    omega
+
+theorem timeOrder_getD {s : List Nat} {i : Nat} (hi : i < s.length) :
+    (timeOrder s).getD i 0 = s.countP (· < s.getD i 0) + 1 ∧ s.getD i 0 ∈ s := by
+  refine ⟨?_, ?_⟩
+  · simp [timeOrder, List.getD_eq_getElem?_getD, List.getElem?_eq_getElem hi]
+  · simp [List.getD_eq_getElem?_getD, List.getElem?_eq_getElem hi]
+
+theorem timeOrder_lt {s : List Nat} {i j : Nat} (hi : i < s.length) (hj : j < s.length) :
+    (timeOrder s).getD i 0 < (timeOrder s).getD j 0 ↔ s.getD i 0 < s.getD j 0 := by
+  obtain ⟨e1, m1⟩ := timeOrder_getD hi
+  obtain ⟨e2, -⟩ := timeOrder_getD hj
+  rw [e1, e2, countP_lt_iff m1]
+  omega
+
+theorem perm4 : ∀ a ∈ [1, 2, 3, 4], ∀ b ∈ [1, 2, 3, 4], ∀ c ∈ [1, 2, 3, 4], ∀ d ∈ [1, 2, 3, 4],
+    [a, b, c, d].Nodup → [a, b, c, d] ∈ allOrders := by decide
+
+/-- 互いに異なる時刻4つの順位は、24通りのどれか -/
+theorem timeOrder_mem {s : List Nat} (hl : s.length = 4) (hs : s.Nodup) : timeOrder s ∈ allOrders := by
+  have hb : ∀ x ∈ timeOrder s, x ∈ [1, 2, 3, 4] := by
+    intro x hx
+    obtain ⟨y, hy, rfl⟩ := List.mem_map.mp hx
+    have : s.countP (· < y) < s.countP (fun _ => true) :=
+      countP_lt_of (fun _ _ _ => by simp) ⟨y, hy, by simp, by simp⟩
+    rw [List.countP_true, hl] at this
+    simp only [List.mem_cons, List.not_mem_nil, or_false]
+    omega
+  have hn : (timeOrder s).Nodup := by
+    unfold timeOrder List.Nodup
+    rw [List.pairwise_map]
+    refine List.Pairwise.imp_of_mem (fun {x y} hx hy hxy hn => ?_) hs
+    have h1 := countP_lt_iff (y := y) hx
+    have h2 := countP_lt_iff (y := x) hy
+    simp only [Nat.add_right_cancel_iff] at hn
+    omega
+  have hl' : (timeOrder s).length = 4 := by simp [timeOrder, hl]
+  match h : timeOrder s, hl' with
+  | [a, b, c, d], _ =>
+    rw [h] at hb hn
+    exact perm4 a (hb a (by simp)) b (hb b (by simp)) c (hb c (by simp)) d (hb d (by simp)) hn
+
+theorem allOn_mem {on : List Bool} (hl : on.length = 4) : on ∈ allOn := by
+  match on, hl with
+  | [a, b, c, d], _ => cases a <;> cases b <;> cases c <;> cases d <;> decide
+
+theorem quadTemplate_lt : ∀ w df, ∀ p ∈ quadTemplate w df, p.1 < 4 := by
+  intro w df; cases w <;> cases df <;> decide
+
+/-- 同じ有効・無効で、時刻が `o`（順位）と `s` の4枚を組にしたもの -/
+def quadPairs (w : PlayerId) (df : Bool) (on : List Bool) (o s : List Nat) : List (AuraSrc × AuraSrc) :=
+  (quadTemplate w df).map fun (i, x) =>
+    ({ x with since := o.getD i 0, on := on.getD i false }, { x with since := s.getD i 0, on := on.getD i false })
+
+theorem quadPairs_ok (w : PlayerId) (df : Bool) (on : List Bool) {s : List Nat} (hl : s.length = 4) :
+    OrderPairs (quadPairs w df on (timeOrder s) s) ∧
+      (quadPairs w df on (timeOrder s) s).map (·.1) = quadSrcs w df on (timeOrder s) ∧
+      (quadPairs w df on (timeOrder s) s).map (·.2) = quadSrcs w df on s := by
+  refine ⟨⟨fun p hp => ?_, fun p hp q hq => ?_⟩, by simp [quadPairs, quadSrcs], by simp [quadPairs, quadSrcs]⟩
+  · obtain ⟨⟨i, x⟩, -, rfl⟩ := List.mem_map.mp hp
+    rfl
+  · obtain ⟨⟨i, x⟩, hi, rfl⟩ := List.mem_map.mp hp
+    obtain ⟨⟨j, y⟩, hj, rfl⟩ := List.mem_map.mp hq
+    have hi := quadTemplate_lt w df _ hi
+    have hj := quadTemplate_lt w df _ hj
+    exact timeOrder_lt (s := s) (by rw [hl]; exact hi) (by rw [hl]; exact hj)
+
+/-- **4すくみ：互いに異なるどんな時刻で適用されていても、Bloo－D をコントロールするプレイヤーのターンなら、
+どの状態から、どう選んでも、Bloo－D とお触れが有効、ショッカーとスキルドレインが無効で止まる**
+（時計の値 `c` も何でもよい） -/
+theorem quad_allEnd_any (w : PlayerId) (df : Bool) {on : List Bool} {s : List Nat}
+    (hon : on.length = 4) (hl : s.length = 4) (hs : s.Nodup) (c : Nat) :
+    AllEnd w.other [quadExpected w df] (quadSrcs w df on s) c := by
+  obtain ⟨H, e1, e2⟩ := quadPairs_ok w df on hl
+  rw [← e2]
+  exact (quad_allEnd w df (allOn_mem hon) (timeOrder_mem hl hs)).transfer _ H e1 c
+
+/-- **互いに異なるどんな時刻でも、スキルドレイン側のターンで、選び方によっては止まる** -/
+theorem quad_someEnd_any (w : PlayerId) (df : Bool) {on : List Bool} {s : List Nat}
+    (hon : on.length = 4) (hl : s.length = 4) (hs : s.Nodup) (c : Nat) :
+    SomeEnd w [quadExpected w df] (quadSrcs w df on s) c := by
+  obtain ⟨H, e1, e2⟩ := quadPairs_ok w df on hl
+  rw [← e2]
+  exact (quad_someEnd w df (allOn_mem hon) (timeOrder_mem hl hs)).transfer _ H e1 c
+
+/-- **互いに異なるどんな時刻でも、止まって選択待ちでなければ結論の状態** -/
+theorem quad_settled_any (w : PlayerId) (df : Bool) {on : List Bool} {s : List Nat}
+    (hon : on.length = 4) (hl : s.length = 4) (hs : s.Nodup) {tp : PlayerId} {c : Nat}
+    (h : settleOnce (quadSrcs w df on s) c tp = none) (hw : awaitingChoice (quadSrcs w df on s) tp = none) :
+    (quadSrcs w df on s).map (·.on) = quadExpected w df := by
+  obtain ⟨H, e1, e2⟩ := quadPairs_ok w df on hl
+  rw [← e2] at h hw ⊢
+  rw [H.awaitingChoice, e1] at hw
+  rw [H.onList, e1]
+  rcases H.settleOnce c c tp with ⟨h1, -⟩ | ⟨P', c1', c2', -, -, h2⟩
+  · rw [e1] at h1
+    exact quad_settled w df (allOn_mem hon) (timeOrder_mem hl hs) h1 hw
+  · rw [h] at h2; cases h2
 
 end YGO
