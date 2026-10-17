@@ -43,6 +43,45 @@ namespace CardGen
             return new MatchState { P1 = Of(deck1), P2 = Of(deck2) };
         }
 
+        /// <summary>フィールド上（「フィールド上」に数えるゾーン）のカード。無効の関係を調べる単位</summary>
+        public List<(bool player, int index, Inst inst)> FieldInsts(Rules r)
+        {
+            var l = new List<(bool, int, Inst)>();
+            foreach (var p in new[] { true, false })
+            {
+                var f = Get(p).Field;
+                for (int i = 0; i < f.Count; i++)
+                    if (r.OnFieldZone(f[i].Zone)) l.Add((p, i, new Inst(f[i].Card, p, f[i].FaceUp)));
+            }
+            return l;
+        }
+
+        /// <summary>盤面の制約（Lean の Inv）が成り立っているか。成り立たない項目を返す</summary>
+        public List<string> Violations(Rules r)
+        {
+            var v = new List<string>();
+            foreach (var p in new[] { true, false })
+            {
+                var s = Get(p);
+                var who = p ? "自分" : "相手";
+                var size = s.Deck.Count + s.Hand.Count + s.Grave.Count + s.Field.Count;
+                if (size != r.DeckSize) v.Add($"{who}のカードの枚数が {size} 枚（デッキの枚数は {r.DeckSize} 枚）");
+                foreach (var sl in s.Field)
+                {
+                    var ok = sl.Zone >= 0 && sl.Zone < r.Zones.Count && r.Zones[sl.Zone].Role == ZoneRole.Plain &&
+                             r.Zones[sl.Zone].Admits.Contains(sl.Card.Type);
+                    if (!ok) v.Add($"{who}の「{sl.Card.Name}」は置けないゾーンにあります");
+                }
+                for (int i = 0; i < r.Zones.Count; i++)
+                {
+                    var z = r.Zones[i];
+                    var n = s.Field.Count(sl => sl.Zone == i);
+                    if (z.Capacity == Capacity.One && n > z.Count) v.Add($"{who}の「{z.Name}」に {n} 枚（{z.Count} マス）");
+                }
+            }
+            return v;
+        }
+
         /// <summary>State.step?：選んだ動きをしたあとの状態（できない動きなら null）</summary>
         public MatchState Step(Rules r, Choice ch)
         {

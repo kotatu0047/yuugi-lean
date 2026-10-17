@@ -81,7 +81,13 @@ public class DifferentialTests
             for (int y = 0; y < insts.Count; y++)
                 for (int x = 0; x < insts.Count; x++)
                     Assert.Equal((bool)rel[y][x], Negation.InstRel(insts, y, x));
-            Assert.Equal((string)c["verdict"], VerdictName(Negation.AnalyzeBoard(insts)));
+            var verdict = (string)c["verdict"];
+            Assert.Equal(verdict, VerdictName(Negation.AnalyzeBoard(insts)));
+            // 安定な状態の数は分類と食い違わない
+            var stables = Negation.StableStates(insts).Count;
+            if (verdict == "noStable") Assert.Equal(0, stables);
+            else if (verdict == "multiStable") Assert.True(stables > 1);
+            else if (verdict == "ok" || verdict == "someLoop") Assert.Equal(1, stables);
         }
     }
 
@@ -113,6 +119,7 @@ public class DifferentialTests
                 {
                     Assert.True(next != null, $"Lean ではできる動きが C# ではできません：{st["choice"]}");
                     Assert.True(JToken.DeepEquals(st["result"], MatchJson(next)), $"結果が違います：{st["choice"]}");
+                    Assert.Empty(next.Violations(rules));
                     g = next;
                 }
                 steps++;

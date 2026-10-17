@@ -18,6 +18,9 @@ namespace CardGen.App
     public sealed class CardGenApp : MonoBehaviour
     {
         GraphCanvas canvas;
+        PlayView playView;
+        VisualElement editorMain;
+        Button modeButton;
         Inspector inspector;
         VisualElement results;
         ScrollView resultsScroll;
@@ -89,6 +92,12 @@ namespace CardGen.App
             foreach (NodeKind k in Enum.GetValues(typeof(NodeKind)))
                 if (k != NodeKind.Rules) toolbar.Add(MakeButton(Node.KindLabel(k), () => canvas.AddNode(k)));
             toolbar.Add(MakeButton("削除", () => canvas.RemoveSelected()));
+            var sep2 = new VisualElement();
+            sep2.style.width = 16;
+            toolbar.Add(sep2);
+            modeButton = MakeButton("テストプレイ", TogglePlay);
+            modeButton.style.unityFontStyleAndWeight = FontStyle.Bold;
+            toolbar.Add(modeButton);
             root.Add(toolbar);
 
             var main = Row();
@@ -138,6 +147,10 @@ namespace CardGen.App
             side.Add(resScroll);
             main.Add(side);
             root.Add(main);
+            editorMain = main;
+            playView = new PlayView();
+            playView.style.display = DisplayStyle.None;
+            root.Add(playView);
 
             status = new Label();
             status.style.paddingLeft = 8;
@@ -166,6 +179,27 @@ namespace CardGen.App
 
         static string DefaultPath() =>
             Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "cardgame.json");
+
+        // ---- テストプレイ ----
+
+        bool playing;
+
+        void TogglePlay()
+        {
+            if (!playing)
+            {
+                var game = canvas.Doc.ToGame(out var structure);
+                var errors = structure.Concat(Check.Game(game)).ToList();
+                if (errors.Count > 0) { status.text = "形式の問題を直してからテストプレイしてください"; return; }
+                if (game.Cards.Count == 0) { status.text = "カードがありません"; return; }
+                playView.Start(game);
+            }
+            playing = !playing;
+            editorMain.style.display = playing ? DisplayStyle.None : DisplayStyle.Flex;
+            playView.style.display = playing ? DisplayStyle.Flex : DisplayStyle.None;
+            modeButton.text = playing ? "エディタに戻る" : "テストプレイ";
+            status.text = playing ? "テストプレイ中" : "エディタ";
+        }
 
         // ---- ファイル ----
 
@@ -365,6 +399,7 @@ namespace CardGen.App
         //   -cardgen-select <ノードの番号>   そのノードを選ぶ
         //   -cardgen-check                    Lean で検査する
         //   -cardgen-results-end              検査の結果を一番下まで送る
+        //   -cardgen-play <手数>              テストプレイを始め、置ける手札を交互に置く
         //   -cardgen-screenshot <パス>        画面を保存して終了する
 
         static string Arg(string name)
@@ -387,6 +422,12 @@ namespace CardGen.App
             {
                 var task = RunLeanCheck();
                 while (!task.IsCompleted) yield return null;
+            }
+            if (args.Contains("-cardgen-play"))
+            {
+                TogglePlay();
+                var demo = Arg("-cardgen-play");
+                if (demo != null && int.TryParse(demo, out var moves)) playView.Demo(moves);
             }
             if (args.Contains("-cardgen-results-end"))
             {

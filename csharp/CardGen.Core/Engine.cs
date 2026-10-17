@@ -62,6 +62,30 @@ namespace CardGen
             return a.Card.Effects.OfType<Negate>().Any(n => n.Target.Matches(v));
         }
 
+        /// <summary>安定な状態をすべて返す（各カードが有効なら true）。カードが多すぎるときは null</summary>
+        public static List<bool[]> StableStates(IReadOnlyList<Inst> insts, int maxCards = 16)
+        {
+            int n = insts.Count;
+            if (n > maxCards) return null;
+            var rel = new bool[n, n];
+            for (int y = 0; y < n; y++)
+                for (int x = 0; x < n; x++)
+                    rel[y, x] = InstRel(insts, y, x);
+            var result = new List<bool[]>();
+            for (int s = 0; s < (1 << n); s++)
+            {
+                bool stable = true;
+                for (int x = 0; x < n && stable; x++)
+                {
+                    bool negated = false;
+                    for (int y = 0; y < n; y++) if (rel[y, x] && ((s >> y) & 1) == 1) { negated = true; break; }
+                    if ((((s >> x) & 1) == 1) == negated) stable = false;
+                }
+                if (stable) result.Add(Enumerable.Range(0, n).Select(x => ((s >> x) & 1) == 1).ToArray());
+            }
+            return result;
+        }
+
         /// <summary>analyzeBoard：盤面の判定の手続きを、すべての状態（2^n 通り）について調べる</summary>
         public static Verdict AnalyzeBoard(IReadOnlyList<Inst> insts)
         {
