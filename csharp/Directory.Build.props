@@ -1,0 +1,7 @@
+<Project>
+  <!-- ビルドの出力を .build/ に置く（CardGen.Core は Unity のパッケージも兼ねるので、bin/obj を中に作らない） -->
+  <PropertyGroup>
+    <BaseIntermediateOutputPath>$(MSBuildThisFileDirectory).build\$(MSBuildProjectName)\obj\</BaseIntermediateOutputPath>
+    <BaseOutputPath>$(MSBuildThisFileDirectory).build\$(MSBuildProjectName)\bin\</BaseOutputPath>
+  </PropertyGroup>
+</Project>

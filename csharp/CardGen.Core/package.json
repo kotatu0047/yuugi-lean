@@ -1,0 +1,10 @@
+{
+  "name": "com.kotatu.cardgen.core",
+  "version": "0.1.0",
+  "displayName": "CardGen Core",
+  "description": "検証付きカードゲームジェネレーターの中間表現・形式の検査・盤面の計算（Lean の定義と差分テスト済み）",
+  "unity": "6000.0",
+  "dependencies": {
+    "com.unity.nuget.newtonsoft-json": "3.2.1"
+  }
+}
