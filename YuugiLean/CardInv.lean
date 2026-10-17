@@ -165,23 +165,23 @@ theorem Board.Good.setMonAt {b : Board} (h : b.Good) (w : PlayerId) (i : Nat) {m
 
 /-! ### 墓地へ送る・破壊する -/
 
-theorem Player.Good.dropEquips {p : Player} (h : p.Good) (u : Nat) :
-    ({ p with backrow := p.backrow.filter (·.equipTo != some u)
-              grave := p.grave ++ (p.backrow.filter (·.equipTo == some u)).map (·.card) } : Player).Good := by
-  refine ⟨h.1, h.2.1, h.2.2.1, fun s hs => h.2.2.2.1 s (List.mem_filter.mp hs).1, fun c hc => ?_, h.2.2.2.2.2⟩
-  rcases List.mem_append.mp hc with hc | hc
-  · exact h.2.2.2.2.1 c hc
-  · obtain ⟨s, hs, rfl⟩ := List.mem_map.mp hc
-    exact h.2.2.2.1 s (List.mem_filter.mp hs).1
-
-theorem Player.Good.removeBackrow {p : Player} (h : p.Good) (is : List Nat) :
-    ({ p with backrow := (removeIdxs p.backrow is).1
-              grave := p.grave ++ (removeIdxs p.backrow is).2.map (·.card) } : Player).Good := by
-  refine ⟨h.1, h.2.1, h.2.2.1, fun s hs => h.2.2.2.1 s (mem_removeIdxs_1 hs), fun c hc => ?_, h.2.2.2.2.2⟩
-  rcases List.mem_append.mp hc with hc | hc
-  · exact h.2.2.2.2.1 c hc
-  · obtain ⟨s, hs, rfl⟩ := List.mem_map.mp hc
-    exact h.2.2.2.1 s (mem_removeIdxs_2 hs)
+/-- 魔法・罠ゾーンのカードを残す・持ち主の墓地へ送る -/
+theorem Board.Good.leaveST {b : Board} (h : b.Good) (v : PlayerId) {keep gone : List SetCard}
+    (hk : ∀ s ∈ keep, s ∈ (b.get v).backrow) (hg : ∀ s ∈ gone, s ∈ (b.get v).backrow) :
+    (b.leaveST v keep gone).Good := by
+  have hp := h.get v
+  have hgs : ∀ s ∈ gone, s.card.simple = true := fun s hs => hp.2.2.2.1 s (hg s hs)
+  unfold Board.leaveST
+  refine Board.Good.modifyP (h.modify v ?_) _ ?_
+  · refine ⟨hp.1, hp.2.1, hp.2.2.1, fun s hs => hp.2.2.2.1 s (hk s hs), fun c hc => ?_, hp.2.2.2.2.2⟩
+    rcases List.mem_append.mp hc with hc | hc
+    · exact hp.2.2.2.2.1 c hc
+    · obtain ⟨s, hs, rfl⟩ := List.mem_map.mp hc; exact hgs s (List.mem_filter.mp hs).1
+  · intro q hq
+    refine ⟨hq.1, hq.2.1, hq.2.2.1, hq.2.2.2.1, fun c hc => ?_, hq.2.2.2.2.2⟩
+    rcases List.mem_append.mp hc with hc | hc
+    · exact hq.2.2.2.2.1 c hc
+    · obtain ⟨s, hs, rfl⟩ := List.mem_map.mp hc; exact hgs s (List.mem_filter.mp hs).1
 
 theorem Board.Good.detach {b b' : Board} {u : Nat} {w : PlayerId} {m : FieldMonster} (h : b.Good)
     (hd : b.detach u = some (b', w, m)) :
@@ -202,8 +202,8 @@ theorem Board.Good.detach {b b' : Board} {u : Nat} {w : PlayerId} {m : FieldMons
         h.modify w0 ⟨hp.1, hp.2.1, hp.2.2.1, hp.2.2.2.1, hp.2.2.2.2.1,
           fun x hx => hp.2.2.2.2.2 x (List.mem_of_mem_eraseIdx hx)⟩
       refine ⟨?_, hp.2.2.2.2.2 m0 (List.mem_of_getElem? hm)⟩
-      refine Board.Good.modifyP ?_ .two fun p hp => hp.dropEquips u
-      exact Board.Good.modifyP h1 .one fun p hp => hp.dropEquips u
+      exact (h1.leaveST .one (fun s hs => (List.mem_filter.mp hs).1) (fun s hs => (List.mem_filter.mp hs).1)).leaveST
+        .two (fun s hs => (List.mem_filter.mp hs).1) (fun s hs => (List.mem_filter.mp hs).1)
 
 theorem Board.Good.toGraveMon {b : Board} (h : b.Good) (u : Nat) (cause : LeaveCause) :
     (b.toGraveMon u cause).Good := by
@@ -223,9 +223,9 @@ theorem Board.Good.toGraveMon {b : Board} (h : b.Good) (u : Nat) (cause : LeaveC
     dsimp only
     split
     · exact h1.with_ _ rfl rfl
-    · refine Board.Good.modifyP ?_ .two fun p hp => hp.removeBackrow _
-      refine Board.Good.modifyP ?_ .one fun p hp => hp.removeBackrow _
-      exact h1.with_ _ rfl rfl
+    · exact ((h1.with_ _ rfl rfl).leaveST .one (fun s hs => mem_removeIdxs_1 hs)
+        (fun s hs => mem_removeIdxs_2 hs)).leaveST .two (fun s hs => mem_removeIdxs_1 hs)
+        (fun s hs => mem_removeIdxs_2 hs)
 
 theorem Board.Good.foldl_toGraveMon {α : Type} (xs : List α) (f : α → Nat) (cause : LeaveCause) {b : Board}
     (h : b.Good) : (xs.foldl (fun b x => b.toGraveMon (f x) cause) b).Good := by
@@ -245,13 +245,9 @@ theorem Board.Good.destroyBackrow {b : Board} (h : b.Good) (w : PlayerId) (i : N
   split
   · exact h
   · rename_i s hs
-    have hp := h.get w
-    have h0 : (b.modify w fun p => { p with backrow := p.backrow.eraseIdx i, grave := p.grave ++ [s.card] }).Good := by
-      refine h.modify w ⟨hp.1, hp.2.1, hp.2.2.1, fun x hx => hp.2.2.2.1 x (List.mem_of_mem_eraseIdx hx),
-        fun c hc => ?_, hp.2.2.2.2.2⟩
-      rcases List.mem_append.mp hc with hc | hc
-      · exact hp.2.2.2.2.1 c hc
-      · simp only [List.mem_singleton] at hc; subst hc; exact hp.2.2.2.1 s (List.mem_of_getElem? hs)
+    have h0 : (b.leaveST w ((b.get w).backrow.eraseIdx i) [s]).Good :=
+      h.leaveST w (fun x hx => List.mem_of_mem_eraseIdx hx)
+        (fun x hx => by simp only [List.mem_singleton] at hx; subst hx; exact List.mem_of_getElem? hs)
     simp only
     split
     · split
@@ -269,12 +265,7 @@ theorem Board.Good.destroyAllBackrow {b : Board} (h : b.Good) (ws : List PlayerI
   | nil => exact h
   | cons w ws ih =>
     simp only [List.foldl]
-    apply ih
-    have hp := h.get w
-    refine h.modify w ⟨hp.1, hp.2.1, hp.2.2.1, by simp, fun c hc => ?_, hp.2.2.2.2.2⟩
-    rcases List.mem_append.mp hc with hc | hc
-    · exact hp.2.2.2.2.1 c hc
-    · obtain ⟨s, hs, rfl⟩ := List.mem_map.mp hc; exact hp.2.2.2.1 s hs
+    exact ih _ (h.leaveST w (by simp) (fun s hs => hs))
 
 theorem Player.Good.drawOne {p p' : Player} (h : p.Good) (hd : p.drawOne = some p') : p'.Good := by
   unfold Player.drawOne at hd

@@ -131,13 +131,17 @@ theorem Board.count_log (b : Board) (l : List Happened) : { b with log := l }.co
 theorem Board.count_clock (b : Board) (n : Nat) : { b with clock := n }.count = b.count := rfl
 theorem Board.count_ns (b : Board) (x : Bool) : { b with normalSummoned := x }.count = b.count := rfl
 
-/-- 装備カードを墓地へ送っても枚数は変わらない -/
-theorem Player.count_dropEquips (p : Player) (u : Nat) :
-    ({ p with backrow := p.backrow.filter (·.equipTo != some u)
-              grave := p.grave ++ (p.backrow.filter (·.equipTo == some u)).map (·.card) } : Player).count
-      = p.count := by
-  have := length_filter_add_not p.backrow (fun s => s.equipTo == some u)
-  simp only [Player.count, List.length_append, List.length_map] at this ⊢
+/-- 魔法・罠ゾーンのカードを持ち主の墓地へ送っても枚数は変わらない -/
+theorem Board.count_leaveST (b : Board) (v : PlayerId) (keep gone : List SetCard)
+    (h : keep.length + gone.length = (b.get v).backrow.length) : (b.leaveST v keep gone).count = b.count := by
+  have h1 := length_filter_add_not gone (fun s => s.owner.getD v == v)
+  unfold Board.leaveST
+  cases v <;> simp only [Board.modify, Board.set, Board.get, Board.count, Player.count, PlayerId.other,
+    List.length_append, List.length_map, bne] at h h1 ⊢ <;> omega
+
+theorem length_equips (l : List SetCard) (u : Nat) :
+    (l.filter (·.equipTo != some u)).length + (l.filter (·.equipTo == some u)).length = l.length := by
+  have := length_filter_add_not l (fun s => s.equipTo == some u)
   simp only [bne] at *
   omega
 
@@ -154,19 +158,11 @@ theorem Board.count_detach {b b' : Board} {u : Nat} {w : PlayerId} {m : FieldMon
       simp only [hf, hm, Option.bind_eq_bind, Option.bind_some, Option.pure_def, Option.some.injEq,
         Prod.mk.injEq] at h
       obtain ⟨rfl, rfl, rfl, rfl⟩ := h
-      rw [Board.count_modify_eq _ _ _ (Player.count_dropEquips _ u),
-          Board.count_modify_eq _ _ _ (Player.count_dropEquips _ u)]
+      rw [Board.count_leaveST _ _ _ _ (length_equips _ _), Board.count_leaveST _ _ _ _ (length_equips _ _)]
       have h1 := b.count_modify w0 (fun p => { p with monsters := p.monsters.eraseIdx i })
       have h2 := monCount_eraseIdx hm
       simp only [Player.count] at h1 ⊢
       omega
-
-theorem Player.count_removeBackrow (p : Player) (is : List Nat) :
-    ({ p with backrow := (removeIdxs p.backrow is).1
-              grave := p.grave ++ (removeIdxs p.backrow is).2.map (·.card) } : Player).count = p.count := by
-  have := removeIdxs_length p.backrow is
-  simp only [Player.count, List.length_append, List.length_map] at this ⊢
-  omega
 
 theorem Board.count_toGraveMon (b : Board) (u : Nat) (cause : LeaveCause) :
     (b.toGraveMon u cause).count = b.count := by
@@ -181,8 +177,7 @@ theorem Board.count_toGraveMon (b : Board) (u : Nat) (cause : LeaveCause) :
     · simp only [hc, ite_true]
       simp only [Board.count] at hg hdc ⊢; omega
     · simp only [hc, Bool.false_eq_true, ite_false]
-      rw [Board.count_modify_eq _ _ _ (Player.count_removeBackrow _ _),
-          Board.count_modify_eq _ _ _ (Player.count_removeBackrow _ _)]
+      rw [Board.count_leaveST _ _ _ _ (removeIdxs_length _ _), Board.count_leaveST _ _ _ _ (removeIdxs_length _ _)]
       simp only [Board.count] at hg hdc ⊢; omega
 
 theorem Board.count_foldl_toGraveMon (us : List Nat) (cause : LeaveCause) (b : Board) :
@@ -207,11 +202,9 @@ theorem Board.count_destroyBackrow (b : Board) (w : PlayerId) (i : Nat) :
   split
   · rfl
   · rename_i s hs
-    have h0 : (b.modify w fun p => { p with backrow := p.backrow.eraseIdx i, grave := p.grave ++ [s.card] }).count
-        = b.count := by
-      apply Board.count_modify_eq
+    have h0 : (b.leaveST w ((b.get w).backrow.eraseIdx i) [s]).count = b.count := by
       have := length_eraseIdx_of_getElem? hs
-      simp only [Player.count, List.length_append, List.length_cons, List.length_nil] at this ⊢; omega
+      exact Board.count_leaveST _ _ _ _ (by simp only [List.length_singleton]; omega)
     simp only
     split
     · split
@@ -230,8 +223,7 @@ theorem Board.count_destroyAllBackrow (b : Board) (ws : List PlayerId) :
   | cons w ws ih =>
     simp only [List.foldl]
     rw [ih]
-    apply Board.count_modify_eq
-    simp [Player.count]; omega
+    exact Board.count_leaveST _ _ _ _ (by simp)
 
 theorem Player.count_drawOne {p p' : Player} (h : p.drawOne = some p') : p'.count = p.count := by
   unfold Player.drawOne at h
@@ -281,6 +273,11 @@ theorem Board.frame_modify (b : Board) (w : PlayerId) (f : Player → Player)
     (hf : ∀ p : Player, p.Frame (f p)) : b.Frame (b.modify w f) :=
   Board.Frame.modify b w f (hf _)
 
+theorem Board.frame_leaveST (b : Board) (v : PlayerId) (keep gone : List SetCard) :
+    b.Frame (b.leaveST v keep gone) := by
+  intro x
+  cases x <;> cases v <;> simp [Board.leaveST, Board.modify, Board.set, Board.get, Player.Frame, PlayerId.other]
+
 theorem Board.frame_detach {b b' : Board} {u : Nat} {w : PlayerId} {m : FieldMonster}
     (h : b.detach u = some (b', w, m)) : b.Frame b' := by
   unfold Board.detach at h
@@ -294,8 +291,8 @@ theorem Board.frame_detach {b b' : Board} {u : Nat} {w : PlayerId} {m : FieldMon
       simp only [hf, hm, Option.bind_eq_bind, Option.bind_some, Option.pure_def, Option.some.injEq,
         Prod.mk.injEq] at h
       obtain ⟨rfl, rfl, rfl, rfl⟩ := h
-      intro v
-      cases v <;> cases w0 <;> simp [Board.modify, Board.set, Board.get, Player.Frame]
+      refine ((Board.Frame.modify _ _ _ ⟨rfl, rfl, rfl, rfl⟩).trans (Board.frame_leaveST _ _ _ _)).trans
+        (Board.frame_leaveST _ _ _ _)
 
 theorem Board.frame_toGraveMon (b : Board) (u : Nat) (cause : LeaveCause) :
     b.Frame (b.toGraveMon u cause) := by
@@ -309,7 +306,12 @@ theorem Board.frame_toGraveMon (b : Board) (u : Nat) (cause : LeaveCause) :
     · simp only [hc, ite_true]
       cases v <;> cases w <;> simp [Board.modify, Board.set, Board.get, Player.Frame]
     · simp only [hc, Bool.false_eq_true, ite_false]
-      cases v <;> cases w <;> simp [Board.modify, Board.set, Board.get, Player.Frame]
+      revert v
+      refine (Board.Frame.modify _ w (fun p => { p with grave := p.grave ++ m.overlays ++ [.monster m.card] })
+        ⟨rfl, rfl, rfl, rfl⟩).trans ?_
+      refine Board.Frame.trans ?_ (Board.frame_leaveST _ _ _ _)
+      refine Board.Frame.trans ?_ (Board.frame_leaveST _ _ _ _)
+      exact Board.Frame.with _ _ rfl rfl
 
 theorem Board.frame_foldl_toGraveMon {α : Type} (xs : List α) (f : α → Nat) (cause : LeaveCause)
     (b : Board) : b.Frame (xs.foldl (fun b x => b.toGraveMon (f x) cause) b) := by
@@ -1149,6 +1151,10 @@ theorem Board.uidOK_place {b : Board} (h : b.UidOK) (w : PlayerId) (c : MonsterC
 theorem Board.Shrink.with {b b' : Board} (h1 : b'.p1 = b.p1) (h2 : b'.p2 = b.p2) (hn : b'.nextUid = b.nextUid) :
     b.Shrink b' := Board.Shrink.same (by rw [h1]) (by rw [h2]) (Nat.le_of_eq hn.symm)
 
+theorem Board.shrink_leaveST (b : Board) (v : PlayerId) (keep gone : List SetCard) :
+    b.Shrink (b.leaveST v keep gone) :=
+  (Board.shrink_modify_eq _ _ _ (by rfl)).trans (Board.shrink_modify_eq _ _ _ (by rfl))
+
 theorem Board.shrink_detach {b b' : Board} {u : Nat} {w : PlayerId} {m : FieldMonster}
     (h : b.detach u = some (b', w, m)) : b.Shrink b' := by
   unfold Board.detach at h
@@ -1162,8 +1168,7 @@ theorem Board.shrink_detach {b b' : Board} {u : Nat} {w : PlayerId} {m : FieldMo
       simp only [hf, hm, Option.bind_eq_bind, Option.bind_some, Option.pure_def, Option.some.injEq,
         Prod.mk.injEq] at h
       obtain ⟨rfl, rfl, rfl⟩ := h
-      refine ((b.shrink_modify w0 _ ?_).trans (Board.shrink_modify_eq _ _ _ (by rfl))).trans
-        (Board.shrink_modify_eq _ _ _ (by rfl))
+      refine ((b.shrink_modify w0 _ ?_).trans (Board.shrink_leaveST _ _ _ _)).trans (Board.shrink_leaveST _ _ _ _)
       exact (List.eraseIdx_sublist _ _).map _
 
 theorem Board.shrink_toGraveMon (b : Board) (u : Nat) (cause : LeaveCause) :
@@ -1177,10 +1182,9 @@ theorem Board.shrink_toGraveMon (b : Board) (u : Nat) (cause : LeaveCause) :
     by_cases hc : (cause == LeaveCause.sent) = true
     · simp only [hc, ite_true]; exact Board.Shrink.with rfl rfl rfl
     · simp only [hc, Bool.false_eq_true, ite_false]
-      refine ⟨fun v => ?_, ?_⟩
-      · cases v <;> cases w <;> simp [Board.uidsOf, Board.modify, Board.set, Board.get] <;>
-          exact List.Sublist.refl _
-      · cases w <;> simp [Board.modify, Board.set]
+      refine Board.Shrink.trans ?_ (Board.shrink_leaveST _ _ _ _)
+      refine Board.Shrink.trans ?_ (Board.shrink_leaveST _ _ _ _)
+      exact Board.Shrink.with rfl rfl rfl
 
 theorem Board.shrink_foldl_toGraveMon {α : Type} (xs : List α) (f : α → Nat) (cause : LeaveCause)
     (b : Board) : b.Shrink (xs.foldl (fun b x => b.toGraveMon (f x) cause) b) := by
@@ -1200,8 +1204,7 @@ theorem Board.shrink_destroyBackrow (b : Board) (w : PlayerId) (i : Nat) : b.Shr
   split
   · exact Board.Shrink.refl _
   · rename_i s _
-    have h0 := Board.shrink_modify_eq b w
-      (fun p => { p with backrow := p.backrow.eraseIdx i, grave := p.grave ++ [s.card] }) rfl
+    have h0 := Board.shrink_leaveST b w ((b.get w).backrow.eraseIdx i) [s]
     simp only
     split
     · split
@@ -1216,7 +1219,7 @@ theorem Board.shrink_destroyAllBackrow (b : Board) (ws : List PlayerId) : b.Shri
   generalize b = b0
   induction ws generalizing b0 with
   | nil => exact Board.Shrink.refl _
-  | cons w ws ih => exact (Board.shrink_modify_eq _ _ _ (by rfl)).trans (ih _)
+  | cons w ws ih => exact (Board.shrink_leaveST _ _ _ _).trans (ih _)
 
 theorem Board.shrink_updMon (b : Board) (w : PlayerId) (u : Nat) (f : FieldMonster → FieldMonster)
     (hf : ∀ x, (f x).uid = x.uid) : b.Shrink (b.updMon w u f) := by
@@ -1694,6 +1697,10 @@ theorem Board.dec_with {b b' : Board} (h1 : b'.p1 = b.p1) (h2 : b'.p2 = b.p2) : 
 theorem length_removeIdxs_fst_le {α : Type} (l : List α) (is : List Nat) : (removeIdxs l is).1.length ≤ l.length := by
   have := removeIdxs_length l is; omega
 
+theorem Board.dec_leaveST (b : Board) (v : PlayerId) (keep gone : List SetCard)
+    (h : keep.length ≤ (b.get v).backrow.length) : b.Dec (b.leaveST v keep gone) :=
+  (b.dec_modify_same v _ rfl h).trans (Board.dec_modify_same _ _ _ rfl (Nat.le_refl _))
+
 theorem Board.dec_detach {b b' : Board} {u : Nat} {w : PlayerId} {m : FieldMonster}
     (h : b.detach u = some (b', w, m)) : b.Dec b' := by
   unfold Board.detach at h
@@ -1707,9 +1714,9 @@ theorem Board.dec_detach {b b' : Board} {u : Nat} {w : PlayerId} {m : FieldMonst
       simp only [hf, hm, Option.bind_eq_bind, Option.bind_some, Option.pure_def, Option.some.injEq,
         Prod.mk.injEq] at h
       obtain ⟨rfl, rfl, rfl⟩ := h
-      refine ((b.dec_modify w0 _ ?_ ?_ (Nat.le_refl _)).trans (Board.dec_modify _ _ _ (Nat.le_refl _)
-        (Nat.le_refl _) (List.length_filter_le _ _))).trans
-        (Board.dec_modify _ _ _ (Nat.le_refl _) (Nat.le_refl _) (List.length_filter_le _ _))
+      refine ((b.dec_modify w0 _ ?_ ?_ (Nat.le_refl _)).trans
+        (Board.dec_leaveST _ _ _ _ (List.length_filter_le _ _))).trans
+        (Board.dec_leaveST _ _ _ _ (List.length_filter_le _ _))
       · exact ((List.eraseIdx_sublist _ _).filter _).length_le
       · exact ((List.eraseIdx_sublist _ _).filter _).length_le
 
@@ -1723,9 +1730,9 @@ theorem Board.dec_toGraveMon (b : Board) (u : Nat) (cause : LeaveCause) : b.Dec 
     by_cases hc : (cause == LeaveCause.sent) = true
     · simp only [hc, ite_true]; exact Board.dec_with rfl rfl
     · simp only [hc, Bool.false_eq_true, ite_false]
-      intro v
-      cases v <;> cases w <;> simp only [Board.modify, Board.set, Board.get, Player.mainCnt, Player.emzCnt] <;>
-        exact ⟨Nat.le_refl _, Nat.le_refl _, length_removeIdxs_fst_le _ _⟩
+      refine Board.Dec.trans ?_ (Board.dec_leaveST _ _ _ _ (length_removeIdxs_fst_le _ _))
+      refine Board.Dec.trans ?_ (Board.dec_leaveST _ _ _ _ (length_removeIdxs_fst_le _ _))
+      exact Board.dec_with rfl rfl
 
 theorem Board.dec_foldl_toGraveMon {α : Type} (xs : List α) (f : α → Nat) (cause : LeaveCause)
     (b : Board) : b.Dec (xs.foldl (fun b x => b.toGraveMon (f x) cause) b) := by
@@ -1741,8 +1748,7 @@ theorem Board.dec_destroyBackrow (b : Board) (w : PlayerId) (i : Nat) : b.Dec (b
   split
   · exact Board.Dec.refl _
   · rename_i s _
-    have h0 := Board.dec_modify_same b w
-      (fun p => { p with backrow := p.backrow.eraseIdx i, grave := p.grave ++ [s.card] }) rfl
+    have h0 := Board.dec_leaveST b w ((b.get w).backrow.eraseIdx i) [s]
       (by simp only [List.length_eraseIdx]; split <;> omega)
     simp only
     split
@@ -1758,7 +1764,7 @@ theorem Board.dec_destroyAllBackrow (b : Board) (ws : List PlayerId) : b.Dec (b.
   generalize b = b0
   induction ws generalizing b0 with
   | nil => exact Board.Dec.refl _
-  | cons w ws ih => exact (Board.dec_modify_same _ _ _ rfl (by simp)).trans (ih _)
+  | cons w ws ih => exact (Board.dec_leaveST _ _ _ _ (by simp)).trans (ih _)
 
 theorem Board.dec_detachAllAux (ms : List FieldMonster) (acc : Board × List FieldMonster) :
     acc.1.Dec (Board.detachAllAux acc ms).1 := by

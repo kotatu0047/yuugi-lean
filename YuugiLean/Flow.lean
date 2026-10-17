@@ -376,6 +376,12 @@ theorem Board.uidsOf_modify_eq (b : Board) (w : PlayerId) (f : Player → Player
   · subst hv; simp only [Board.uidsOf, Board.get_modify_same, hf]
   · simp only [Board.uidsOf, Board.get_modify_other _ _ _ _ hv]
 
+theorem Board.uidsOf_leaveST (b : Board) (w : PlayerId) (keep gone : List SetCard) (v : PlayerId) :
+    (b.leaveST w keep gone).uidsOf v = b.uidsOf v := by
+  unfold Board.leaveST
+  rw [Board.uidsOf_modify_eq _ _ _ ?h1, Board.uidsOf_modify_eq _ _ _ ?h2]
+  case h1 | h2 => intro; rfl
+
 /-- 取り除いたモンスター以外は、フィールドに残る -/
 theorem Board.mem_uidsOf_detach {b b' : Board} {u : Nat} {w : PlayerId} {m : FieldMonster}
     (hu : b.UidOK) (h : b.detach u = some (b', w, m)) (v : PlayerId) (x : Nat) :
@@ -389,8 +395,7 @@ theorem Board.mem_uidsOf_detach {b b' : Board} {u : Nat} {w : PlayerId} {m : Fie
     simp only [hf, hm0, Option.bind_eq_bind, Option.bind_some, Option.pure_def, Option.some.injEq,
       Prod.mk.injEq] at h
     obtain ⟨rfl, rfl, rfl⟩ := h
-    rw [Board.uidsOf_modify_eq _ _ _ ?h1, Board.uidsOf_modify_eq _ _ _ ?h2]
-    case h1 | h2 => intro; rfl
+    rw [Board.uidsOf_leaveST, Board.uidsOf_leaveST]
     by_cases hv : v = w0
     · subst hv
       simp only [Board.uidsOf, Board.get_modify_same]
@@ -427,8 +432,7 @@ theorem Board.mem_uidsOf_toGraveMon {b : Board} (hu : b.UidOK) (u : Nat) (c : Le
     · show x ∈ (b'.modify w _).uidsOf v ↔ _
       rw [Board.uidsOf_modify_eq _ _ _ ?h1]
       case h1 => intro; rfl
-    · rw [Board.uidsOf_modify_eq _ _ _ ?h1, Board.uidsOf_modify_eq _ _ _ ?h2]
-      case h1 | h2 => intro; rfl
+    · rw [Board.uidsOf_leaveST, Board.uidsOf_leaveST]
       show x ∈ (b'.modify w _).uidsOf v ↔ _
       rw [Board.uidsOf_modify_eq _ _ _ ?h3]
       case h3 => intro; rfl
@@ -444,6 +448,10 @@ theorem Board.updMon_id (b : Board) (w : PlayerId) (u : Nat) : b.updMon w u (fun
   cases w <;> simp [Board.updMon, Board.modify, Board.set, Board.get]
 
 theorem Board.attack_modify (b : Board) (w : PlayerId) (f : Player → Player) : (b.modify w f).attack = b.attack := by
+  cases w <;> rfl
+
+theorem Board.attack_leaveST (b : Board) (w : PlayerId) (keep gone : List SetCard) :
+    (b.leaveST w keep gone).attack = b.attack := by
   cases w <;> rfl
 
 theorem Board.attack_toGraveMon (b : Board) (u : Nat) (c : LeaveCause) : (b.toGraveMon u c).attack = b.attack := by
@@ -463,7 +471,7 @@ theorem Board.attack_toGraveMon (b : Board) (u : Nat) (c : LeaveCause) : (b.toGr
           Prod.mk.injEq] at hd
         obtain ⟨rfl, rfl, rfl⟩ := hd
         dsimp only
-        split <;> simp only [Board.attack_modify]
+        split <;> simp only [Board.attack_modify, Board.attack_leaveST]
 
 theorem Board.get_eq_of {B Z : Board} (h1 : B.p1 = Z.p1) (h2 : B.p2 = Z.p2) (v : PlayerId) :
     B.get v = Z.get v := by cases v <;> assumption

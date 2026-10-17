@@ -30,6 +30,10 @@ namespace YGO
     (b.place w c pos t emz ev ov).turnPlayer = b.turnPlayer := by
   simp [Board.place]
 
+@[simp] theorem Board.tp_leaveST (b : Board) (v : PlayerId) (keep gone : List SetCard) :
+    (b.leaveST v keep gone).turnPlayer = b.turnPlayer := by
+  simp [Board.leaveST]
+
 theorem Board.tp_detach {b b' : Board} {u : Nat} {w : PlayerId} {m : FieldMonster}
     (h : b.detach u = some (b', w, m)) : b'.turnPlayer = b.turnPlayer := by
   unfold Board.detach at h
@@ -92,7 +96,7 @@ theorem Board.tp_detachAllAux (ms : List FieldMonster) (acc : Board × List Fiel
     (b.destroyAllBackrow ws).turnPlayer = b.turnPlayer := by
   unfold Board.destroyAllBackrow
   dsimp only
-  rw [foldl_tp _ _ (fun _ _ => Board.tp_toGraveMon _ _ _), foldl_tp _ _ (fun _ _ => Board.tp_modify _ _ _)]
+  rw [foldl_tp _ _ (fun _ _ => Board.tp_toGraveMon _ _ _), foldl_tp _ _ (fun _ _ => Board.tp_leaveST _ _ _ _)]
 
 @[simp] theorem Board.tp_equipMon (b : Board) (v : PlayerId) (s u t : Nat) :
     (b.equipMon v s u t).turnPlayer = b.turnPlayer := by

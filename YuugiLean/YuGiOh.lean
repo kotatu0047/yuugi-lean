@@ -35,14 +35,14 @@ Lean 4 コアのみ（Mathlib 不要）で動く、遊戯王OCGの基本ルー�
   墓地からは、正規の方法で特殊召喚された後に墓地へ送られた場合のみ蘇生できる
 * モンスターを装備カード扱いで装備する効果（D－HERO Bloo－D）：相手の表側表示モンスター1体を魔法・罠ゾーンへ
   移して装備する（1体のみ、魔法・罠ゾーンに空きが必要）。装備したモンスターの元々の攻撃力の半分だけ攻撃力が
-  上がる（装備しているモンスターの効果が無効なら上がらない）
+  上がる（装備しているモンスターの効果が無効なら上がらない）。装備したモンスターが墓地へ送られるときは
+  持ち主の墓地へ送る
 * ライフコスト：自分の LP が 0 以下になるようには払えない
 * 手札上限6枚（エンドフェイズに捨てる）
 * 勝敗：LP 0、デッキ切れ（ドローできない）
 
 ## 範囲外・簡略化
 * ペンデュラム、トークン、儀式、フィールド魔法、コントロール奪取
-* カードの持ち主：装備カード扱いの相手モンスターは、墓地へ送られるとき装備したプレイヤーの墓地へ送る
 * リンクマーカー：リンクモンスターはエクストラモンスターゾーンにのみ出せる（各プレイヤー1体まで）
 * 誘発効果はすべて強制効果として扱う（任意効果も必ず発動する。そのためタイミングを逃さない）
 * デッキからのサーチ・リクルートは、デッキの上から最初に条件を満たすカードを選ぶ
@@ -275,33 +275,6 @@ structure FieldMonster where
   negated      : Bool := false  -- 前回の判定で永続効果が無効化されていた
   deriving Repr, DecidableEq
 
-/-- 魔法・罠ゾーンのカード -/
-structure SetCard where
-  card    : Card
-  setTurn : Nat
-  faceUp  : Bool := false        -- 表側表示（発動済みの永続・装備カード）
-  equipTo : Option Nat := none   -- 装備しているモンスターの uid
-  bond    : Option Nat := none   -- 関係を持つモンスターの uid（リビングデッドの呼び声）
-  since   : Nat := 0             -- 効果が適用された時刻（永続効果の適用順）
-  negated : Bool := false        -- 前回の判定で永続効果が無効化されていた
-  id      : Nat := 0             -- 識別番号（魔法・罠ゾーンに置かれた時刻。対象を解決時に確認する）
-  deriving Repr, DecidableEq
-
-def initialLP      : Nat := 8000
-def monsterZones   : Nat := 5
-def spellTrapZones : Nat := 5
-def handLimit      : Nat := 6
-
-structure Player where
-  lp       : Nat := initialLP
-  deck     : List Card
-  extra    : List Card := []
-  hand     : List Card := []
-  monsters : List FieldMonster := []
-  backrow  : List SetCard := []
-  grave    : List Card := []
-  deriving Repr, DecidableEq
-
 inductive PlayerId where
   | one | two
   deriving Repr, DecidableEq
@@ -319,6 +292,35 @@ def PlayerId.code : PlayerId → Nat
 
 @[simp] theorem PlayerId.other_ne (p : PlayerId) : p.other ≠ p := by
   cases p <;> decide
+
+/-- 魔法・罠ゾーンのカード -/
+structure SetCard where
+  card    : Card
+  setTurn : Nat
+  faceUp  : Bool := false        -- 表側表示（発動済みの永続・装備カード）
+  equipTo : Option Nat := none   -- 装備しているモンスターの uid
+  bond    : Option Nat := none   -- 関係を持つモンスターの uid（リビングデッドの呼び声）
+  since   : Nat := 0             -- 効果が適用された時刻（永続効果の適用順）
+  negated : Bool := false        -- 前回の判定で永続効果が無効化されていた
+  id      : Nat := 0             -- 識別番号（魔法・罠ゾーンに置かれた時刻。対象を解決時に確認する）
+  owner   : Option PlayerId := none -- 持ち主（none なら置いているプレイヤー。装備カード扱いの相手モンスター）
+  deriving Repr, DecidableEq
+
+def initialLP      : Nat := 8000
+def monsterZones   : Nat := 5
+def spellTrapZones : Nat := 5
+def handLimit      : Nat := 6
+
+structure Player where
+  lp       : Nat := initialLP
+  deck     : List Card
+  extra    : List Card := []
+  hand     : List Card := []
+  monsters : List FieldMonster := []
+  backrow  : List SetCard := []
+  grave    : List Card := []
+  deriving Repr, DecidableEq
+
 
 /-- 宣言中の攻撃 -/
 structure AttackDecl where
@@ -800,15 +802,20 @@ def findMonIdx (b : Board) (uid : Nat) : Option (PlayerId × Nat) :=
 def setMonAt (b : Board) (w : PlayerId) (i : Nat) (m : FieldMonster) : Board :=
   b.modify w fun p => { p with monsters := p.monsters.set i m }
 
+/-- プレイヤー v の魔法・罠ゾーンを keep にし、離れたカード gone をそれぞれ持ち主の墓地へ送る -/
+def leaveST (b : Board) (v : PlayerId) (keep gone : List SetCard) : Board :=
+  (b.modify v fun p =>
+    { p with backrow := keep, grave := p.grave ++ (gone.filter (·.owner.getD v == v)).map (·.card) }).modify
+    v.other fun p => { p with grave := p.grave ++ (gone.filter (·.owner.getD v != v)).map (·.card) }
+
 /-- uid のモンスターをフィールドから取り除く。そのモンスターの装備カードは墓地へ送られる。 -/
 def detach (b : Board) (uid : Nat) : Option (Board × PlayerId × FieldMonster) := do
   let (w, i) ← b.findMonIdx uid
   let m ← (b.get w).monsters[i]?
   let b := b.modify w fun p => { p with monsters := p.monsters.eraseIdx i }
-  let dropEquips (p : Player) : Player :=
-    { p with backrow := p.backrow.filter (·.equipTo != some uid)
-             grave := p.grave ++ (p.backrow.filter (·.equipTo == some uid)).map (·.card) }
-  pure ((b.modify .one dropEquips).modify .two dropEquips, w, m)
+  let dropEquips (b : Board) (v : PlayerId) : Board :=
+    b.leaveST v ((b.get v).backrow.filter (·.equipTo != some uid)) ((b.get v).backrow.filter (·.equipTo == some uid))
+  pure (dropEquips (dropEquips b .one) .two, w, m)
 
 /-- uid のモンスターを墓地へ送る（X素材も墓地へ）。
 破壊された場合、そのモンスターと関係を持つ永続罠も破壊する。ただし、その時点（モンスターが離れた後）で
@@ -827,9 +834,8 @@ def toGraveMon (b : Board) (uid : Nat) (cause : LeaveCause := .sent) : Board :=
         (List.range (b.get v).backrow.length).filter fun i =>
           ((b.get v).backrow[i]?.bind (·.bond)) == some uid && !b.stNegated v i
       let drop (b' : Board) (v : PlayerId) : Board :=
-        b'.modify v fun p =>
-          let r := removeIdxs p.backrow (doomed v)
-          { p with backrow := r.1, grave := p.grave ++ r.2.map (·.card) }
+        let r := removeIdxs (b'.get v).backrow (doomed v)
+        b'.leaveST v r.1 r.2
       drop (drop b .one) .two
 
 /-- モンスターを順に取り除き、取り除けたモンスターを集める（エクシーズ素材用） -/
@@ -852,7 +858,7 @@ def destroyBackrow (b : Board) (w : PlayerId) (i : Nat) : Board :=
   | none => b
   | some s =>
     let negated := b.stNegated w i
-    let b := b.modify w fun p => { p with backrow := p.backrow.eraseIdx i, grave := p.grave ++ [s.card] }
+    let b := b.leaveST w ((b.get w).backrow.eraseIdx i) [s]
     match s.bond with
     | some u => if negated then b else b.toGraveMon u .destroyed
     | none => b
@@ -864,8 +870,7 @@ def destroyAllBackrow (b : Board) (ws : List PlayerId) : Board :=
     let p := b.get w
     (List.range p.backrow.length).filterMap fun i =>
       if b.stNegated w i then none else p.backrow[i]?.bind (·.bond)
-  let b := ws.foldl (fun b w =>
-    b.modify w fun p => { p with backrow := [], grave := p.grave ++ p.backrow.map (·.card) }) b
+  let b := ws.foldl (fun b w => b.leaveST w [] (b.get w).backrow) b
   bonded.foldl (fun b u => b.toGraveMon u .destroyed) b
 
 end Board
@@ -941,7 +946,8 @@ def Board.equipMon (b : Board) (v : PlayerId) (s u turn : Nat) : Board :=
     let b := b.modify w fun p => { p with grave := p.grave ++ m.overlays }
     let since := b.clock + 1
     { b.modify v fun p => { p with backrow := p.backrow ++
-        [{ card := .monster m.card, setTurn := turn, faceUp := true, equipTo := some s, since, id := since }] }
+        [{ card := .monster m.card, setTurn := turn, faceUp := true, equipTo := some s, since, id := since,
+           owner := some w }] }
       with clock := since }
   | none => b
 
@@ -2746,9 +2752,9 @@ def blooDestroyed : Except String Game :=
   (fun g => names g.board.p1.monsters)
 
 /-- D－HERO Bloo－D の装備の効果。
-P1：フィールドにモンスター3体、手札に Bloo－D。P2：サイコ・ショッカー（デーモンの斧を装備） -/
+P1：フィールドにモンスター3体、手札に Bloo－D とブラック・ホール。P2：サイコ・ショッカー（デーモンの斧を装備） -/
 def blooEquipStart : Game where
-  board := { p1 := { deck := [.monster kuriboh], hand := [.monster bloo],
+  board := { p1 := { deck := [.monster kuriboh], hand := [.monster bloo, darkHole],
                      monsters := [fm 0 kuriboh, fm 1 kuriboh, fm 2 kuriboh] },
              p2 := { deck := [.monster kuriboh], monsters := [fm 3 jinzo],
                      backrow := [{ card := axeOfDespair, setTurn := 0, faceUp := true, equipTo := some 3 }] },
@@ -2772,6 +2778,12 @@ def blooEquipped : Except String Game :=
 /-- info: Except.ok false -/
 #guard_msgs in
 #eval blooEquipped.map (·.board.trapsLocked)
+
+-- ブラック・ホールで Bloo－D を破壊すると、装備していたショッカーは持ち主（P2）の墓地へ送られる
+/-- info: Except.ok (["クリボー", "クリボー", "クリボー", "D－HERO Bloo－D", "ブラック・ホール"], ["デーモンの斧", "人造人間－サイコ・ショッカー"]) -/
+#guard_msgs in
+#eval (blooEquipped >>= (play · (resolve (.activateSpell 0)))).map fun g =>
+  (g.board.p1.grave.map (·.name), g.board.p2.grave.map (·.name))
 
 -- 1ターンに1度
 /-- info: Except.error "この効果は1ターンに1度しか使えない" -/
