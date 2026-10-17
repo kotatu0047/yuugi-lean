@@ -98,4 +98,21 @@
        "tags": [],
        "side": "opp",
        "faceUpOnly": true,
-       "excludeSelf": false}}}]}]}
+       "excludeSelf": false}}}]},
+  {"type": "魔法",
+   "tags": [],
+   "name": "一斉送還",
+   "effects":
+   [{"activated":
+     {"actions":
+      [{"bounce":
+        {"target":
+         {"types": ["モンスター"],
+          "tags": [],
+          "side": "opp",
+          "faceUpOnly": false,
+          "excludeSelf": false}}}]}}]},
+  {"type": "魔法",
+   "tags": [],
+   "name": "二枚引き",
+   "effects": [{"activated": {"actions": [{"draw": {"count": 2}}]}}]}]}

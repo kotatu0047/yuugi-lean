@@ -11,7 +11,8 @@ JSON との相互変換は Lean の自動導出による（`Option` 以外のフ
 - 相手のフィールドは自分のフィールドを逆さまにした形（ゾーンの定義は1人分だけ書く）
 
 プロトタイプで表せる効果は、盤面の制約を守る動きだけに絞る：
-- 発動して、条件に合うカードをすべて破壊する（サンダーボルト、ハーピィの羽根帚）
+- 発動して、条件に合うカードをすべて破壊する（サンダーボルト、ハーピィの羽根帚）・手札に戻す・
+  決まった枚数ドローする
 - 表側表示で存在する限り、条件に合うカードの効果を無効にする（スキルドレイン、王宮のお触れ など）
 
 ルールの数値を変える効果や、カードの種類を変える効果（「〜扱い」）は、表す手段を用意しない。
@@ -83,6 +84,10 @@ deriving Repr, DecidableEq, FromJson, ToJson
 inductive Action
   /-- 範囲に合うカードをすべて破壊し、持ち主の墓地へ送る -/
   | destroy (target : Selector)
+  /-- 範囲に合うカードをすべて持ち主の手札に戻す -/
+  | bounce (target : Selector)
+  /-- 発動したプレイヤーがデッキからカードを `count` 枚引く（デッキが足りなければある分だけ） -/
+  | draw (count : Nat)
 deriving Repr, DecidableEq, FromJson, ToJson
 
 /-- カードの効果 -/
@@ -156,6 +161,8 @@ end Selector
 
 def Action.check (r : Rules) (where_ : String) : Action → List String
   | .destroy s => s.check r s!"{where_}の破壊"
+  | .bounce s => s.check r s!"{where_}の手札に戻す動き"
+  | .draw n => if n = 0 then [s!"{where_}：ドローの枚数が0です"] else []
 
 def Effect.check (r : Rules) (where_ : String) : Effect → List String
   | .activated as => (if as.isEmpty then [s!"{where_}：発動する効果に動きがありません"] else []) ++

@@ -68,6 +68,8 @@ namespace CardGen
             return k switch
             {
                 "destroy" => new Destroy(ParseSelector(Field(o, "target"))),
+                "bounce" => new Bounce(ParseSelector(Field(o, "target"))),
+                "draw" => new DrawCards(Int(o, "count")),
                 _ => throw new FormatException($"動き「{k}」は使えません"),
             };
         }
@@ -148,6 +150,8 @@ namespace CardGen
         static JObject ToJson(Action a) => a switch
         {
             Destroy d => new JObject { ["destroy"] = new JObject { ["target"] = ToJson(d.Target) } },
+            Bounce b => new JObject { ["bounce"] = new JObject { ["target"] = ToJson(b.Target) } },
+            DrawCards d => new JObject { ["draw"] = new JObject { ["count"] = d.Count } },
             _ => throw new ArgumentException("未知の動き"),
         };
 

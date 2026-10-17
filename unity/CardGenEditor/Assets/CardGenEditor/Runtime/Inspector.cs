@@ -114,13 +114,23 @@ namespace CardGen.App
                     ListField("置ける種類", n.Zone.Admits, v => n.Zone.Admits = v);
                     break;
                 case NodeKind.Card:
-                    Hint("カード。効果のノード（発動して破壊・無効）をつなぎます。");
+                    Hint("カード。効果のノード（発動・無効）をつなぎます。");
                     Text("名前", n.Card.Name, v => n.Card.Name = v);
                     Text("種類", n.Card.Type, v => n.Card.Type = v.Trim());
                     ListField("タグ", n.Card.Tags, v => n.Card.Tags = v);
                     break;
+                case NodeKind.Activate:
+                    Hint("発動し、解決したときに、つないだ動き（破壊・手札に戻す・ドロー）を上から順に行います。無効にされていれば何も起きません。");
+                    break;
                 case NodeKind.Destroy:
-                    Hint("発動し、解決したときに、つないだ範囲のカードを上から順にすべて破壊して持ち主の墓地へ送ります。範囲のノードをつなぎます。");
+                    Hint("つないだ範囲のカードをすべて破壊し、持ち主の墓地へ送ります。範囲のノードを1つつなぎます。");
+                    break;
+                case NodeKind.Bounce:
+                    Hint("つないだ範囲のカードをすべて持ち主の手札に戻します。範囲のノードを1つつなぎます。");
+                    break;
+                case NodeKind.Draw:
+                    Hint("発動したプレイヤーがデッキからカードを引きます（足りなければある分だけ）。");
+                    Int("枚数", n.DrawCount, v => n.DrawCount = Math.Max(1, v));
                     break;
                 case NodeKind.Negate:
                     Hint("このカードが表側表示でフィールド上に存在する限り、つないだ範囲のカードの効果を無効にします。範囲のノードを1つつなぎます。");

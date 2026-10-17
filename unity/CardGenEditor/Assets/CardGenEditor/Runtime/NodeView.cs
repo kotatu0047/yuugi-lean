@@ -22,7 +22,10 @@ namespace CardGen.App
             NodeKind.Rules => new Color(0.55f, 0.35f, 0.75f),
             NodeKind.Zone => new Color(0.25f, 0.50f, 0.75f),
             NodeKind.Card => new Color(0.80f, 0.55f, 0.20f),
+            NodeKind.Activate => new Color(0.70f, 0.40f, 0.25f),
             NodeKind.Destroy => new Color(0.75f, 0.30f, 0.30f),
+            NodeKind.Bounce => new Color(0.30f, 0.55f, 0.70f),
+            NodeKind.Draw => new Color(0.55f, 0.50f, 0.25f),
             NodeKind.Negate => new Color(0.30f, 0.60f, 0.40f),
             _ => new Color(0.45f, 0.45f, 0.50f),
         };
@@ -69,8 +72,8 @@ namespace CardGen.App
 
             InPort = MakePort(left: true);
             OutPort = MakePort(left: false);
-            if (node.Kind != NodeKind.Rules && node.Kind != NodeKind.Card) Add(InPort);
-            if (node.Kind == NodeKind.Rules || node.Kind == NodeKind.Card || node.Kind == NodeKind.Destroy || node.Kind == NodeKind.Negate) Add(OutPort);
+            if (Node.HasInput(node.Kind)) Add(InPort);
+            if (Node.HasOutput(node.Kind)) Add(OutPort);
 
             Refresh();
         }
@@ -128,7 +131,10 @@ namespace CardGen.App
                 $"置ける種類：{List(n.Zone.Admits)}",
             NodeKind.Card =>
                 $"種類：{(n.Card.Type.Length == 0 ? "（未設定）" : n.Card.Type)}" + (n.Card.Tags.Count > 0 ? $"\nタグ：{List(n.Card.Tags)}" : ""),
-            NodeKind.Destroy => "発動し、つないだ範囲のカードを上から順にすべて破壊する",
+            NodeKind.Activate => "発動し、つないだ動きを上から順に行う",
+            NodeKind.Destroy => "つないだ範囲のカードをすべて破壊し、持ち主の墓地へ送る",
+            NodeKind.Bounce => "つないだ範囲のカードをすべて持ち主の手札に戻す",
+            NodeKind.Draw => $"発動したプレイヤーがカードを {n.DrawCount} 枚引く",
             NodeKind.Negate => "表側表示で存在する限り、つないだ範囲のカードの効果を無効にする",
             _ => SelectorSummary(n.Selector),
         };

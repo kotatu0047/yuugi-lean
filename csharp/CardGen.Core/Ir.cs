@@ -81,6 +81,20 @@ namespace CardGen
         public Destroy(Selector target) { Target = target; }
     }
 
+    /// <summary>範囲に合うカードをすべて持ち主の手札に戻す</summary>
+    public sealed class Bounce : Action
+    {
+        public Selector Target;
+        public Bounce(Selector target) { Target = target; }
+    }
+
+    /// <summary>発動したプレイヤーがデッキからカードを Count 枚引く（足りなければある分だけ）</summary>
+    public sealed class DrawCards : Action
+    {
+        public int Count;
+        public DrawCards(int count) { Count = count; }
+    }
+
     /// <summary>カードの効果</summary>
     public abstract class Effect { }
 

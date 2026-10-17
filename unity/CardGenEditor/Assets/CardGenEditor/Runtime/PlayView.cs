@@ -327,7 +327,13 @@ namespace CardGen.App
                 for (int e = 0; e < sl.Card.Effects.Count; e++)
                 {
                     if (!(sl.Card.Effects[e] is Activated act)) continue;
-                    var what = string.Join("、", act.Actions.OfType<Destroy>().Select(d => NodeView.SelectorSummary(d.Target).Replace("\n", "・") + "を破壊"));
+                    var what = string.Join("、", act.Actions.Select(a => a switch
+                    {
+                        Destroy d => NodeView.SelectorSummary(d.Target).Replace("\n", "・") + "を破壊",
+                        Bounce b => NodeView.SelectorSummary(b.Target).Replace("\n", "・") + "を手札に戻す",
+                        DrawCards dc => $"{dc.Count}枚ドロー",
+                        _ => "",
+                    }));
                     int ei = e;
                     if (st != "無効")
                         ActionButton($"発動する（{what}）", () => Do(Choice.Resolve(selPlayer, selField, ei, true), $"{Who(selPlayer)}：{sl.Card.Name} を発動（{what}）"));

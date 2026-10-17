@@ -4,7 +4,7 @@ import CardGen.Report
 # 中間表現の見本
 
 ユーザーの入力例のルール（初期手札5枚、デッキ40枚、モンスター・魔法・罠、ゾーン12マス）と、
-プロトタイプで表せるカード6枚。同じ内容の JSON が `CardGen/sample.json` にある。
+プロトタイプで表せるカード8枚。同じ内容の JSON が `CardGen/sample.json` にある。
 -/
 
 namespace CardGen.Sample
@@ -58,10 +58,20 @@ def blooD : Card :=
   { name := "D－HERO Bloo－D", type := monster, tags := ["闇属性", "戦士族"],
     effects := [.negate (sel [monster] .opp (faceUpOnly := true))] }
 
+/-- 相手のモンスターをすべて手札に戻す魔法 -/
+def returnSpell : Card :=
+  { name := "一斉送還", type := spell, tags := [],
+    effects := [.activated [.bounce (sel [monster] .opp)]] }
+
+/-- カードを2枚ドローする魔法 -/
+def drawSpell : Card :=
+  { name := "二枚引き", type := spell, tags := [],
+    effects := [.activated [.draw 2]] }
+
 def game : Game where
   version := currentVersion
   rules := rules
-  cards := [thunderbolt, featherDuster, skillDrain, royalDecree, jinzo, blooD]
+  cards := [thunderbolt, featherDuster, skillDrain, royalDecree, jinzo, blooD, returnSpell, drawSpell]
 
 /-! ## 検査 -/
 
@@ -155,7 +165,7 @@ namespace CardGen.Sample
 
 /-! ## 無効の関係の検査 -/
 
--- 見本の6枚：4すくみの4枚の間に循環がある（お触れ・Bloo－D は別の実体どうしで無効にし合える）
+-- 見本の8枚：4すくみの4枚の間に循環がある（お触れ・Bloo－D は別の実体どうしで無効にし合える）
 /--
 info: CardGen.NegResult.cyclic [["スキルドレイン", "王宮のお触れ", "人造人間－サイコ・ショッカー", "D－HERO Bloo－D"]]
 -/

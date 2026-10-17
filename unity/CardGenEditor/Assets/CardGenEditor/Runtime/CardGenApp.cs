@@ -225,7 +225,7 @@ namespace CardGen.App
         void LoadSample()
         {
             var asset = Resources.Load<UnityEngine.TextAsset>("sample");
-            SetDoc(GraphDoc.FromGame(IrJson.ParseGame(asset.text)), "見本（入力例のルールとカード6枚）を読み込みました");
+            SetDoc(GraphDoc.FromGame(IrJson.ParseGame(asset.text)), "見本（入力例のルールとカード8枚）を読み込みました");
         }
 
         void Open()
@@ -400,6 +400,7 @@ namespace CardGen.App
 
         // ---- コマンドライン（動作確認用）----
         //   -cardgen-select <ノードの番号>   そのノードを選ぶ
+        //   -cardgen-focus <ノードの番号>    そのノードが見えるようにキャンバスを動かす
         //   -cardgen-check                    Lean で検査する
         //   -cardgen-results-end              検査の結果を一番下まで送る
         //   -cardgen-play <手数>              テストプレイを始め、置ける手札を交互に置く
@@ -421,6 +422,13 @@ namespace CardGen.App
             {
                 var n = canvas.Doc.Find(id);
                 if (n != null) canvas.Select(n);
+            }
+            var focus = Arg("-cardgen-focus");
+            if (focus != null && int.TryParse(focus, out var fid))
+            {
+                yield return null;
+                var n = canvas.Doc.Find(fid);
+                if (n != null) canvas.Focus(n);
             }
             if (args.Contains("-cardgen-check"))
             {

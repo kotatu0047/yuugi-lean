@@ -1,15 +1,15 @@
 // ビジュアルエディタのノードのグラフと、中間表現との変換。
 // ノードの種類とつなぎ方：
 //   ルール ──▶ ゾーン（上から順に Rules.zones の順番）
-//   カード ──▶ 効果（「発動して破壊」または「無効」）──▶ 範囲
-//   「発動して破壊」につないだ範囲1つが、破壊の動き1つになる（上から順に行う）
-//   「無効」には範囲をちょうど1つつなぐ
+//   カード ──▶ 効果（「発動」または「無効（永続）」）
+//   発動 ──▶ 動き（「破壊」「手札に戻す」「ドロー」。上から順に行う）
+//   破壊・手札に戻す・無効 ──▶ 範囲（ちょうど1つ）
 using System.Collections.Generic;
 using System.Linq;
 
 namespace CardGen
 {
-    public enum NodeKind { Rules, Zone, Card, Destroy, Negate, Selector }
+    public enum NodeKind { Rules, Zone, Card, Activate, Negate, Destroy, Bounce, Draw, Selector }
 
     /// <summary>ルールのノードの中身（ゾーンはつないだノードから作る）</summary>
     public sealed class RulesData
@@ -36,6 +36,8 @@ namespace CardGen
         public Zone Zone;
         public CardData Card;
         public Selector Selector;
+        /// <summary>ドローの枚数（Draw のノード）</summary>
+        public int DrawCount = 1;
 
         public static Node Make(int id, NodeKind kind, float x, float y)
         {
@@ -55,10 +57,26 @@ namespace CardGen
             NodeKind.Rules => "ルール",
             NodeKind.Zone => "ゾーン",
             NodeKind.Card => "カード",
-            NodeKind.Destroy => "発動して破壊",
+            NodeKind.Activate => "発動",
             NodeKind.Negate => "無効（永続）",
+            NodeKind.Destroy => "破壊",
+            NodeKind.Bounce => "手札に戻す",
+            NodeKind.Draw => "ドロー",
             _ => "範囲",
         };
+
+        /// <summary>動き（発動の下につなぐノード）か</summary>
+        public static bool IsAction(NodeKind k) => k == NodeKind.Destroy || k == NodeKind.Bounce || k == NodeKind.Draw;
+
+        /// <summary>範囲を1つつなぐノードか</summary>
+        public static bool TakesSelector(NodeKind k) => k == NodeKind.Destroy || k == NodeKind.Bounce || k == NodeKind.Negate;
+
+        /// <summary>右側（つなぎ元）の丸を持つか</summary>
+        public static bool HasOutput(NodeKind k) =>
+            k == NodeKind.Rules || k == NodeKind.Card || k == NodeKind.Activate || TakesSelector(k);
+
+        /// <summary>左側（つなぎ先）の丸を持つか</summary>
+        public static bool HasInput(NodeKind k) => k != NodeKind.Rules && k != NodeKind.Card;
 
         /// <summary>ノードの見出しに出す名前</summary>
         public string Title => Kind switch
@@ -92,20 +110,21 @@ namespace CardGen
         public List<Node> Parents(Node n) =>
             Edges.Where(e => e.To == n.Id).Select(e => Find(e.From)).Where(c => c != null).ToList();
 
-        /// <summary>from から to へつないでよいか（つなげる種類の組と、入る側の数の制限）</summary>
+        /// <summary>from から to へつないでよいか</summary>
         public static bool CanConnect(NodeKind from, NodeKind to) =>
             (from == NodeKind.Rules && to == NodeKind.Zone) ||
-            (from == NodeKind.Card && (to == NodeKind.Destroy || to == NodeKind.Negate)) ||
-            ((from == NodeKind.Destroy || from == NodeKind.Negate) && to == NodeKind.Selector);
+            (from == NodeKind.Card && (to == NodeKind.Activate || to == NodeKind.Negate)) ||
+            (from == NodeKind.Activate && Node.IsAction(to)) ||
+            (Node.TakesSelector(from) && to == NodeKind.Selector);
 
-        /// <summary>つなぐ。入る側はつなぎ元を1つしか持てないので、前のつなぎは外す</summary>
+        /// <summary>つなぐ。入る側はつなぎ元を1つしか持てない。範囲を取るノードは範囲を1つしか持てない</summary>
         public bool Connect(int from, int to)
         {
             var a = Find(from);
             var b = Find(to);
             if (a == null || b == null || !CanConnect(a.Kind, b.Kind)) return false;
             Edges.RemoveAll(e => e.To == to);
-            if (a.Kind == NodeKind.Negate) Edges.RemoveAll(e => e.From == from);
+            if (Node.TakesSelector(a.Kind)) Edges.RemoveAll(e => e.From == from);
             Edges.Add(new Edge(from, to));
             return true;
         }
@@ -123,6 +142,7 @@ namespace CardGen
         public Game ToGame(out List<string> structure)
         {
             structure = new List<string>();
+            var problems = structure;
             var rulesNodes = Nodes.Where(n => n.Kind == NodeKind.Rules).ToList();
             var rules = new Rules();
             if (rulesNodes.Count == 0) structure.Add("ルールのノードがありません");
@@ -142,22 +162,38 @@ namespace CardGen
             foreach (var c in Nodes.Where(n => n.Kind == NodeKind.Card).OrderBy(n => n.Y).ThenBy(n => n.X))
             {
                 var card = new Card { Name = c.Card.Name, Type = c.Card.Type, Tags = c.Card.Tags.ToList() };
+                Selector SelectorOf(Node n, string what)
+                {
+                    var s = Children(n).FirstOrDefault();
+                    if (s == null) problems.Add($"カード「{c.Card.Name}」の{what}に、範囲がつながっていません");
+                    return s?.Selector;
+                }
                 foreach (var e in Children(c))
                 {
-                    var sels = Children(e).Select(s => s.Selector).ToList();
-                    if (e.Kind == NodeKind.Destroy)
-                        card.Effects.Add(new Activated(sels.Select(s => (Action)new Destroy(s)).ToList()));
-                    else if (sels.Count == 1)
-                        card.Effects.Add(new Negate(sels[0]));
-                    else
-                        structure.Add($"カード「{c.Card.Name}」の無効の効果に、範囲がつながっていません");
+                    if (e.Kind == NodeKind.Negate)
+                    {
+                        var s = SelectorOf(e, "無効の効果");
+                        if (s != null) card.Effects.Add(new Negate(s));
+                        continue;
+                    }
+                    var actions = new List<Action>();
+                    foreach (var a in Children(e))
+                    {
+                        if (a.Kind == NodeKind.Draw) { actions.Add(new DrawCards(a.DrawCount)); continue; }
+                        var s = SelectorOf(a, a.Kind == NodeKind.Destroy ? "破壊" : "手札に戻す動き");
+                        if (s == null) continue;
+                        actions.Add(a.Kind == NodeKind.Destroy ? (Action)new Destroy(s) : new Bounce(s));
+                    }
+                    card.Effects.Add(new Activated(actions));
                 }
                 cards.Add(card);
             }
-            foreach (var e in Nodes.Where(n => (n.Kind == NodeKind.Destroy || n.Kind == NodeKind.Negate) && Parents(n).Count == 0))
+            foreach (var e in Nodes.Where(n => (n.Kind == NodeKind.Activate || n.Kind == NodeKind.Negate) && Parents(n).Count == 0))
                 structure.Add($"{Node.KindLabel(e.Kind)}のノードがカードにつながっていません");
+            foreach (var a in Nodes.Where(n => Node.IsAction(n.Kind) && Parents(n).Count == 0))
+                structure.Add($"{Node.KindLabel(a.Kind)}のノードが発動につながっていません");
             foreach (var s in Nodes.Where(n => n.Kind == NodeKind.Selector && Parents(n).Count == 0))
-                structure.Add("範囲のノードが効果につながっていません");
+                structure.Add("範囲のノードがつながっていません");
 
             return new Game { Rules = rules, Cards = cards };
         }
@@ -173,54 +209,72 @@ namespace CardGen
                 doc.Nodes.Add(n);
                 return n;
             }
+            const float colCard = 40, colEffect = 300, colAction = 560, colSelector = 820;
 
-            var r = Add(NodeKind.Rules, 40, 40);
+            var r = Add(NodeKind.Rules, colCard, 40);
             r.Rules.CardTypes = g.Rules.CardTypes.ToList();
             r.Rules.DeckSize = g.Rules.DeckSize;
             r.Rules.HandSize = g.Rules.HandSize;
             float zy = 40;
             foreach (var z in g.Rules.Zones)
             {
-                var zn = Add(NodeKind.Zone, 320, zy);
+                var zn = Add(NodeKind.Zone, colEffect, zy);
                 zn.Zone = z;
                 doc.Edges.Add(new Edge(r.Id, zn.Id));
                 zy += 110;
             }
 
-            float cy = Mathf.Max(zy + 40, 520);
+            float y = Max(zy + 40, 520);
             foreach (var c in g.Cards)
             {
-                var cn = Add(NodeKind.Card, 40, cy);
+                var cn = Add(NodeKind.Card, colCard, y);
                 cn.Card = new CardData { Name = c.Name, Type = c.Type, Tags = c.Tags.ToList() };
-                float ey = cy;
+                float ey = y;
                 foreach (var e in c.Effects)
                 {
-                    var sels = e switch
+                    if (e is Negate neg)
                     {
-                        Activated a => a.Actions.OfType<Destroy>().Select(d => d.Target).ToList(),
-                        Negate n => new List<Selector> { n.Target },
-                        _ => new List<Selector>(),
-                    };
-                    var en = Add(e is Activated ? NodeKind.Destroy : NodeKind.Negate, 320, ey);
-                    doc.Edges.Add(new Edge(cn.Id, en.Id));
-                    float sy = ey;
-                    foreach (var s in sels)
-                    {
-                        var sn = Add(NodeKind.Selector, 580, sy);
-                        sn.Selector = s;
+                        var en = Add(NodeKind.Negate, colEffect, ey);
+                        doc.Edges.Add(new Edge(cn.Id, en.Id));
+                        var sn = Add(NodeKind.Selector, colAction, ey);
+                        sn.Selector = neg.Target;
                         doc.Edges.Add(new Edge(en.Id, sn.Id));
-                        sy += 130;
+                        ey += 130;
+                        continue;
                     }
-                    ey = Mathf.Max(ey + 90, sy);
+                    var act = (Activated)e;
+                    var an = Add(NodeKind.Activate, colEffect, ey);
+                    doc.Edges.Add(new Edge(cn.Id, an.Id));
+                    float ay = ey;
+                    foreach (var a in act.Actions)
+                    {
+                        switch (a)
+                        {
+                            case DrawCards d:
+                                var dn = Add(NodeKind.Draw, colAction, ay);
+                                dn.DrawCount = d.Count;
+                                doc.Edges.Add(new Edge(an.Id, dn.Id));
+                                ay += 90;
+                                break;
+                            case Destroy _:
+                            case Bounce _:
+                                var target = a is Destroy de ? de.Target : ((Bounce)a).Target;
+                                var xn = Add(a is Destroy ? NodeKind.Destroy : NodeKind.Bounce, colAction, ay);
+                                doc.Edges.Add(new Edge(an.Id, xn.Id));
+                                var sn = Add(NodeKind.Selector, colSelector, ay);
+                                sn.Selector = target;
+                                doc.Edges.Add(new Edge(xn.Id, sn.Id));
+                                ay += 130;
+                                break;
+                        }
+                    }
+                    ey = Max(ey + 90, ay);
                 }
-                cy = Mathf.Max(cy + 110, ey + 20);
+                y = Max(y + 110, ey + 20);
             }
             return doc;
         }
 
-        static class Mathf
-        {
-            public static float Max(float a, float b) => a > b ? a : b;
-        }
+        static float Max(float a, float b) => a > b ? a : b;
     }
 }

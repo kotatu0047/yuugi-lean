@@ -126,6 +126,27 @@ theorem sub_destroy (r : Rules) (sel : Selector) (m : Bool) (s : PState) :
   · exact .inr (.inr (.inr ⟨sl, hsl, rfl⟩))
   · exact .inr (.inr (.inr ⟨sl, hsl, rfl⟩))
 
+theorem sub_bounce (r : Rules) (sel : Selector) (m : Bool) (s : PState) :
+    ∀ x ∈ cardsOf (s.bounce r sel m), x ∈ cardsOf s := by
+  intro x hx
+  simp only [mem_cardsOf, PState.bounce, List.mem_append, List.mem_map, List.mem_filter] at hx ⊢
+  rcases hx with h | (h | ⟨sl, ⟨hsl, _⟩, rfl⟩) | h | ⟨sl, ⟨hsl, _⟩, rfl⟩
+  · exact .inl h
+  · exact .inr (.inl h)
+  · exact .inr (.inr (.inr ⟨sl, hsl, rfl⟩))
+  · exact .inr (.inr (.inl h))
+  · exact .inr (.inr (.inr ⟨sl, hsl, rfl⟩))
+
+theorem sub_drawN (n : Nat) (s : PState) : ∀ x ∈ cardsOf (s.drawN n), x ∈ cardsOf s := by
+  intro x hx
+  simp only [mem_cardsOf, PState.drawN, List.mem_append] at hx ⊢
+  rcases hx with h | (h | h) | h | h
+  · exact .inl (List.mem_of_mem_drop h)
+  · exact .inr (.inl h)
+  · exact .inl (List.mem_of_mem_take h)
+  · exact .inr (.inr (.inl h))
+  · exact .inr (.inr (.inr h))
+
 theorem sub_foldl (r : Rules) (p : PlayerId) (as : List Action) (g : State) :
     Sub g (as.foldl (State.applyAction r p) g) := by
   induction as generalizing g with
@@ -134,6 +155,15 @@ theorem sub_foldl (r : Rules) (p : PlayerId) (as : List Action) (g : State) :
     refine Sub.trans ?_ (ih _)
     cases a with
     | destroy sel => exact fun q => sub_destroy r sel (q == p) (g q)
+    | bounce sel => exact fun q => sub_bounce r sel (q == p) (g q)
+    | draw n =>
+      intro q x hx
+      by_cases hq : q = p
+      · subst hq
+        simp only [State.applyAction, State.set_same] at hx
+        exact sub_drawN n (g q) x hx
+      · simp only [State.applyAction] at hx
+        rwa [State.set_other _ _ hq] at hx
 
 theorem sub_step {r : Rules} {g g' : State} : Step r g g' → Sub g g'
   | .draw _ p c d hd => fun q x hx => by

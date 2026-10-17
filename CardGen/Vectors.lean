@@ -68,7 +68,7 @@ def verdictName : Verdict → String
   | .ok => "ok" | .someLoop => "someLoop" | .multiStable => "multiStable"
   | .cannotHalt => "cannotHalt" | .noStable => "noStable"
 
-/-- テストに使うカード：見本の6枚と、循環のない例・自分を無効にする例の2枚 -/
+/-- テストに使うカード：見本の8枚と、循環のない例・自分を無効にする例 -/
 def vecCards : List Card := Sample.game.cards ++ [Sample.spellBreaker, Sample.selfNegator]
 
 /-- 形式の検査のテスト：見本と、1か所ずつ間違えたもの -/
@@ -90,7 +90,8 @@ def checkCases : List Game :=
     zone (fun z => { z with capacity := .one, count := 2 }) 3,
     { g with cards := g.cards ++ [g.cards[0]!] },
     { g with cards := [{ Sample.thunderbolt with effects := [.activated [.destroy { Sample.sel [] .opp with types := [] }]] }] },
-    { g with cards := [{ Sample.skillDrain with effects := [.negate (Sample.sel ["融合"] .both)] }] } ]
+    { g with cards := [{ Sample.skillDrain with effects := [.negate (Sample.sel ["融合"] .both)] }] },
+    { g with cards := [{ Sample.drawSpell with effects := [.activated [.draw 0, .bounce (Sample.sel ["儀式"] .opp)]] }] } ]
 
 /-- 対戦のテスト用の小さなルール（デッキ8枚・初期手札3枚） -/
 def playRules : Rules := { Sample.rules with deckSize := 8, handSize := 3 }

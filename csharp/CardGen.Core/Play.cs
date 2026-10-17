@@ -121,12 +121,13 @@ namespace CardGen
                     var g = With(p, n1);
                     if (ch.Apply)
                         foreach (var a in act.Actions)
-                            if (a is Destroy d)
-                                g = new MatchState
-                                {
-                                    P1 = g.P1.Destroy(r, d.Target, p == true),
-                                    P2 = g.P2.Destroy(r, d.Target, p == false),
-                                };
+                            g = a switch
+                            {
+                                Destroy d => new MatchState { P1 = g.P1.Destroy(r, d.Target, p), P2 = g.P2.Destroy(r, d.Target, !p) },
+                                Bounce b => new MatchState { P1 = g.P1.Bounce(r, b.Target, p), P2 = g.P2.Bounce(r, b.Target, !p) },
+                                DrawCards dc => g.With(p, g.Get(p).DrawN(dc.Count)),
+                                _ => g,
+                            };
                     var last = Copy(g.Get(p));
                     last.Grave.Add(sl.Card);
                     return g.With(p, last);

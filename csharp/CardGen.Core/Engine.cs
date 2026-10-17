@@ -37,6 +37,31 @@ namespace CardGen
         }
     }
 
+    public static class PStateActions
+    {
+        /// <summary>PState.bounce：フィールド上の、範囲に合うカードをすべて手札に戻す</summary>
+        public static PState Bounce(this PState s, Rules r, Selector sel, bool mine)
+        {
+            bool Hit(Slot sl) => r.OnFieldZone(sl.Zone) && sel.Matches(sl.ViewFor(mine));
+            return new PState
+            {
+                Deck = s.Deck.ToList(),
+                Hand = s.Hand.Concat(s.Field.Where(Hit).Select(sl => sl.Card)).ToList(),
+                Grave = s.Grave.ToList(),
+                Field = s.Field.Where(sl => !Hit(sl)).ToList(),
+            };
+        }
+
+        /// <summary>PState.drawN：デッキから n 枚引く（足りなければある分だけ）</summary>
+        public static PState DrawN(this PState s, int n) => new PState
+        {
+            Deck = s.Deck.Skip(n).ToList(),
+            Hand = s.Hand.Concat(s.Deck.Take(n)).ToList(),
+            Grave = s.Grave.ToList(),
+            Field = s.Field.ToList(),
+        };
+    }
+
     /// <summary>フィールドに置かれたカード1枚（無効の関係を調べる単位）</summary>
     public sealed class Inst
     {

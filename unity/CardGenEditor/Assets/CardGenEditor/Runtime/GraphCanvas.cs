@@ -128,6 +128,13 @@ namespace CardGen.App
             Changed?.Invoke();
         }
 
+        /// <summary>ノードが画面の左上寄りに来るように動かす</summary>
+        public void Focus(Node n)
+        {
+            offset = new Vector2(80, 80) - new Vector2(n.X, n.Y) * zoom;
+            ApplyTransform();
+        }
+
         Vector2 ToContent(Vector2 local) => (local - offset) / zoom;
 
         void ApplyTransform()

@@ -47,7 +47,39 @@ public class GraphTests
         doc.ToGame(out var structure);
         Assert.Contains("ルールのノードがありません", structure);
         Assert.Contains("カード「」の無効の効果に、範囲がつながっていません", structure);
-        Assert.Contains("範囲のノードが効果につながっていません", structure);
+        Assert.Contains("範囲のノードがつながっていません", structure);
+    }
+
+    [Fact]
+    public void Vector_cards_round_trip_through_graph()
+    {
+        // 手札に戻す・ドローを含むカードもグラフを通して元に戻る
+        var v = JObject.Parse(File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "vectors.json")));
+        var g = new Game { Rules = IrJson.ParseRules(v["rules"]), Cards = ((JArray)v["cards"]).Select(IrJson.ParseCard).ToList() };
+        var back = GraphDoc.FromGame(g).ToGame(out var structure);
+        Assert.Empty(structure);
+        Assert.True(JToken.DeepEquals(IrJson.ToJson(g), IrJson.ToJson(back)));
+    }
+
+    [Fact]
+    public void Activate_takes_actions()
+    {
+        var doc = new GraphDoc();
+        doc.Nodes.Add(Node.Make(1, NodeKind.Card, 0, 0));
+        doc.Nodes.Add(Node.Make(2, NodeKind.Activate, 0, 0));
+        doc.Nodes.Add(Node.Make(3, NodeKind.Draw, 0, 0));
+        doc.Nodes.Add(Node.Make(4, NodeKind.Bounce, 0, 100));
+        doc.Nodes.Add(Node.Make(5, NodeKind.Selector, 0, 100));
+        Assert.True(doc.Connect(1, 2));
+        Assert.True(doc.Connect(2, 3));
+        Assert.True(doc.Connect(2, 4));
+        Assert.False(doc.Connect(2, 5));
+        Assert.True(doc.Connect(4, 5));
+        doc.Find(3).DrawCount = 2;
+        var g = doc.ToGame(out _);
+        var act = Assert.IsType<Activated>(g.Cards[0].Effects[0]);
+        Assert.Equal(2, Assert.IsType<DrawCards>(act.Actions[0]).Count);
+        Assert.IsType<Bounce>(act.Actions[1]);
     }
 
     [Fact]

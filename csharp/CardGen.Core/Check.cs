@@ -20,6 +20,8 @@ namespace CardGen
         static IEnumerable<string> Action(Rules r, string where, Action a) => a switch
         {
             Destroy d => Selector(r, $"{where}の破壊", d.Target),
+            Bounce b => Selector(r, $"{where}の手札に戻す動き", b.Target),
+            DrawCards d => d.Count == 0 ? new[] { $"{where}：ドローの枚数が0です" } : Enumerable.Empty<string>(),
             _ => Enumerable.Empty<string>(),
         };
 

@@ -2,6 +2,7 @@
 """証明のジョブを機械的に検査して受け入れる。
 
     python3 jobs/accept.py jobs/pending/0001
+    python3 jobs/accept.py --recheck      # 受け入れ済みのジョブを今のライブラリでもう一度検査する
 
 1. job.json の頭の部分（JobStatement までの定義。変えてはいけない）と、証明する側が書いた
    Proof.lean と、確認の部分をつなげて1つの Lean ファイルにする
@@ -71,7 +72,28 @@ end Job_{jid}
     return {"status": "accepted", "axioms": axioms, "source": source}
 
 
+def recheck() -> int:
+    """受け入れ済みのジョブを、今のライブラリでもう一度検査する（定義を変えたあとに使う）"""
+    broken = []
+    for job_dir in sorted((ROOT / "jobs" / "done").iterdir()):
+        if not (job_dir / "job.json").exists():
+            continue
+        result = check(job_dir)
+        ok = result["status"] == "accepted"
+        print(f"{job_dir.name}: {'通る' if ok else '通らない'}")
+        if not ok:
+            broken.append(job_dir.name)
+            for reason in result["reasons"][:5]:
+                print("    " + reason)
+    if broken:
+        print("通らなくなったジョブは jobs/pending/ に戻して証明を直す：" + "、".join(broken))
+        return 1
+    return 0
+
+
 def main() -> int:
+    if sys.argv[1:] == ["--recheck"]:
+        return recheck()
     job_dir = pathlib.Path(sys.argv[1]).resolve()
     result = check(job_dir)
     result["checkedAt"] = datetime.datetime.now().astimezone().isoformat(timespec="seconds")

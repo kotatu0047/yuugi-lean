@@ -9,7 +9,7 @@ import CardGen.Model
 - フィールドのカードは、その種類を置けるゾーンにある
 - 「1枚まで」のゾーンのカードは、マスの数を超えない
 
-効果の動き（破壊）はどのカードのどんな範囲の指定でもカードを墓地へ移すだけなので、
+効果の動き（破壊・手札に戻す・ドロー）はどのカードのどんな範囲の指定でもカードを移すだけなので、
 カードの効果をどう組み合わせても崩れない（企画書の「第1層」）。
 -/
 
@@ -51,10 +51,31 @@ theorem PState.size_destroy (r : Rules) (sel : Selector) (m : Bool) (s : PState)
   simp only [PState.destroy, PState.size, List.length_append, List.length_map]
   omega
 
+theorem PState.size_bounce (r : Rules) (sel : Selector) (m : Bool) (s : PState) :
+    (s.bounce r sel m).size = s.size := by
+  have := length_filter_not_add (fun sl : Slot => r.onFieldZone sl.zone && sel.matches (sl.view m)) s.field
+  simp only [PState.bounce, PState.size, List.length_append, List.length_map]
+  omega
+
+theorem PState.size_drawN (n : Nat) (s : PState) : (s.drawN n).size = s.size := by
+  simp only [PState.drawN, PState.size, List.length_append, List.length_drop, List.length_take]
+  omega
+
 theorem shrinks_applyAction (r : Rules) (p : PlayerId) (g : State) (a : Action) :
     Shrinks g (g.applyAction r p a) := by
   cases a with
   | destroy sel => exact fun q => ⟨PState.size_destroy .., List.filter_sublist⟩
+  | bounce sel => exact fun q => ⟨PState.size_bounce .., List.filter_sublist⟩
+  | draw n =>
+    intro q
+    by_cases hq : q = p
+    · subst hq
+      simp only [State.applyAction, State.set_same]
+      exact ⟨PState.size_drawN .., List.Sublist.refl _⟩
+    · have h := State.set_other g ((g p).drawN n) hq
+      simp only [State.applyAction]
+      rw [h]
+      exact ⟨rfl, List.Sublist.refl _⟩
 
 theorem shrinks_foldl (r : Rules) (p : PlayerId) (as : List Action) (g : State) :
     Shrinks g (as.foldl (State.applyAction r p) g) := by

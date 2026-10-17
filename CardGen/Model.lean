@@ -9,7 +9,8 @@ import CardGen.IR
 
 - ドロー：デッキの一番上を手札に加える
 - 置く：手札のカードを、その種類を置けるゾーンに置く（「1枚まで」のゾーンは空きがあるときだけ）
-- 発動して解決する：フィールドの、発動する効果を持つカードを取り除き、効果の動きを順に行い
+- 発動して解決する：フィールドの、発動する効果を持つカードを取り除き、効果の動き（破壊・手札に戻す・
+  ドロー）を順に行い
   （無効にされていれば何もしない）、そのカードを墓地へ送る
 
 カードの持ち主とコントロールするプレイヤーは同じで、カードは持ち主の側から出ない。
@@ -65,9 +66,21 @@ def PState.destroy (r : Rules) (sel : Selector) (mine : Bool) (s : PState) : PSt
   { s with field := s.field.filter (fun sl => !hit sl),
            grave := s.grave ++ (s.field.filter hit).map (·.card) }
 
+/-- フィールド上の、範囲に合うカードをすべて手札に戻す -/
+def PState.bounce (r : Rules) (sel : Selector) (mine : Bool) (s : PState) : PState :=
+  let hit := fun sl : Slot => r.onFieldZone sl.zone && sel.matches (sl.view mine)
+  { s with field := s.field.filter (fun sl => !hit sl),
+           hand := s.hand ++ (s.field.filter hit).map (·.card) }
+
+/-- デッキから `n` 枚引く（足りなければある分だけ） -/
+def PState.drawN (n : Nat) (s : PState) : PState :=
+  { s with deck := s.deck.drop n, hand := s.hand ++ s.deck.take n }
+
 /-- プレイヤー `p` の効果の動きを1つ行う -/
 def State.applyAction (r : Rules) (p : PlayerId) (g : State) : Action → State
   | .destroy sel => fun q => (g q).destroy r sel (q == p)
+  | .bounce sel => fun q => (g q).bounce r sel (q == p)
+  | .draw n => g.set p ((g p).drawN n)
 
 /-- プレイヤー `p` が、フィールドの `k` 番目のカード `sl` の効果（動き `as`）を発動して解決したあとの状態 -/
 def State.resolve (r : Rules) (p : PlayerId) (g : State) (k : Nat) (sl : Slot) (as : List Action)
