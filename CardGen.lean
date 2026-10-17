@@ -6,4 +6,5 @@ import CardGen.Claims
 import CardGen.Negation
 import CardGen.Explore
 import CardGen.Report
+import CardGen.Vectors
 import CardGen.Sample
