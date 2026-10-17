@@ -1,0 +1,101 @@
+{"version": 1,
+ "rules":
+ {"zones":
+  [{"role": "plain",
+    "onField": true,
+    "name": "モンスターカードゾーン",
+    "count": 5,
+    "capacity": "one",
+    "admits": ["モンスター"]},
+   {"role": "plain",
+    "onField": true,
+    "name": "魔法罠ゾーン",
+    "count": 5,
+    "capacity": "one",
+    "admits": ["魔法", "罠"]},
+   {"role": "deck",
+    "onField": false,
+    "name": "デッキゾーン",
+    "count": 1,
+    "capacity": "many",
+    "admits": ["モンスター", "魔法", "罠"]},
+   {"role": "grave",
+    "onField": false,
+    "name": "墓地ゾーン",
+    "count": 1,
+    "capacity": "many",
+    "admits": ["モンスター", "魔法", "罠"]}],
+  "handSize": 5,
+  "deckSize": 40,
+  "cardTypes": ["モンスター", "魔法", "罠"]},
+ "cards":
+ [{"type": "魔法",
+   "tags": [],
+   "name": "サンダー・ボルト",
+   "effects":
+   [{"activated":
+     {"actions":
+      [{"destroy":
+        {"target":
+         {"types": ["モンスター"],
+          "tags": [],
+          "side": "opp",
+          "faceUpOnly": false,
+          "excludeSelf": false}}}]}}]},
+  {"type": "魔法",
+   "tags": [],
+   "name": "ハーピィの羽根帚",
+   "effects":
+   [{"activated":
+     {"actions":
+      [{"destroy":
+        {"target":
+         {"types": ["魔法", "罠"],
+          "tags": [],
+          "side": "opp",
+          "faceUpOnly": false,
+          "excludeSelf": false}}}]}}]},
+  {"type": "罠",
+   "tags": [],
+   "name": "スキルドレイン",
+   "effects":
+   [{"negate":
+     {"target":
+      {"types": ["モンスター"],
+       "tags": [],
+       "side": "both",
+       "faceUpOnly": true,
+       "excludeSelf": false}}}]},
+  {"type": "罠",
+   "tags": [],
+   "name": "王宮のお触れ",
+   "effects":
+   [{"negate":
+     {"target":
+      {"types": ["罠"],
+       "tags": [],
+       "side": "both",
+       "faceUpOnly": true,
+       "excludeSelf": true}}}]},
+  {"type": "モンスター",
+   "tags": ["闇属性", "機械族"],
+   "name": "人造人間－サイコ・ショッカー",
+   "effects":
+   [{"negate":
+     {"target":
+      {"types": ["罠"],
+       "tags": [],
+       "side": "both",
+       "faceUpOnly": true,
+       "excludeSelf": false}}}]},
+  {"type": "モンスター",
+   "tags": ["闇属性", "戦士族"],
+   "name": "D－HERO Bloo－D",
+   "effects":
+   [{"negate":
+     {"target":
+      {"types": ["モンスター"],
+       "tags": [],
+       "side": "opp",
+       "faceUpOnly": true,
+       "excludeSelf": false}}}]}]}

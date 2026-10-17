@@ -1,6 +1,6 @@
 name = "YuugiLean"
 version = "0.1.0"
-defaultTargets = ["yuugilean"]
+defaultTargets = ["yuugilean", "CardGen"]
 
 [[lean_lib]]
 name = "YuugiLean"
@@ -8,3 +8,6 @@ name = "YuugiLean"
 [[lean_exe]]
 name = "yuugilean"
 root = "Main"
+
+[[lean_lib]]
+name = "CardGen"
