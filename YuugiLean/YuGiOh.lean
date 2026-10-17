@@ -33,12 +33,16 @@ Lean 4 コアのみ（Mathlib 不要）で動く、遊戯王OCGの基本ルー�
   破壊された時にもう一方を破壊する（その時点で効果が無効なら何も起きない）
 * 召喚条件（D－HERO Bloo－D）：通常召喚できず、指定の数のモンスターをリリースして手札から特殊召喚する。
   墓地からは、正規の方法で特殊召喚された後に墓地へ送られた場合のみ蘇生できる
+* モンスターを装備カード扱いで装備する効果（D－HERO Bloo－D）：相手の表側表示モンスター1体を魔法・罠ゾーンへ
+  移して装備する（1体のみ、魔法・罠ゾーンに空きが必要）。装備したモンスターの元々の攻撃力の半分だけ攻撃力が
+  上がる（装備しているモンスターの効果が無効なら上がらない）
 * ライフコスト：自分の LP が 0 以下になるようには払えない
 * 手札上限6枚（エンドフェイズに捨てる）
 * 勝敗：LP 0、デッキ切れ（ドローできない）
 
 ## 範囲外・簡略化
 * ペンデュラム、トークン、儀式、フィールド魔法、コントロール奪取
+* カードの持ち主：装備カード扱いの相手モンスターは、墓地へ送られるとき装備したプレイヤーの墓地へ送る
 * リンクマーカー：リンクモンスターはエクストラモンスターゾーンにのみ出せる（各プレイヤー1体まで）
 * 誘発効果はすべて強制効果として扱う（任意効果も必ず発動する。そのためタイミングを逃さない）
 * デッキからのサーチ・リクルートは、デッキの上から最初に条件を満たすカードを選ぶ
@@ -93,6 +97,8 @@ inductive Effect where
   | millOpp (n : Nat)            -- 相手のデッキの上から n 枚を墓地へ送る
   | recruit (attr : Attribute) (maxAtk : Nat) -- デッキから攻撃力 maxAtk 以下の attr 属性モンスターを特殊召喚
   | searchMaxDef (maxDef : Nat)  -- デッキから守備力 maxDef 以下のモンスターを手札に加える
+  | equipOppMonster              -- 対象の相手フィールドの表側表示モンスター1体を、装備カード扱いとして
+                                 -- 効果を発動したモンスターに装備する（1体のみ）
   deriving Repr, DecidableEq
 
 def Effect.isNegate : Effect → Bool
@@ -244,6 +250,10 @@ def Card.isEquip : Card → Bool
 def Card.equipAtk : Card → Int
   | .spell _ (.equip n) => n
   | _ => 0
+
+def Card.isMonster : Card → Bool
+  | .monster _ => true
+  | _ => false
 
 /-! ## 2. フィールドとプレイヤー -/
 
@@ -414,8 +424,13 @@ structure Ctx where
   turn   : Nat
   active : PlayerId
   phase  : Phase
+  below  : Nat := 0  -- 処理中のブロックより下にある、そのコントローラーの魔法・罠の数（`resolveChain` が設定する）
 
-def Game.ctx (g : Game) : Ctx := ⟨g.turn, g.active, g.phase⟩
+def Game.ctx (g : Game) : Ctx := { turn := g.turn, active := g.active, phase := g.phase }
+
+/-- チェーン上の、そのプレイヤーの魔法・罠（魔法・罠ゾーンを使っている） -/
+def ownST (ch : List ChainLink) (v : PlayerId) : Nat :=
+  (ch.filter (fun l => decide (l.owner = v) && !l.mon)).length
 
 def Game.cs (g : Game) : ChainState := ⟨g.board, g.chain, g.priority, g.passed⟩
 
@@ -749,8 +764,13 @@ def _root_.YGO.Aura.atkMod (a : Aura) (own : Bool) (c : MonsterCard) : Int :=
 /-- 装備カード・永続効果を適用した攻撃力（0 未満にはならない） -/
 def atkOf (b : Board) (w : PlayerId) (m : FieldMonster) : Nat :=
   if m.pos = .faceDownDefense then m.card.atk else
+  -- 装備カード扱いのモンスター（D－HERO Bloo－D の効果）：元々の攻撃力の半分（端数切り上げ）アップ。
+  -- 装備しているモンスターの効果が無効化されていれば上がらない
+  let monEquip : Card → Int
+    | .monster t => if b.monNegated m.uid then 0 else (((t.atk + 1) / 2 : Nat) : Int)
+    | _ => 0
   let equip : Int := (b.p1.backrow ++ b.p2.backrow).foldl
-    (fun acc s => if s.faceUp && s.equipTo == some m.uid then acc + s.card.equipAtk else acc) 0
+    (fun acc s => if s.faceUp && s.equipTo == some m.uid then acc + s.card.equipAtk + monEquip s.card else acc) 0
   let aura : Int := b.auras.foldl (fun acc (v, a) => acc + a.atkMod (v == w) m.card) 0
   ((m.card.atk : Int) + equip + aura).toNat
 
@@ -909,6 +929,22 @@ def fusionPlan (b : Board) (l : ChainLink) : Option (MonsterCard × Nat × Bool)
     if (b.get l.owner).extra[i]? = some (.monster fm) then (fusionCheck b l fm).map (fm, i, ·) else none
   | _ => none
 
+/-- 魔法・罠ゾーンに、uid のモンスターに装備した装備カード扱いのモンスターがあるか -/
+def Player.hasMonEquip (p : Player) (u : Nat) : Bool :=
+  p.backrow.any fun s => s.equipTo == some u && s.card.isMonster
+
+/-- uid u のモンスターを、装備カード扱いとしてプレイヤー v の uid s のモンスターに装備する。
+u の装備カードと X素材は墓地へ送られる -/
+def Board.equipMon (b : Board) (v : PlayerId) (s u turn : Nat) : Board :=
+  match b.detach u with
+  | some (b, w, m) =>
+    let b := b.modify w fun p => { p with grave := p.grave ++ m.overlays }
+    let since := b.clock + 1
+    { b.modify v fun p => { p with backrow := p.backrow ++
+        [{ card := .monster m.card, setTurn := turn, faceUp := true, equipTo := some s, since, id := since }] }
+      with clock := since }
+  | none => b
+
 /-- 効果の適用。解決時に処理できない部分は何もしない。 -/
 def applyEffect (c : Ctx) (l : ChainLink) (b : Board) : Board :=
   let self := l.owner
@@ -992,6 +1028,19 @@ def applyEffect (c : Ctx) (l : ChainLink) (b : Board) : Board :=
       | some cd => b.set self { p with deck := p.deck.eraseIdx i, hand := p.hand ++ [cd] }
       | none => b
     | none => b
+  | .equipOppMonster =>
+    -- 発動したモンスターと対象がフィールドに表側表示で残っていて、魔法・罠ゾーンに空きがあれば装備する。
+    -- 対象の装備カードと X素材は墓地へ送られる
+    match l.src, l.targets with
+    | some s, [u] =>
+      match b.findMon s, b.findMon u with
+      | some (ws, sm), some (wt, tm) =>
+        if ws = self ∧ sm.pos ≠ .faceDownDefense ∧ wt = self.other ∧ tm.pos ≠ .faceDownDefense ∧
+            (b.get self).backrow.length + c.below < spellTrapZones ∧ (b.get self).hasMonEquip s = false then
+          b.equipMon self s u c.turn
+        else b
+      | _, _ => b
+    | _, _ => b
 
 /-! ### チェーン -/
 
@@ -1021,6 +1070,18 @@ def canActivate (b : Board) (chain : List ChainLink) (l : ChainLink) : Except St
     | none => throw "魔法・罠ゾーンのカード1枚を対象にする"
   | .revive _ => unless (reviveOk b l).isSome do throw "蘇生できるモンスターがいない、またはゾーンに空きがない"
   | .fusionSummon => unless (fusionPlan b l).isSome do throw "融合召喚の条件を満たしていない"
+  | .equipOppMonster =>
+    match l.src, l.targets with
+    | some s, [u] =>
+      match b.findMon u with
+      | some (w, m) =>
+        unless w = l.owner.other ∧ m.pos ≠ .faceDownDefense do
+          throw "相手フィールドの表側表示モンスター1体を対象にする"
+      | none => throw "対象が存在しない"
+      if (b.get l.owner).hasMonEquip s then throw "この効果で装備できるモンスターは1体のみ"
+      unless (b.get l.owner).backrow.length + ownST chain l.owner < spellTrapZones do
+        throw "魔法・罠ゾーンに空きがない"
+    | _, _ => throw "相手フィールドの表側表示モンスター1体を対象にする"
   | .destroyAttacker | .negateAttack =>
     match b.attack with
     | some bt =>
@@ -1112,12 +1173,16 @@ def resolveLink (c : Ctx) (b : Board) (l : ChainLink) : Board :=
     | _ => toGrave b l
   | _ => toGrave b l
 
+/-- ブロック l を処理するときのコンテキスト。l とその下（`ls`）にある、l のコントローラーの魔法・罠の数を
+`below` に入れる（それらは魔法・罠ゾーンを使っている） -/
+def Ctx.at (c : Ctx) (l : ChainLink) (ls : List ChainLink) : Ctx := { c with below := ownST (l :: ls) l.owner }
+
 /-- チェーンを上（最後に積まれたブロック）から順に解決する。
 `neg` はこのブロックの発動が無効にされたかどうか。 -/
 def resolveChain (c : Ctx) : Board → Bool → List ChainLink → Board
   | b, _, [] => b
   | b, neg, l :: rest =>
-    resolveChain c (if neg then toGrave b l else resolveLink c b l) (!neg && l.eff.isNegate) rest
+    resolveChain c (if neg then toGrave b l else resolveLink (c.at l rest) b l) (!neg && l.eff.isNegate) rest
 
 /-- チェーンにブロックを積む。優先権とスペルスピードを確認する。 -/
 def pushLink (s : ChainState) (b : Board) (l : ChainLink) : Except String ChainState := do
@@ -1678,23 +1743,18 @@ theorem normalSummon_needs_priority (c : Ctx) (s s' : ChainState) (h : Nat) (ts 
   repeat' split at hok
   all_goals simp_all [Except.map, throw, throwThe, MonadExceptOf.throw]
 
-/-- **チェーンは逆順に解決される**：無効化を含まないチェーンは、
-最後に積まれたブロック（リストの先頭）から1つずつ解決される -/
-theorem resolveChain_lifo (c : Ctx) (b : Board) (ls : List ChainLink)
-    (hn : ∀ l ∈ ls, l.eff.isNegate = false) :
-    resolveChain c b false ls = ls.foldl (resolveLink c) b := by
-  induction ls generalizing b with
-  | nil => rfl
-  | cons l rest ih =>
-    simp only [resolveChain, List.foldl, hn l (by simp), Bool.not_false, Bool.true_and,
-      Bool.false_eq_true, ite_false]
-    exact ih _ (fun x hx => hn x (by simp [hx]))
+/-- **チェーンは逆順に解決される**：発動を無効にしないブロックの後は、
+最後に積まれたブロック（リストの先頭）から順に解決が続く -/
+theorem resolveChain_lifo (c : Ctx) (b : Board) (l : ChainLink) (rest : List ChainLink)
+    (hn : l.eff.isNegate = false) :
+    resolveChain c b false (l :: rest) = resolveChain c (resolveLink (c.at l rest) b l) false rest := by
+  simp [resolveChain, hn]
 
 /-- **無効にされたブロックは効果を適用せずに墓地へ送られる** -/
 theorem negated_link_skipped (c : Ctx) (b : Board) (n l : ChainLink) (rest : List ChainLink)
     (hn : n.eff.isNegate = true) :
     resolveChain c b false (n :: l :: rest) =
-      resolveChain c (toGrave (resolveLink c b n) l) false rest := by
+      resolveChain c (toGrave (resolveLink (c.at n (l :: rest)) b n) l) false rest := by
   simp [resolveChain, hn]
 
 /-! ### 効果の無効化（スキルドレイン）の定理 -/
@@ -1826,10 +1886,14 @@ def sacredCrane : MonsterCard :=
 def jinzo : MonsterCard :=
   { name := "人造人間－サイコ・ショッカー", level := 6, atk := 2400, dfs := 1500, attr := .dark,
     race := .machine, effects := [.continuous .noTrapActivation, .continuous .negateTraps] }
-/-- 相手フィールドの表側表示モンスターの効果を無効にする（特殊召喚の条件・装備の効果は省略） -/
+/-- 通常召喚できず、自分フィールドのモンスター3体をリリースした場合のみ特殊召喚できる。
+相手フィールドの表側表示モンスターの効果を無効にする。1ターンに1度、自分メインフェイズに相手フィールドの
+表側表示モンスター1体を対象として、装備カード扱いとしてこのカードに装備できる（1体のみ）。
+このカードの攻撃力は、この効果で装備したモンスターの元々の攻撃力の半分アップする -/
 def bloo : MonsterCard :=
   { name := "D－HERO Bloo－D", level := 8, atk := 1900, dfs := 600, attr := .dark,
-    race := .warrior, effects := [.specialOnly 3, .continuous .negateOppMonsterEffects] }
+    race := .warrior,
+    effects := [.specialOnly 3, .continuous .negateOppMonsterEffects, .ignition .free .equipOppMonster] }
 
 -- エクストラデッキのモンスター
 def bSkullDragon : MonsterCard :=
@@ -2680,6 +2744,53 @@ def blooDestroyed : Except String Game :=
 #guard_msgs in
 #eval (blooDestroyed >>= (play · (resolve (.activateSpell 0 { grave := some (.one, 3) })))).map
   (fun g => names g.board.p1.monsters)
+
+/-- D－HERO Bloo－D の装備の効果。
+P1：フィールドにモンスター3体、手札に Bloo－D。P2：サイコ・ショッカー（デーモンの斧を装備） -/
+def blooEquipStart : Game where
+  board := { p1 := { deck := [.monster kuriboh], hand := [.monster bloo],
+                     monsters := [fm 0 kuriboh, fm 1 kuriboh, fm 2 kuriboh] },
+             p2 := { deck := [.monster kuriboh], monsters := [fm 3 jinzo],
+                     backrow := [{ card := axeOfDespair, setTurn := 0, faceUp := true, equipTo := some 3 }] },
+             nextUid := 4 }
+  turn := 1
+  active := .one
+  phase := .main1
+
+/-- Bloo－D を特殊召喚し、ショッカーを装備カード扱いとして装備する -/
+def blooEquipped : Except String Game :=
+  play blooEquipStart ([.specialSummon 0 [0, 1, 2]] ++ resolve (.activateMonster .one 0 2 { targets := [(.two, 0)] }))
+
+-- ショッカーは P1 の魔法・罠ゾーンへ移り、デーモンの斧は墓地へ。Bloo－D の攻撃力は 1900 + 2400 / 2 = 3100
+/-- info: Except.ok ([], ["人造人間－サイコ・ショッカー"], ["デーモンの斧"], some 3100) -/
+#guard_msgs in
+#eval blooEquipped.map fun g =>
+  (names g.board.p2.monsters, g.board.p1.backrow.map (·.card.name), g.board.p2.grave.map (·.name),
+   g.board.p1.monsters.head?.map (g.board.atkOf .one ·))
+
+-- 装備カード扱いのモンスターの永続効果は適用されない（罠を発動できる）
+/-- info: Except.ok false -/
+#guard_msgs in
+#eval blooEquipped.map (·.board.trapsLocked)
+
+-- 1ターンに1度
+/-- info: Except.error "この効果は1ターンに1度しか使えない" -/
+#guard_msgs in
+#eval (blooEquipped >>= (play · [.activateMonster .one 0 2 { targets := [(.two, 0)] }])).map (fun _ => ())
+
+/-- 装備できるのは1体のみ（ターンが変わっても）。P2 がクリボーを召喚し、P1 のターンに戻る -/
+def blooEquipAgain : Except String Game :=
+  blooEquipped >>= (play · (toP2Main ++ [.normalSummon 0 []] ++ toP2Main))
+
+/-- info: Except.error "この効果で装備できるモンスターは1体のみ" -/
+#guard_msgs in
+#eval (blooEquipAgain >>= (play · [.activateMonster .one 0 2 { targets := [(.two, 0)] }])).map (fun _ => ())
+
+-- 相手のモンスターしか対象にできない
+/-- info: Except.error "相手フィールドの表側表示モンスター1体を対象にする" -/
+#guard_msgs in
+#eval (play blooEquipStart [.specialSummon 0 [0, 1, 2], .activateMonster .one 0 2 { targets := [(.one, 0)] }]).map
+  (fun _ => ())
 
 end Demo
 

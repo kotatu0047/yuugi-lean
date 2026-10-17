@@ -94,6 +94,15 @@ theorem Board.tp_detachAllAux (ms : List FieldMonster) (acc : Board × List Fiel
   dsimp only
   rw [foldl_tp _ _ (fun _ _ => Board.tp_toGraveMon _ _ _), foldl_tp _ _ (fun _ _ => Board.tp_modify _ _ _)]
 
+@[simp] theorem Board.tp_equipMon (b : Board) (v : PlayerId) (s u t : Nat) :
+    (b.equipMon v s u t).turnPlayer = b.turnPlayer := by
+  unfold Board.equipMon
+  split
+  · rename_i b' w m h
+    have := Board.tp_detach h
+    simp [this]
+  · rfl
+
 @[simp] theorem Board.tp_applyEffect (c : Ctx) (l : ChainLink) (b : Board) :
     (applyEffect c l b).turnPlayer = b.turnPlayer := by
   unfold applyEffect

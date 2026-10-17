@@ -302,6 +302,26 @@ theorem Player.Good.heal {p : Player} (h : p.Good) (n : Nat) : (p.heal n).Good :
 
 /-! ### 効果 -/
 
+theorem Board.Good.equipMon {b : Board} (h : b.Good) (v : PlayerId) (s u t : Nat) : (b.equipMon v s u t).Good := by
+  unfold Board.equipMon
+  split
+  · rename_i b1 w m hd
+    obtain ⟨h', hmc, hmo⟩ := h.detach hd
+    have h2 : (b1.modify w fun p => { p with grave := p.grave ++ m.overlays }).Good := by
+      have hp := h'.get w
+      refine h'.modify w ⟨hp.1, hp.2.1, hp.2.2.1, hp.2.2.2.1, fun x hx => ?_, hp.2.2.2.2.2⟩
+      rcases List.mem_append.mp hx with hx | hx
+      · exact hp.2.2.2.2.1 x hx
+      · exact hmo x hx
+    generalize (b1.modify w fun p => { p with grave := p.grave ++ m.overlays }) = b2 at h2
+    refine Board.Good.withClock ?_ _
+    have hp := h2.get v
+    refine h2.modify v ⟨hp.1, hp.2.1, hp.2.2.1, fun x hx => ?_, hp.2.2.2.2.1, hp.2.2.2.2.2⟩
+    rcases List.mem_append.mp hx with hx | hx
+    · exact hp.2.2.2.1 x hx
+    · simp only [List.mem_singleton] at hx; subst hx; exact hmc
+  · exact h
+
 /-- **効果を適用しても、どのカードも条件を満たす** -/
 theorem Board.Good.applyEffect {b : Board} (h : b.Good) (c : Ctx) (l : ChainLink) : (applyEffect c l b).Good := by
   unfold YGO.applyEffect
@@ -394,6 +414,9 @@ theorem Board.Good.applyEffect {b : Board} (h : b.Good) (c : Ctx) (l : ChainLink
         · simp only [List.mem_singleton] at hx; subst hx; exact hp.1 _ (List.mem_of_getElem? hm)
       next => exact h
     next => exact h
+  case equipOppMonster =>
+    repeat' split
+    all_goals first | exact h | exact h.equipMon _ _ _ _
 
 /-! ### チェーンの解決 -/
 
@@ -457,7 +480,7 @@ theorem Board.Good.resolveChain {b : Board} (h : b.Good) (c : Ctx) {ls : List Ch
     have hr : ChainGood rest := fun x hx => hl x (List.mem_cons_of_mem _ hx)
     split
     · exact ih (h.toGrave hl0) hr _
-    · exact ih (h.resolveLink c hl0) hr _
+    · exact ih (h.resolveLink _ hl0) hr _
 
 /-! ### 戦闘 -/
 

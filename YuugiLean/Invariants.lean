@@ -350,6 +350,20 @@ theorem Board.count_set_eq (b : Board) (w : PlayerId) (p : Player) (hp : p.count
     (b.set w p).count = b.count := by
   have := b.count_set w p; omega
 
+theorem Board.count_modify_add (b : Board) (w : PlayerId) (f : Player → Player) (n : Nat)
+    (hf : (f (b.get w)).count = (b.get w).count + n) : (b.modify w f).count = b.count + n := by
+  have := b.count_modify w f; omega
+
+theorem Board.count_equipMon (b : Board) (v : PlayerId) (s u t : Nat) : (b.equipMon v s u t).count = b.count := by
+  unfold Board.equipMon
+  split
+  · rename_i b1 w m hd
+    have h0 := Board.count_detach hd
+    rw [Board.count_clock, Board.count_modify_add _ _ _ 1 (by simp [Player.count]; omega),
+      Board.count_modify_add _ _ _ m.overlays.length (by simp [Player.count]; omega)]
+    omega
+  · rfl
+
 /-- **効果を適用してもカードの総数は変わらない** -/
 theorem Board.count_applyEffect (c : Ctx) (l : ChainLink) (b : Board) :
     (applyEffect c l b).count = b.count := by
@@ -447,6 +461,9 @@ theorem Board.count_applyEffect (c : Ctx) (l : ChainLink) (b : Board) :
         omega
       next => rfl
     next => rfl
+  case equipOppMonster =>
+    repeat' split
+    all_goals first | rfl | exact Board.count_equipMon _ _ _ _ _
 
 /-! ### チェーンの解決 -/
 
@@ -1239,6 +1256,14 @@ theorem Player.monsters_drawN {n : Nat} {p p' : Player} (h : p.drawN n = some p'
 theorem Player.monsters_drawOne {p p' : Player} (h : p.drawOne = some p') : p'.monsters = p.monsters :=
   Player.monsters_drawN (n := 1) (by simp [Player.drawN, h])
 
+theorem Board.shrink_equipMon (b : Board) (v : PlayerId) (s u t : Nat) : b.Shrink (b.equipMon v s u t) := by
+  unfold Board.equipMon
+  split
+  · rename_i b1 w m hd
+    refine (Board.shrink_detach hd).trans (Board.Shrink.same ?_ ?_ ?_) <;>
+      cases w <;> cases v <;> simp [Board.modify, Board.set, Board.get]
+  · exact Board.Shrink.refl _
+
 /-- **効果を適用しても uid は重複しない** -/
 theorem Board.uidOK_applyEffect {c : Ctx} {l : ChainLink} {b : Board} (h : b.UidOK) :
     (applyEffect c l b).UidOK := by
@@ -1301,6 +1326,9 @@ theorem Board.uidOK_applyEffect {c : Ctx} {l : ChainLink} {b : Board} (h : b.Uid
       · exact h.shrink (Board.shrink_set _ _ _ (by rfl))
       · exact h
     · exact h
+  case equipOppMonster =>
+    repeat' split
+    all_goals first | exact h | exact h.shrink (Board.shrink_equipMon _ _ _ _ _)
 
 theorem Board.UidOK.same {b b' : Board} (h : b.UidOK) (h1 : b'.p1 = b.p1) (h2 : b'.p2 = b.p2)
     (hn : b'.nextUid = b.nextUid) : b'.UidOK := h.shrink (Board.Shrink.with h1 h2 hn)
@@ -1614,10 +1642,6 @@ theorem reachable_uidOK {g : Game} (hr : Reachable g) : g.UidOK := by
 
 def Player.mainCnt (p : Player) : Nat := (p.monsters.filter (fun m => !m.emz)).length
 def Player.emzCnt (p : Player) : Nat := (p.monsters.filter (·.emz)).length
-
-/-- チェーン上の、そのプレイヤーの魔法・罠（魔法・罠ゾーンを使っている） -/
-def ownST (ch : List ChainLink) (v : PlayerId) : Nat :=
-  (ch.filter (fun l => decide (l.owner = v) && !l.mon)).length
 
 /-- メインモンスターゾーン・エクストラモンスターゾーンの上限と、魔法・罠ゾーンの上限 B -/
 def Board.Bounded (b : Board) (B : PlayerId → Nat) : Prop :=
@@ -1934,8 +1958,33 @@ theorem reviveOk_mainFree {b : Board} {l : ChainLink} {w : PlayerId} {i : Nat} {
   · simp at h
 
 /-- **効果を適用してもゾーンの上限を超えない** -/
+theorem Board.Bounded.equipMon {b : Board} {B : PlayerId → Nat} (h : b.Bounded B) {v : PlayerId}
+    {s u t : Nat} (hv : (b.get v).backrow.length < B v) : (b.equipMon v s u t).Bounded B := by
+  unfold Board.equipMon
+  split
+  · rename_i b1 w m hd
+    have hd1 := Board.dec_detach hd
+    have h1 : (b1.modify w fun p => { p with grave := p.grave ++ m.overlays }).Bounded B :=
+      (h.dec hd1).modify_same rfl (Nat.le_refl _)
+    have hv1 : ((b1.modify w fun p => { p with grave := p.grave ++ m.overlays }).get v).backrow.length < B v := by
+      have := (hd1 v).2.2
+      have e : ((b1.modify w fun p => { p with grave := p.grave ++ m.overlays }).get v).backrow =
+          (b1.get v).backrow := by
+        by_cases hw : v = w
+        · subst hw; rw [Board.get_modify_same]
+        · rw [Board.get_modify_other _ _ _ _ hw]
+      rw [e]; omega
+    generalize (b1.modify w fun p => { p with grave := p.grave ++ m.overlays }) = b2 at h1 hv1
+    apply Board.Bounded.with_clock
+    intro x
+    by_cases hx : x = v
+    · subst hx; rw [Board.get_modify_same]; exact ⟨(h1 x).1, (h1 x).2.1, by simp; omega⟩
+    · rw [Board.get_modify_other _ _ _ _ hx]; exact h1 x
+  · exact h
+
+/-- 魔法・罠ゾーンの上限は保たれる。`hB`：チェーン上のブロックの分を合わせて、上限が魔法・罠ゾーンの数以上 -/
 theorem Board.Bounded.applyEffect {c : Ctx} {l : ChainLink} {b : Board} {B : PlayerId → Nat}
-    (h : b.Bounded B) : (applyEffect c l b).Bounded B := by
+    (h : b.Bounded B) (hB : spellTrapZones ≤ B l.owner + c.below) : (applyEffect c l b).Bounded B := by
   unfold YGO.applyEffect
   cases he : l.eff <;> simp only
   case noop => exact h
@@ -2001,18 +2050,23 @@ theorem Board.Bounded.applyEffect {c : Ctx} {l : ChainLink} {b : Board} {B : Pla
       · exact h.set_same (by rfl) (by simp)
       · exact h
     · exact h
+  case equipOppMonster =>
+    repeat' split
+    all_goals first
+      | exact h
+      | (rename_i hc; exact h.equipMon (by have := hc.2.2.2.2.1; omega))
 
 /-- 魔法・罠ゾーンに戻るカードの分だけ上限を増やす -/
 def addST (B : PlayerId → Nat) (l : ChainLink) (v : PlayerId) : Nat :=
   B v + if decide (l.owner = v) && !l.mon then 1 else 0
 
 theorem Board.Bounded.resolveLink {c : Ctx} {b : Board} {l : ChainLink} {B : PlayerId → Nat}
-    (h : b.Bounded B) : (resolveLink c b l).Bounded (addST B l) := by
+    (h : b.Bounded B) (hB0 : spellTrapZones ≤ B l.owner + c.below) : (resolveLink c b l).Bounded (addST B l) := by
   have hB : ∀ v, B v ≤ addST B l v := fun v => by simp [addST]
   have hA : (if b.effectNegated l then b else YGO.applyEffect c l b).Bounded B := by
     split
     · exact h
-    · exact h.applyEffect
+    · exact h.applyEffect hB0
   unfold YGO.resolveLink
   simp only
   generalize (if b.effectNegated l then b else YGO.applyEffect c l b) = b1 at hA
@@ -2055,18 +2109,20 @@ theorem ownST_cons (l : ChainLink) (ls : List ChainLink) (v : PlayerId) :
   unfold ownST; simp only [List.filter_cons]; split <;> simp_all; omega
 
 theorem Board.Bounded.resolveChain {c : Ctx} (ls : List ChainLink) {b : Board} (neg : Bool) {B : PlayerId → Nat}
-    (h : b.Bounded B) : (YGO.resolveChain c b neg ls).Bounded (fun v => B v + ownST ls v) := by
+    (h : b.Bounded B) (hB : ∀ v, spellTrapZones ≤ B v + ownST ls v) :
+    (YGO.resolveChain c b neg ls).Bounded (fun v => B v + ownST ls v) := by
   induction ls generalizing b neg B with
   | nil => simpa [YGO.resolveChain, ownST] using h
   | cons l rest ih =>
     simp only [YGO.resolveChain]
-    have h1 : (if neg then toGrave b l else YGO.resolveLink c b l).Bounded (addST B l) := by
+    have h1 : (if neg then toGrave b l else YGO.resolveLink (c.at l rest) b l).Bounded (addST B l) := by
       split
       · unfold toGrave; split
         · exact h.mono (fun v => by simp [addST])
         · exact (h.modify_same rfl (Nat.le_refl _)).mono (fun v => by simp [addST])
-      · exact h.resolveLink
-    refine (ih _ h1).mono (fun v => ?_)
+      · exact h.resolveLink (hB l.owner)
+    refine (ih _ h1 (fun v => ?_)).mono (fun v => ?_)
+    · have := hB v; simp only [addST, ownST_cons] at this ⊢; omega
     simp only [addST, ownST_cons]; omega
 
 theorem Board.Bounded.performBattle (c : Ctx) {b : Board} {B : PlayerId → Nat} (h : b.Bounded B) :
@@ -2275,7 +2331,8 @@ theorem zone_passAct (c : Ctx) {s : ChainState} (hs : ZoneOK s.board s.chain) :
       rw [he] at hs
       refine ZoneOK.of_bounded (B := full) ((hs.bounded.mono (fun v => by simp [ownST_nil])).performBattle c)
         (fun v => by simp [ownST_nil])
-    · refine ZoneOK.of_bounded (hs.bounded.resolveChain s.chain false) (fun v => ?_)
+    · refine ZoneOK.of_bounded (hs.bounded.resolveChain s.chain false
+        (fun v => by have := hs.ownST_le v; omega)) (fun v => ?_)
       simp only [ownST_nil]; have := hs.ownST_le v; omega
   · exact hs
 
