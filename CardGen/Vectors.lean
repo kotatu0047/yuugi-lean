@@ -1,4 +1,5 @@
 import CardGen.Sample
+import CardGen.Play
 
 /-!
 # 差分テスト用のテストベクトル
@@ -10,6 +11,8 @@ C# のゲームエンジンが Lean の定義と同じ結果を出すかを確�
 - `check`：形式の検査（`Game.check`）。誤りの文章も一致させる
 - `destroy`：破壊の動き（`PState.destroy`）
 - `boards`：盤面の無効の関係（`instRel`）と判定の手続きの分類（`analyzeBoard`）
+- `play`：小さなルール（`playRules`）での対戦。開始時の状態から、選んだ動きを `State.step?` で進める
+  （できない動きは `null`）
 
 カードは `cards` の名前で参照する。
 -/
@@ -89,6 +92,38 @@ def checkCases : List Game :=
     { g with cards := [{ Sample.thunderbolt with effects := [.activated [.destroy { Sample.sel [] .opp with types := [] }]] }] },
     { g with cards := [{ Sample.skillDrain with effects := [.negate (Sample.sel ["融合"] .both)] }] } ]
 
+/-- 対戦のテスト用の小さなルール（デッキ8枚・初期手札3枚） -/
+def playRules : Rules := { Sample.rules with deckSize := 8, handSize := 3 }
+
+def stateJson (g : State) : Json := json% [$(pstateJson (g true)), $(pstateJson (g false))]
+
+def choiceJson : Choice → Json
+  | .draw p => json% {kind: "draw", player: $(p)}
+  | .place p h z up => json% {kind: "place", player: $(p), hand: $(h), zone: $(z), faceUp: $(up)}
+  | .resolve p k e apply => json% {kind: "resolve", player: $(p), field: $(k), effect: $(e), apply: $(apply)}
+
+/-- 動きを1つ選ぶ（できない動きも混ぜる） -/
+def Rand.choice (g : State) : Rand Choice := do
+  let p ← Rand.bool
+  match ← Rand.next 4 with
+  | 0 => return .draw p
+  | 1 | 2 =>
+    let h ← Rand.next ((g p).hand.length + 1)
+    -- 置けるゾーンを選びやすくする
+    let ok := match (g p).hand[h]? with
+      | some c => (List.range playRules.zones.length).filter fun i =>
+          (playRules.zones[i]?.map fun z => z.role == .plain && z.admits.contains c.type).getD false
+      | none => []
+    let z ← if ok.isEmpty || (← Rand.next 4) == 0 then Rand.next (playRules.zones.length + 1) else Rand.pick ok
+    return .place p h z (← Rand.bool)
+  | _ =>
+    -- 魔法を探して発動することが多くなるように、フィールドにあるカードを選びやすくする
+    let n := (g p).field.length
+    let k ← if n == 0 then pure 0 else do
+      let spells := (List.range n).filter fun i => ((g p).field[i]?.map (·.card.type == "魔法")).getD false
+      if spells.isEmpty || (← Rand.next 4) == 0 then Rand.next (n + 1) else Rand.pick spells
+    return .resolve p k (if (← Rand.next 5) == 0 then 1 else 0) ((← Rand.next 4) != 0)
+
 def vectors : Json := Id.run do
   let (j, _) := (do
     let selector ← Rand.list 300 do
@@ -114,20 +149,22 @@ def vectors : Json := Id.run do
       let rel := (List.range n).map fun y => (List.range n).map fun x => instRel insts y x
       return json% {insts: $(insts.map instJson), rel: $(rel), verdict: $(verdictName (analyzeBoard insts))}
     let check := checkCases.map fun g => json% {game: $(toJson g), errors: $(g.check)}
+    let play ← Rand.list 40 do
+      let d1 ← Rand.list playRules.deckSize (Rand.pick vecCards)
+      let d2 ← Rand.list playRules.deckSize (Rand.pick vecCards)
+      let g0 := start playRules fun p => if p then d1 else d2
+      let mut g := g0
+      let mut steps : Array Json := #[]
+      for _ in [0:40] do
+        let ch ← Rand.choice g
+        let next := g.step? playRules ch
+        steps := steps.push (json% {choice: $(choiceJson ch), result: $(next.map stateJson)})
+        g := next.getD g
+      return json% {decks: [$(d1.map (·.name)), $(d2.map (·.name))], start: $(stateJson g0), steps: $(steps)}
     return json% {version: 1, rules: $(toJson Sample.rules), cards: $(toJson vecCards),
-                  selector: $(selector), check: $(check), destroy: $(destroy), boards: $(boards)}
+                  selector: $(selector), check: $(check), destroy: $(destroy), boards: $(boards),
+                  playRules: $(toJson playRules), play: $(play)}
     : Rand Json).run 20261018
   return j
-
-end CardGen
-
-namespace CardGen
-
--- `csharp/vectors.json` は、ここで作るテストベクトルと同じ内容（Lean の定義を変えたら書き出し直す）
-#guard_msgs in
-#eval show IO Unit from do
-  let s ← IO.FS.readFile "csharp/vectors.json"
-  unless s == vectors.pretty ++ "\n" do
-    throw (IO.userError "csharp/vectors.json が古いです。lake exe cardgen --vectors csharp/vectors.json で書き出し直してください")
 
 end CardGen

@@ -85,6 +85,44 @@ public class DifferentialTests
         }
     }
 
+    static Choice ParseChoice(JToken c) => (string)c["kind"] switch
+    {
+        "draw" => Choice.Draw((bool)c["player"]),
+        "place" => Choice.Place((bool)c["player"], (int)c["hand"], (int)c["zone"], (bool)c["faceUp"]),
+        _ => Choice.Resolve((bool)c["player"], (int)c["field"], (int)c["effect"], (bool)c["apply"]),
+    };
+
+    static JArray MatchJson(MatchState g) => new JArray(StateJson(g.P1), StateJson(g.P2));
+
+    [Fact]
+    public void Play_like_Lean()
+    {
+        var rules = IrJson.ParseRules(V["playRules"]);
+        int games = 0, steps = 0;
+        foreach (var game in V["play"])
+        {
+            var decks = game["decks"].Select(d => d.Select(x => Cards[(string)x]).ToList()).ToList();
+            var g = MatchState.Start(rules, decks[0], decks[1]);
+            Assert.True(JToken.DeepEquals(game["start"], MatchJson(g)), "開始時の状態が違います");
+            foreach (var st in game["steps"])
+            {
+                var next = g.Step(rules, ParseChoice(st["choice"]));
+                if (st["result"].Type == JTokenType.Null)
+                    Assert.True(next == null, $"Lean ではできない動きが C# ではできました：{st["choice"]}");
+                else
+                {
+                    Assert.True(next != null, $"Lean ではできる動きが C# ではできません：{st["choice"]}");
+                    Assert.True(JToken.DeepEquals(st["result"], MatchJson(next)), $"結果が違います：{st["choice"]}");
+                    g = next;
+                }
+                steps++;
+            }
+            games++;
+        }
+        Assert.Equal(40, games);
+        Assert.Equal(1600, steps);
+    }
+
     [Fact]
     public void Sample_json_round_trips()
     {

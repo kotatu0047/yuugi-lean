@@ -2,9 +2,11 @@
 import CardGen.IR
 import CardGen.Model
 import CardGen.Inv
+import CardGen.Play
 import CardGen.Claims
 import CardGen.Negation
 import CardGen.Explore
 import CardGen.Report
 import CardGen.Vectors
+import CardGen.VectorsCheck
 import CardGen.Sample

@@ -16,3 +16,5 @@ cd csharp/CardGen.Tests && dotnet test
 | `PState.Destroy` | `PState.destroy`（`CardGen/Model.lean`） |
 | `Negation.InstRel` | `instRel`（`CardGen/Negation.lean`） |
 | `Negation.AnalyzeBoard` | `analyzeBoard`（`CardGen/Explore.lean`） |
+| `MatchState.Start` / `MatchState.Step` | `start` / `State.step?`（`CardGen/Play.lean`。`step?_sound` で証明に使う動きの関係と結びついている） |
+| `GraphDoc`（ノードのグラフ）・`Report`（検査ツールの報告） | エディタ用（Lean 側に対応なし） |

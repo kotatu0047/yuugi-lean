@@ -14,10 +14,14 @@
 
 - `CardGen/IR.lean`：中間表現（説明は `CardGen/中間表現.md`、見本は `CardGen/sample.json`）
 - `CardGen/Model.lean`・`CardGen/Inv.lean`：対戦のモデルと、どの盤面でも成り立つ盤面の制約
+- `CardGen/Play.lean`：実行できる対戦の1歩と、それが証明に使う動きの関係と一致すること（`step?_sound`）
 - `CardGen/Claims.lean`：ルールから導く性質（★）と、それがすべての対戦で成り立つことの証明（`derived_valid`）
 - `CardGen/Negation.lean`：無効の関係に循環がなければ判定が必ず止まり結果が1通りであることの証明（`negation_settles`）
 - `CardGen/Explore.lean`：循環があるときの総当たりの検査
 - `CardGen/Cli.lean`：検査ツール
+- `CardGen/Vectors.lean`：C# との差分テスト用のテストベクトル
+
+`csharp/`：Unity で使う C# 実装と差分テスト。`unity/CardGenEditor/`：エディタ（実行時のアプリ）
 
 ```
 lake build
