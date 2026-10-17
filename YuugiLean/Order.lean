@@ -66,7 +66,8 @@ theorem map_modify {α β : Type} (L : List α) (i : Nat) (f : α → α) (g : �
 
 /-- 位置ごとの性質が同じなら、有効に戻せるカードの位置も同じ -/
 theorem returnCands_congr {L1 L2 : List AuraSrc} {tp : PlayerId} (hl : L1.length = L2.length)
-    (h1 : ∀ j : Nat, L1[j]?.any (fun s => !s.on && !YGO.beatenIn L1 s) = L2[j]?.any (fun s => !s.on && !YGO.beatenIn L2 s))
+    (h1 : ∀ j : Nat, L1[j]?.any (fun s => !s.on && !YGO.beatenIn L1 s) =
+      L2[j]?.any (fun s => !s.on && !YGO.beatenIn L2 s))
     (h2 : ∀ j : Nat, L1[j]?.any AuraSrc.inert = L2[j]?.any AuraSrc.inert)
     (h3 : ∀ j : Nat, L1[j]?.any (fun s : AuraSrc => s.who == tp) = L2[j]?.any (fun s : AuraSrc => s.who == tp)) :
     YGO.returnCands L1 tp = YGO.returnCands L2 tp := by

@@ -16,7 +16,8 @@ import YuugiLean.YuGiOh
     * 有効なカード同士は互いに無効にしない（`settled_consistent`）
     * 選択待ちでなければ、無効なカードには、それを無効にする有効なカードがある（`negated_has_reason`）
     * 選択待ちでなければ、どのカードにも無効にされないカードは有効（`unbeaten_effective`）
-  * 判定が必ず決まることは `Settle.lean`（`settle_settled`、`reachable_settled`）
+  * 判定が必ず決まることは `Settle.lean`（`settle_settled`、`reachable_settled`）。デッキのカードから導くのは
+    `CardInv.lean`（`simpleReachable_settled`）
 -/
 
 namespace YGO

@@ -6,5 +6,6 @@ import YuugiLean.Invariants
 import YuugiLean.Flow
 import YuugiLean.Settle
 import YuugiLean.Order
+import YuugiLean.CardInv
 import YuugiLean.TurnPlayer
 import YuugiLean.Quad
