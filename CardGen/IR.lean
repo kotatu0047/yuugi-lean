@@ -101,6 +101,8 @@ structure Card where
   effects : List Effect
 deriving Repr, DecidableEq, FromJson, ToJson
 
+instance : Inhabited Card := ⟨⟨"", "", [], []⟩⟩
+
 /-- エディタが出力する中間表現の全体 -/
 structure Game where
   /-- 中間表現の形式の版。互換性のない変更で増やす -/

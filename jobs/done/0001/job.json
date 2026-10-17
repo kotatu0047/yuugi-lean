@@ -1,0 +1,113 @@
+{"title": "自分のフィールド上の闇属性のモンスターは最大5枚",
+ "kind": "customClaim",
+ "id": "0001",
+ "header":
+ "import CardGen\nopen CardGen\n\n/-! 証明のジョブ 0001：自分のフィールド上の闇属性のモンスターは最大5枚 -/\n\nnamespace Job_0001\n\ndef rules : Rules := \n  { cardTypes := [\"モンスター\", \"魔法\", \"罠\"],\n    deckSize := 40,\n    handSize := 5,\n    zones := [{ name := \"モンスターカードゾーン\",\n                count := 5,\n                capacity := CardGen.Capacity.one,\n                role := CardGen.ZoneRole.plain,\n                onField := true,\n                admits := [\"モンスター\"] },\n              { name := \"魔法罠ゾーン\",\n                count := 5,\n                capacity := CardGen.Capacity.one,\n                role := CardGen.ZoneRole.plain,\n                onField := true,\n                admits := [\"魔法\", \"罠\"] },\n              { name := \"デッキゾーン\",\n                count := 1,\n                capacity := CardGen.Capacity.many,\n                role := CardGen.ZoneRole.deck,\n                onField := false,\n                admits := [\"モンスター\", \"魔法\", \"罠\"] },\n              { name := \"墓地ゾーン\",\n                count := 1,\n                capacity := CardGen.Capacity.many,\n                role := CardGen.ZoneRole.grave,\n                onField := false,\n                admits := [\"モンスター\", \"魔法\", \"罠\"] }] }\n\ndef cards : List Card := \n  [{ name := \"サンダー・ボルト\",\n     type := \"魔法\",\n     tags := [],\n     effects := [CardGen.Effect.activated\n                   [CardGen.Action.destroy\n                      { types := [\"モンスター\"],\n                        tags := [],\n                        side := CardGen.Side.opp,\n                        faceUpOnly := false,\n                        excludeSelf := false }]] },\n   { name := \"ハーピィの羽根帚\",\n     type := \"魔法\",\n     tags := [],\n     effects := [CardGen.Effect.activated\n                   [CardGen.Action.destroy\n                      { types := [\"魔法\", \"罠\"],\n                        tags := [],\n                        side := CardGen.Side.opp,\n                        faceUpOnly := false,\n                        excludeSelf := false }]] },\n   { name := \"スキルドレイン\",\n     type := \"罠\",\n     tags := [],\n     effects := [CardGen.Effect.negate\n                   { types := [\"モンスター\"],\n                     tags := [],\n                     side := CardGen.Side.both,\n                     faceUpOnly := true,\n                     excludeSelf := false }] },\n   { name := \"王宮のお触れ\",\n     type := \"罠\",\n     tags := [],\n     effects := [CardGen.Effect.negate\n                   { types := [\"罠\"],\n                     tags := [],\n                     side := CardGen.Side.both,\n                     faceUpOnly := true,\n                     excludeSelf := true }] },\n   { name := \"人造人間－サイコ・ショッカー\",\n     type := \"モンスター\",\n     tags := [\"闇属性\", \"機械族\"],\n     effects := [CardGen.Effect.negate\n                   { types := [\"罠\"],\n                     tags := [],\n                     side := CardGen.Side.both,\n                     faceUpOnly := true,\n                     excludeSelf := false }] },\n   { name := \"D－HERO Bloo－D\",\n     type := \"モンスター\",\n     tags := [\"闇属性\", \"戦士族\"],\n     effects := [CardGen.Effect.negate\n                   { types := [\"モンスター\"],\n                     tags := [],\n                     side := CardGen.Side.opp,\n                     faceUpOnly := true,\n                     excludeSelf := false }] }]\n\ndef claim : CustomClaim := \n  { title := \"自分のフィールド上の闇属性のモンスターは最大5枚\", types := [\"モンスター\"], tags := [\"闇属性\"], both := false, n := 5 }\n\n/-- 証明すべき文 -/\ndef JobStatement : Prop := claim.Statement rules cards\n\n",
+ "game":
+ {"version": 1,
+  "rules":
+  {"zones":
+   [{"role": "plain",
+     "onField": true,
+     "name": "モンスターカードゾーン",
+     "count": 5,
+     "capacity": "one",
+     "admits": ["モンスター"]},
+    {"role": "plain",
+     "onField": true,
+     "name": "魔法罠ゾーン",
+     "count": 5,
+     "capacity": "one",
+     "admits": ["魔法", "罠"]},
+    {"role": "deck",
+     "onField": false,
+     "name": "デッキゾーン",
+     "count": 1,
+     "capacity": "many",
+     "admits": ["モンスター", "魔法", "罠"]},
+    {"role": "grave",
+     "onField": false,
+     "name": "墓地ゾーン",
+     "count": 1,
+     "capacity": "many",
+     "admits": ["モンスター", "魔法", "罠"]}],
+   "handSize": 5,
+   "deckSize": 40,
+   "cardTypes": ["モンスター", "魔法", "罠"]},
+  "cards":
+  [{"type": "魔法",
+    "tags": [],
+    "name": "サンダー・ボルト",
+    "effects":
+    [{"activated":
+      {"actions":
+       [{"destroy":
+         {"target":
+          {"types": ["モンスター"],
+           "tags": [],
+           "side": "opp",
+           "faceUpOnly": false,
+           "excludeSelf": false}}}]}}]},
+   {"type": "魔法",
+    "tags": [],
+    "name": "ハーピィの羽根帚",
+    "effects":
+    [{"activated":
+      {"actions":
+       [{"destroy":
+         {"target":
+          {"types": ["魔法", "罠"],
+           "tags": [],
+           "side": "opp",
+           "faceUpOnly": false,
+           "excludeSelf": false}}}]}}]},
+   {"type": "罠",
+    "tags": [],
+    "name": "スキルドレイン",
+    "effects":
+    [{"negate":
+      {"target":
+       {"types": ["モンスター"],
+        "tags": [],
+        "side": "both",
+        "faceUpOnly": true,
+        "excludeSelf": false}}}]},
+   {"type": "罠",
+    "tags": [],
+    "name": "王宮のお触れ",
+    "effects":
+    [{"negate":
+      {"target":
+       {"types": ["罠"],
+        "tags": [],
+        "side": "both",
+        "faceUpOnly": true,
+        "excludeSelf": true}}}]},
+   {"type": "モンスター",
+    "tags": ["闇属性", "機械族"],
+    "name": "人造人間－サイコ・ショッカー",
+    "effects":
+    [{"negate":
+      {"target":
+       {"types": ["罠"],
+        "tags": [],
+        "side": "both",
+        "faceUpOnly": true,
+        "excludeSelf": false}}}]},
+   {"type": "モンスター",
+    "tags": ["闇属性", "戦士族"],
+    "name": "D－HERO Bloo－D",
+    "effects":
+    [{"negate":
+      {"target":
+       {"types": ["モンスター"],
+        "tags": [],
+        "side": "opp",
+        "faceUpOnly": true,
+        "excludeSelf": false}}}]}]},
+ "claim":
+ {"types": ["モンスター"],
+  "title": "自分のフィールド上の闇属性のモンスターは最大5枚",
+  "tags": ["闇属性"],
+  "n": 5,
+  "both": false}}

@@ -8,5 +8,6 @@ import CardGen.Negation
 import CardGen.Explore
 import CardGen.Report
 import CardGen.Vectors
+import CardGen.Custom
 import CardGen.VectorsCheck
 import CardGen.Sample
