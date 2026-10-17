@@ -4,4 +4,5 @@ import CardGen.Model
 import CardGen.Inv
 import CardGen.Claims
 import CardGen.Negation
+import CardGen.Report
 import CardGen.Sample
