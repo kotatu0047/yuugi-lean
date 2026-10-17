@@ -1,4 +1,4 @@
-import CardGen.Claims
+import CardGen.Negation
 
 /-!
 # 中間表現の見本
@@ -145,5 +145,35 @@ info: ゲーム開始時のデッキは各プレイヤー35枚 ← デッキの�
 example (decks : PlayerId → List Card) (hd : ∀ p, (decks p).length = 40) :
     ∀ c ∈ derived rules, c.prop.Valid rules decks :=
   derived_valid rules decks hd
+
+end CardGen.Sample
+
+namespace CardGen.Sample
+
+/-! ## 無効の関係の検査 -/
+
+-- 見本の6枚：4すくみの4枚の間に循環がある（お触れ・Bloo－D は別の実体どうしで無効にし合える）
+/--
+info: CardGen.NegResult.cyclic [["スキルドレイン", "王宮のお触れ", "人造人間－サイコ・ショッカー", "D－HERO Bloo－D"]]
+-/
+#guard_msgs in
+#eval checkNegation game.cards
+
+/-- 魔法の効果を無効にするモンスター（循環のない例に使う） -/
+def spellBreaker : Card :=
+  { name := "魔法無効モンスター", type := monster, tags := [],
+    effects := [.negate (sel [spell] .both (faceUpOnly := true))] }
+
+/-- スキルドレインがモンスターを、モンスターが魔法を無効にするだけなら循環はない -/
+def acyclicCards : List Card := [thunderbolt, skillDrain, spellBreaker]
+
+#guard match checkNegation acyclicCards with | .proved => true | _ => false
+
+/-- **この3枚だけが並ぶどの盤面でも、無効の判定は必ず止まり、結果は1通り** -/
+theorem acyclic_settles (insts : List Inst) (hin : ∀ a ∈ insts, a.card ∈ acyclicCards) :
+    let S := System.ofInsts insts
+    WellFounded (fun g f => S.Step f g) ∧ (∃ f, S.Stable f) ∧
+    ∀ f g, S.Stable f → S.Stable g → ∀ x < S.n, f x = g x :=
+  negation_settles (rank := rankFn acyclicCards (computeRanks acyclicCards)) (by decide) insts hin
 
 end CardGen.Sample
