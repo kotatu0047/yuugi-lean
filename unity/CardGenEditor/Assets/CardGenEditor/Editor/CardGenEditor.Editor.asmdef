@@ -1,0 +1,14 @@
+{
+  "name": "CardGenEditor.Editor",
+  "rootNamespace": "CardGen.App.EditorTools",
+  "references": ["CardGen.Core", "CardGenEditor.Runtime"],
+  "includePlatforms": ["Editor"],
+  "excludePlatforms": [],
+  "allowUnsafeCode": false,
+  "overrideReferences": false,
+  "precompiledReferences": [],
+  "autoReferenced": true,
+  "defineConstraints": [],
+  "versionDefines": [],
+  "noEngineReferences": false
+}

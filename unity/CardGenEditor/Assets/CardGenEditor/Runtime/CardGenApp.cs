@@ -1,0 +1,408 @@
+using System;
+using System.Collections;
+using System.IO;
+using System.Linq;
+using Newtonsoft.Json;
+using UnityEngine;
+using UnityEngine.TextCore.Text;
+using UnityEngine.UIElements;
+
+namespace CardGen.App
+{
+    /// <summary>
+    /// カードゲームジェネレーターのエディタ（実行時のアプリ）。
+    /// 左：ノードのキャンバス、右上：選んだノードの編集、右下：検査の結果。
+    /// 形式の検査は C# でその場で行い、★と無効の関係の検査は Lean の検査ツールに頼む。
+    /// </summary>
+    [RequireComponent(typeof(UIDocument))]
+    public sealed class CardGenApp : MonoBehaviour
+    {
+        GraphCanvas canvas;
+        Inspector inspector;
+        VisualElement results;
+        ScrollView resultsScroll;
+        Label status;
+        TextField pathField;
+        TextField commandField;
+        Report lastReport;
+        bool reportStale;
+        bool checking;
+
+        const string PathKey = "cardgen.path";
+        const string CommandKey = "cardgen.command";
+
+        void Awake()
+        {
+            var doc = GetComponent<UIDocument>();
+            if (doc.panelSettings == null) doc.panelSettings = Resources.Load<PanelSettings>("CardGenPanelSettings");
+        }
+
+        void Start()
+        {
+            var root = GetComponent<UIDocument>().rootVisualElement;
+            Build(root);
+            ApplyJapaneseFont(root);
+            LoadSample();
+            StartCoroutine(CommandLineActions());
+        }
+
+        // ---- 画面の組み立て ----
+
+        static Button MakeButton(string text, System.Action onClick)
+        {
+            var b = new Button(onClick) { text = text };
+            b.style.marginRight = 4;
+            return b;
+        }
+
+        static VisualElement Row()
+        {
+            var r = new VisualElement();
+            r.style.flexDirection = FlexDirection.Row;
+            r.style.alignItems = Align.Center;
+            return r;
+        }
+
+        void Build(VisualElement root)
+        {
+            root.style.flexGrow = 1;
+            root.style.backgroundColor = new Color(0.13f, 0.13f, 0.14f);
+            root.style.color = new Color(0.92f, 0.92f, 0.94f);
+
+            var toolbar = Row();
+            toolbar.style.paddingLeft = 8;
+            toolbar.style.paddingTop = 6;
+            toolbar.style.paddingBottom = 6;
+            toolbar.style.backgroundColor = new Color(0.18f, 0.18f, 0.2f);
+            toolbar.style.flexWrap = Wrap.Wrap;
+            toolbar.Add(MakeButton("新規", NewDoc));
+            toolbar.Add(MakeButton("見本", LoadSample));
+            pathField = new TextField { value = PlayerPrefs.GetString(PathKey, DefaultPath()) };
+            pathField.style.width = 360;
+            toolbar.Add(pathField);
+            toolbar.Add(MakeButton("開く", Open));
+            toolbar.Add(MakeButton("保存", Save));
+            var sep = new VisualElement();
+            sep.style.width = 16;
+            toolbar.Add(sep);
+            toolbar.Add(new Label("追加：") { style = { marginRight = 4 } });
+            foreach (NodeKind k in Enum.GetValues(typeof(NodeKind)))
+                if (k != NodeKind.Rules) toolbar.Add(MakeButton(Node.KindLabel(k), () => canvas.AddNode(k)));
+            toolbar.Add(MakeButton("削除", () => canvas.RemoveSelected()));
+            root.Add(toolbar);
+
+            var main = Row();
+            main.style.flexGrow = 1;
+            main.style.alignItems = Align.Stretch;
+            canvas = new GraphCanvas();
+            canvas.Selected += n => inspector.Show(n);
+            canvas.Changed += OnModelChanged;
+            main.Add(canvas);
+
+            var side = new VisualElement();
+            side.style.width = 420;
+            side.style.backgroundColor = new Color(0.16f, 0.16f, 0.18f);
+            side.style.borderLeftWidth = 1;
+            side.style.borderLeftColor = new Color(0.3f, 0.3f, 0.33f);
+            inspector = new Inspector();
+            inspector.Edited += n => { canvas.RefreshNode(n); OnModelChanged(); };
+            var inspScroll = new ScrollView();
+            inspScroll.style.height = new Length(42, LengthUnit.Percent);
+            inspScroll.Add(inspector);
+            side.Add(inspScroll);
+
+            var checkRow = Row();
+            checkRow.style.paddingLeft = 12;
+            checkRow.style.paddingTop = 6;
+            checkRow.style.paddingBottom = 6;
+            checkRow.style.borderTopWidth = 1;
+            checkRow.style.borderTopColor = new Color(0.3f, 0.3f, 0.33f);
+            var checkButton = MakeButton("Lean で検査", () => _ = RunLeanCheck());
+            checkButton.style.unityFontStyleAndWeight = FontStyle.Bold;
+            checkRow.Add(checkButton);
+            commandField = new TextField { value = PlayerPrefs.GetString(CommandKey, CheckerClient.DefaultCommand) };
+            commandField.style.flexGrow = 1;
+            commandField.style.flexShrink = 1;
+            commandField.tooltip = "検査ツールを動かすコマンド（最後の - で標準入力から読む）";
+            checkRow.Add(commandField);
+            side.Add(checkRow);
+
+            var resScroll = new ScrollView();
+            resultsScroll = resScroll;
+            resScroll.style.flexGrow = 1;
+            results = new VisualElement();
+            results.style.paddingLeft = 12;
+            results.style.paddingRight = 12;
+            results.style.paddingBottom = 12;
+            resScroll.Add(results);
+            side.Add(resScroll);
+            main.Add(side);
+            root.Add(main);
+
+            status = new Label();
+            status.style.paddingLeft = 8;
+            status.style.paddingTop = 3;
+            status.style.paddingBottom = 3;
+            status.style.fontSize = 11;
+            status.style.backgroundColor = new Color(0.1f, 0.1f, 0.11f);
+            root.Add(status);
+        }
+
+        /// <summary>既定の UI のフォントは日本語を含まないので、OS の日本語フォントを使う</summary>
+        static void ApplyJapaneseFont(VisualElement root)
+        {
+            foreach (var family in new[] { "Yu Gothic UI", "Meiryo UI", "Meiryo", "MS Gothic" })
+            {
+                try
+                {
+                    var fa = FontAsset.CreateFontAsset(family, "Regular");
+                    if (fa == null) continue;
+                    root.style.unityFontDefinition = FontDefinition.FromSDFFont(fa);
+                    return;
+                }
+                catch (Exception) { }
+            }
+        }
+
+        static string DefaultPath() =>
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "cardgame.json");
+
+        // ---- ファイル ----
+
+        void SetDoc(GraphDoc doc, string message)
+        {
+            canvas.SetDoc(doc);
+            inspector.Show(null);
+            lastReport = null;
+            OnModelChanged();
+            status.text = message;
+        }
+
+        void NewDoc()
+        {
+            var doc = new GraphDoc();
+            doc.Nodes.Add(Node.Make(1, NodeKind.Rules, 40, 40));
+            SetDoc(doc, "新しいゲームを作りました");
+        }
+
+        void LoadSample()
+        {
+            var asset = Resources.Load<UnityEngine.TextAsset>("sample");
+            SetDoc(GraphDoc.FromGame(IrJson.ParseGame(asset.text)), "見本（入力例のルールとカード6枚）を読み込みました");
+        }
+
+        void Open()
+        {
+            try
+            {
+                var path = pathField.value;
+                SetDoc(GraphDoc.FromGame(IrJson.ParseGame(File.ReadAllText(path))), $"開きました：{path}");
+                PlayerPrefs.SetString(PathKey, path);
+            }
+            catch (Exception e) { status.text = $"開けません：{e.Message}"; }
+        }
+
+        void Save()
+        {
+            try
+            {
+                var path = pathField.value;
+                var game = canvas.Doc.ToGame(out _);
+                File.WriteAllText(path, IrJson.ToJson(game).ToString(Formatting.Indented));
+                PlayerPrefs.SetString(PathKey, path);
+                status.text = $"保存しました：{path}";
+            }
+            catch (Exception e) { status.text = $"保存できません：{e.Message}"; }
+        }
+
+        // ---- 検査 ----
+
+        static Label Text(string s, int size = 12, Color? color = null, bool bold = false)
+        {
+            var l = new Label(s);
+            l.style.whiteSpace = WhiteSpace.Normal;
+            l.style.fontSize = size;
+            if (color.HasValue) l.style.color = color.Value;
+            if (bold) l.style.unityFontStyleAndWeight = FontStyle.Bold;
+            return l;
+        }
+
+        static Color StatusColor(string s) => s switch
+        {
+            "proved" => new Color(0.45f, 0.8f, 0.5f),
+            "counterexample" => new Color(0.95f, 0.45f, 0.4f),
+            "choice" => new Color(0.95f, 0.75f, 0.35f),
+            _ => new Color(0.7f, 0.7f, 0.75f),
+        };
+
+        static VisualElement Badge(string status)
+        {
+            var l = Text(Report.StatusLabel(status), 11, Color.black, true);
+            l.style.backgroundColor = StatusColor(status);
+            l.style.paddingLeft = 6;
+            l.style.paddingRight = 6;
+            l.style.marginRight = 6;
+            l.style.borderTopLeftRadius = l.style.borderTopRightRadius = l.style.borderBottomLeftRadius = l.style.borderBottomRightRadius = 3;
+            l.style.alignSelf = Align.FlexStart;
+            return l;
+        }
+
+        static void Section(VisualElement parent, string title)
+        {
+            var l = Text(title, 14, Color.white, true);
+            l.style.marginTop = 12;
+            l.style.marginBottom = 4;
+            parent.Add(l);
+        }
+
+        /// <summary>ノードが変わったら、形式の検査をその場でやり直す</summary>
+        void OnModelChanged()
+        {
+            if (lastReport != null) reportStale = true;
+            Render();
+        }
+
+        void Render()
+        {
+            results.Clear();
+            var game = canvas.Doc.ToGame(out var structure);
+            var errors = structure.Concat(Check.Game(game)).ToList();
+            canvas.SetProblems(ProblemNodes(errors));
+
+            Section(results, "形式の検査（その場で）");
+            if (errors.Count == 0) results.Add(Text("問題ありません", 12, StatusColor("proved")));
+            foreach (var e in errors) results.Add(Text("・" + e, 12, StatusColor("counterexample")));
+
+            Section(results, "Lean による検査" + (reportStale ? "（編集後は未実行）" : ""));
+            if (checking) { results.Add(Text("検査しています…")); return; }
+            if (lastReport == null) { results.Add(Text("「Lean で検査」を押すと、ルールから導いた性質（★）と無効の関係を検査します。", 12, new Color(0.7f, 0.7f, 0.75f))); return; }
+            RenderReport(lastReport);
+        }
+
+        System.Collections.Generic.IEnumerable<int> ProblemNodes(System.Collections.Generic.List<string> errors)
+        {
+            foreach (var n in canvas.Doc.Nodes)
+            {
+                var key = n.Kind == NodeKind.Card ? $"カード「{n.Card.Name}」" : n.Kind == NodeKind.Zone ? $"ゾーン「{n.Zone.Name}」" : n.Kind == NodeKind.Rules ? "ルール：" : null;
+                if (key != null && errors.Any(e => e.StartsWith(key))) yield return n.Id;
+            }
+        }
+
+        void RenderReport(Report r)
+        {
+            if (!r.Ok)
+            {
+                foreach (var e in r.Errors) results.Add(Text("・" + e, 12, StatusColor("counterexample")));
+                return;
+            }
+            results.Add(Text("★ ルールから導いた性質", 12, Color.white, true));
+            foreach (var c in r.Claims)
+            {
+                var row = Row();
+                row.style.alignItems = Align.FlexStart;
+                row.style.marginTop = 4;
+                row.Add(Badge(c.Status));
+                var col = new VisualElement();
+                col.style.flexShrink = 1;
+                col.Add(Text(c.Text, 12, Color.white));
+                col.Add(Text("根拠：" + string.Join("、", c.Grounds), 10, new Color(0.65f, 0.65f, 0.7f)));
+                row.Add(col);
+                results.Add(row);
+            }
+            if (r.Negation != null)
+            {
+                var t = Text("無効の関係", 12, Color.white, true);
+                t.style.marginTop = 10;
+                results.Add(t);
+                var row = Row();
+                row.style.alignItems = Align.FlexStart;
+                row.Add(Badge(r.Negation.Status));
+                var msg = Text(r.Negation.Message, 12, Color.white);
+                msg.style.flexShrink = 1;
+                row.Add(msg);
+                results.Add(row);
+                foreach (var g in r.Negation.Groups)
+                {
+                    var box = new VisualElement();
+                    box.style.marginTop = 6;
+                    box.style.paddingLeft = 8;
+                    box.style.borderLeftWidth = 3;
+                    box.style.borderLeftColor = StatusColor(g.Status);
+                    box.Add(Text("循環：" + string.Join(" ⇄ ", g.Cards), 12, Color.white));
+                    box.Add(Text($"[{Report.StatusLabel(g.Status)}] {g.Message}", 11, StatusColor(g.Status)));
+                    if (g.Board.Count > 0)
+                        box.Add(Text("盤面：" + string.Join("、", g.Board.Select(b => (b.Side == "self" ? "自分：" : "相手：") + b.Card)), 11, new Color(0.8f, 0.8f, 0.85f)));
+                    results.Add(box);
+                }
+            }
+        }
+
+        async System.Threading.Tasks.Task RunLeanCheck()
+        {
+            if (checking) return;
+            var game = canvas.Doc.ToGame(out var structure);
+            if (structure.Count > 0) { status.text = "つなぎ方の問題を直してから検査してください"; return; }
+            checking = true;
+            reportStale = false;
+            Render();
+            PlayerPrefs.SetString(CommandKey, commandField.value);
+            try
+            {
+                var output = await CheckerClient.Run(commandField.value, IrJson.ToJson(game).ToString(Formatting.None));
+                lastReport = Report.Parse(output);
+                status.text = "Lean による検査が終わりました";
+            }
+            catch (Exception e)
+            {
+                lastReport = null;
+                status.text = $"検査ツールを動かせません：{e.Message}";
+            }
+            checking = false;
+            Render();
+        }
+
+        // ---- コマンドライン（動作確認用）----
+        //   -cardgen-select <ノードの番号>   そのノードを選ぶ
+        //   -cardgen-check                    Lean で検査する
+        //   -cardgen-results-end              検査の結果を一番下まで送る
+        //   -cardgen-screenshot <パス>        画面を保存して終了する
+
+        static string Arg(string name)
+        {
+            var args = Environment.GetCommandLineArgs();
+            var i = Array.IndexOf(args, name);
+            return i >= 0 && i + 1 < args.Length ? args[i + 1] : null;
+        }
+
+        IEnumerator CommandLineActions()
+        {
+            var args = Environment.GetCommandLineArgs();
+            var select = Arg("-cardgen-select");
+            if (select != null && int.TryParse(select, out var id))
+            {
+                var n = canvas.Doc.Find(id);
+                if (n != null) canvas.Select(n);
+            }
+            if (args.Contains("-cardgen-check"))
+            {
+                var task = RunLeanCheck();
+                while (!task.IsCompleted) yield return null;
+            }
+            if (args.Contains("-cardgen-results-end"))
+            {
+                for (int i = 0; i < 5; i++) yield return null;
+                resultsScroll.scrollOffset = new Vector2(0, 100000);
+            }
+            var shot = Arg("-cardgen-screenshot");
+            if (shot != null)
+            {
+                for (int i = 0; i < 30; i++) yield return null;
+                yield return new WaitForEndOfFrame();
+                var tex = ScreenCapture.CaptureScreenshotAsTexture();
+                File.WriteAllBytes(shot, tex.EncodeToPNG());
+                Debug.Log($"CardGen: screenshot {tex.width}x{tex.height} -> {shot}");
+                Application.Quit();
+            }
+        }
+    }
+}

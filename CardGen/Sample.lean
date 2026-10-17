@@ -80,6 +80,9 @@ theorem game_wellFormed : game.WellFormed := by decide
   match Game.parse s with
   | .ok g => unless g == game do throw (IO.userError "sample.json が見本と違います")
   | .error e => throw (IO.userError e)
+  -- Unity のエディタが「見本」で読み込む写しも同じ内容
+  let u ← IO.FS.readFile "unity/CardGenEditor/Assets/CardGenEditor/Resources/sample.json"
+  unless u == s do throw (IO.userError "Unity の Resources/sample.json が CardGen/sample.json と違います")
 
 /-! ## 範囲の指定の例 -/
 

@@ -1,0 +1,28 @@
+@import url("unity-theme://default");
+
+/* 暗い背景に合わせて、入力欄とボタンも暗い色にする */
+.unity-button {
+    background-color: rgb(58, 58, 64);
+    color: rgb(235, 235, 240);
+    border-color: rgb(85, 85, 92);
+}
+.unity-button:hover {
+    background-color: rgb(74, 74, 82);
+}
+.unity-button:active {
+    background-color: rgb(95, 95, 105);
+}
+.unity-base-text-field__input,
+.unity-base-field__input,
+.unity-base-popup-field__input {
+    background-color: rgb(36, 36, 40);
+    color: rgb(235, 235, 240);
+    border-color: rgb(80, 80, 88);
+}
+.unity-base-field__label {
+    color: rgb(200, 200, 208);
+}
+.unity-toggle__checkmark {
+    background-color: rgb(36, 36, 40);
+    border-color: rgb(110, 110, 120);
+}
