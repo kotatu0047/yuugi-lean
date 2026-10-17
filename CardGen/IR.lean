@@ -174,6 +174,8 @@ def Zone.check (r : Rules) (z : Zone) : List String :=
     [s!"{w}：デッキや墓地の役割のゾーンは「何枚でも」にしてください"] else []) ++
   (if z.role != .plain && z.count != 1 then
     [s!"{w}：デッキや墓地の役割のゾーンはマスを1つにしてください"] else []) ++
+  (if z.role != .plain && z.onField then
+    [s!"{w}：デッキや墓地の役割のゾーンは「フィールド上」に数えないでください"] else []) ++
   (if z.role != .plain && r.cardTypes.any (!z.admits.contains ·) then
     [s!"{w}：デッキや墓地の役割のゾーンには、すべての種類のカードを置けるようにしてください"] else [])
 
