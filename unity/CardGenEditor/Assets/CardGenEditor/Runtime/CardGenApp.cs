@@ -27,6 +27,7 @@ namespace CardGen.App
         Label status;
         TextField pathField;
         TextField commandField;
+        ClaimPanel claimPanel;
         Report lastReport;
         bool reportStale;
         bool checking;
@@ -144,6 +145,8 @@ namespace CardGen.App
             results.style.paddingRight = 12;
             results.style.paddingBottom = 12;
             resScroll.Add(results);
+            claimPanel = new ClaimPanel(() => canvas.Doc.ToGame(out _), () => commandField.value);
+            resScroll.Add(claimPanel);
             side.Add(resScroll);
             main.Add(side);
             root.Add(main);
@@ -400,6 +403,7 @@ namespace CardGen.App
         //   -cardgen-check                    Lean で検査する
         //   -cardgen-results-end              検査の結果を一番下まで送る
         //   -cardgen-play <手数>              テストプレイを始め、置ける手札を交互に置く
+        //   -cardgen-claim                    命題の欄の値でジョブを作る（反例探し）
         //   -cardgen-screenshot <パス>        画面を保存して終了する
 
         static string Arg(string name)
@@ -421,6 +425,11 @@ namespace CardGen.App
             if (args.Contains("-cardgen-check"))
             {
                 var task = RunLeanCheck();
+                while (!task.IsCompleted) yield return null;
+            }
+            if (args.Contains("-cardgen-claim"))
+            {
+                var task = claimPanel.Submit();
                 while (!task.IsCompleted) yield return null;
             }
             if (args.Contains("-cardgen-play"))

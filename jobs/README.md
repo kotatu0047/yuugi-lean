@@ -29,6 +29,9 @@ lake exe cardgen --job ゲーム.json 命題.json
   - `job.json`：命題・ゲーム・**変えてはいけない頭の部分**（ルールとカードと `JobStatement` の定義）
   - `Proof.lean`：証明を書くファイル。最初は `theorem job_proof : JobStatement := by sorry`
 
+Unity のエディタからは、右下の「命題とジョブ」の欄で同じことができる（検査ツールの `--job-stdin` を WSL 経由で呼ぶ）。
+「ジョブの状態を更新」で一覧（`--jobs`）を表示する。
+
 ## 2. 証明する（Claude への頼み方）
 
 この会話で「キューを処理して」と頼む。Claude は次の手順で進める。

@@ -42,6 +42,12 @@ wsl.exe -e /home/yamam/repo/yuugi-lean/.lake/build/bin/cardgen -
 
 （WSL 側で `lake build` しておく。別の場所に置いたときは欄を書き換える）
 
+## 命題とジョブ
+
+右下の「命題とジョブ」で「フィールド上の、条件に合うカードは最大 n 枚」という命題を追加できる。
+検査ツールが実際に対戦を進めて反例を探し、なければ証明のジョブ（`jobs/pending/`）にする。
+ジョブは開発中は Claude が証明する（`jobs/README.md`）。「ジョブの状態を更新」で一覧を表示する。
+
 ## 動作確認用のコマンドライン
 
 ```
@@ -50,3 +56,4 @@ CardGenEditor.exe -cardgen-select 6 -cardgen-check -cardgen-results-end -cardgen
 
 見本を読み込み、6番のノードを選び、Lean で検査し、結果を一番下まで送って、画面を保存して終了する。
 `-cardgen-play 14` を付けると、テストプレイを始めて置ける手札を14手交互に置く。
+`-cardgen-claim` を付けると、命題の欄の値でジョブを作る（実際にジョブが増えるので注意）。

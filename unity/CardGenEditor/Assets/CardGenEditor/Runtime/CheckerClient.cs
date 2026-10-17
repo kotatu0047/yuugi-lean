@@ -11,6 +11,14 @@ namespace CardGen.App
         /// <summary>WSL の中の cardgen を呼ぶ既定のコマンド（最後の「-」で標準入力から読む）</summary>
         public const string DefaultCommand = "wsl.exe -e /home/yamam/repo/yuugi-lean/.lake/build/bin/cardgen -";
 
+        /// <summary>検査のコマンド（最後が「 -」）を、別の引数で動かすコマンドにする</summary>
+        public static string WithArgs(string command, string args)
+        {
+            var c = command.Trim();
+            if (c.EndsWith(" -")) c = c.Substring(0, c.Length - 2);
+            return c + " " + args;
+        }
+
         /// <summary>空白で区切った最初の語をプログラム、残りを引数とする</summary>
         static (string, string) Split(string command)
         {

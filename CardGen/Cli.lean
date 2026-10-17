@@ -11,12 +11,22 @@ lake exe cardgen ファイル.json --text   # 人が読む形で報告
 lake exe cardgen - < ファイル.json      # 標準入力から読む
 lake exe cardgen --vectors 出力.json   # C# との差分テスト用のテストベクトルを書き出す
 lake exe cardgen --job ゲーム.json 命題.json [jobs]   # 追加した命題の反例を探し、なければ証明のジョブを書き出す
+lake exe cardgen --job-stdin [jobs]    # 同じことを、標準入力の {"game": …, "claim": …} で行う（Unity から使う）
+lake exe cardgen --jobs [jobs]         # ジョブの一覧と状態
 ```
 
-形式の誤りがあれば終了コード 1、なければ 0。
+ジョブのフォルダを省くと、検査ツールのあるリポジトリの `jobs`（`リポジトリ/.lake/build/bin/cardgen` から見て）。
+形式の誤りがある・反例が見つかったときは終了コード 1、それ以外は 0。
 -/
 
 open CardGen Lean
+
+/-- リポジトリの jobs フォルダ（検査ツールは リポジトリ/.lake/build/bin/cardgen にある） -/
+def defaultJobsDir : IO System.FilePath := do
+  let app ← IO.appPath
+  match app.parent.bind (·.parent) |>.bind (·.parent) |>.bind (·.parent) with
+  | some root => return root / "jobs"
+  | none => return "jobs"
 
 /-- ジョブの番号：`jobs/pending` と `jobs/done` にある番号の次 -/
 def nextJobId (dir : System.FilePath) : IO String := do
@@ -29,17 +39,12 @@ def nextJobId (dir : System.FilePath) : IO String := do
   let s := toString (m + 1)
   return String.ofList (List.replicate (4 - s.length) (Char.ofNat 48)) ++ s
 
-def makeJob (gamePath claimPath : String) (dir : System.FilePath) : IO UInt32 := do
-  let g ← IO.ofExcept (Game.parse (← IO.FS.readFile gamePath))
-  let c ← IO.ofExcept ((Json.parse (← IO.FS.readFile claimPath)).bind fromJson? : Except String CustomClaim)
+/-- 反例を探し、なければジョブを書き出す -/
+def makeJobFrom (g : Game) (c : CustomClaim) (dir : System.FilePath) : IO UInt32 := do
   match c.findCounterexample g.rules g.cards with
   | some ce =>
-    let chs := ce.choices.map fun
-      | .draw p => json% {kind: "draw", player: $(p)}
-      | .place p h z up => json% {kind: "place", player: $(p), hand: $(h), zone: $(z), faceUp: $(up)}
-      | .resolve p k e a => json% {kind: "resolve", player: $(p), field: $(k), effect: $(e), apply: $(a)}
     IO.println (json% {status: "counterexample", title: $(c.title), count: $(ce.count), decks: $(ce.decks),
-      choices: $(chs)}).pretty
+      choices: $(ce.choices.map choiceJson)}).pretty
     return 1
   | none =>
     let id ← nextJobId dir
@@ -50,15 +55,58 @@ def makeJob (gamePath claimPath : String) (dir : System.FilePath) : IO UInt32 :=
     IO.println (json% {status: "queued", id: $(id), path: $(jd.toString)}).pretty
     return 0
 
+def parseClaim (j : Json) : Except String CustomClaim := fromJson? j
+
+/-- ジョブの一覧と状態（pending / accepted / rejected） -/
+def listJobs (dir : System.FilePath) : IO Json := do
+  let mut out : Array Json := #[]
+  for sub in ["pending", "done"] do
+    let d := dir / sub
+    if !(← d.isDir) then continue
+    let entries := (← d.readDir).qsort (·.fileName < ·.fileName)
+    for e in entries do
+      if !(← (e.path / "job.json").pathExists) then continue
+      let job ← IO.ofExcept (Json.parse (← IO.FS.readFile (e.path / "job.json")))
+      let title := (job.getObjValAs? String "title").toOption.getD ""
+      let res ← if ← (e.path / "result.json").pathExists then
+          pure (Json.parse (← IO.FS.readFile (e.path / "result.json"))).toOption else pure none
+      let status := (res.bind fun r => (r.getObjValAs? String "status").toOption).getD "pending"
+      let reasons := (res.bind fun r => (r.getObjValAs? (List String) "reasons").toOption).getD []
+      out := out.push (json% {id: $(e.fileName), title: $(title), status: $(status), reasons: $(reasons)})
+  return toJson out
+
+def jobsDirArg (rest : List String) : IO System.FilePath :=
+  match rest with
+  | d :: _ => pure d
+  | [] => defaultJobsDir
+
+def jobStdin (rest : List String) : IO UInt32 := do
+  let j ← IO.ofExcept (Json.parse (← (← IO.getStdin).readToEnd))
+  let g ← IO.ofExcept ((j.getObjVal? "game").bind fun gj => (fromJson? gj : Except String Game))
+  let es := g.check
+  if !es.isEmpty then
+    IO.println (json% {status: "error", errors: $(es)}).pretty
+    return 1
+  let c ← IO.ofExcept ((j.getObjVal? "claim").bind parseClaim)
+  makeJobFrom g c (← jobsDirArg rest)
+
 def main (args : List String) : IO UInt32 := do
-  if let "--vectors" :: out :: _ := args then
+  match args with
+  | "--vectors" :: out :: _ =>
     IO.FS.writeFile out (vectors.pretty ++ "\n")
     return 0
-  if let "--job" :: gamePath :: claimPath :: rest := args then
-    return ← makeJob gamePath claimPath (rest.headD "jobs")
-  let text := args.contains "--text"
-  let path := (args.filter (· != "--text")).headD "-"
-  let input ← if path == "-" then (← IO.getStdin).readToEnd else IO.FS.readFile path
-  let r := report input
-  IO.println (if text then r.toText else (toJson r).pretty)
-  return if r.ok then 0 else 1
+  | "--job" :: gamePath :: claimPath :: rest =>
+    let g ← IO.ofExcept (Game.parse (← IO.FS.readFile gamePath))
+    let c ← IO.ofExcept ((Json.parse (← IO.FS.readFile claimPath)).bind parseClaim)
+    makeJobFrom g c (← jobsDirArg rest)
+  | "--job-stdin" :: rest => jobStdin rest
+  | "--jobs" :: rest =>
+    IO.println (← listJobs (← jobsDirArg rest)).pretty
+    return 0
+  | _ =>
+    let text := args.contains "--text"
+    let path := (args.filter (· != "--text")).headD "-"
+    let input ← if path == "-" then (← IO.getStdin).readToEnd else IO.FS.readFile path
+    let r := report input
+    IO.println (if text then r.toText else (toJson r).pretty)
+    return if r.ok then 0 else 1
