@@ -31,6 +31,8 @@ Lean 4 コアのみ（Mathlib 不要）で動く、遊戯王OCGの基本ルー�
   処理は1つずつ順番に行われるので、2枚が同じ時刻に適用され始めることはない
 * 対象と関係を持つ永続罠（リビングデッドの呼び声）：このカードが離れた時、または蘇生したモンスターが
   破壊された時にもう一方を破壊する（その時点で効果が無効なら何も起きない）
+* 召喚条件（D－HERO Bloo－D）：通常召喚できず、指定の数のモンスターをリリースして手札から特殊召喚する。
+  墓地からは、正規の方法で特殊召喚された後に墓地へ送られた場合のみ蘇生できる
 * ライフコスト：自分の LP が 0 以下になるようには払えない
 * 手札上限6枚（エンドフェイズに捨てる）
 * 勝敗：LP 0、デッキ切れ（ドローできない）
@@ -43,7 +45,7 @@ Lean 4 コアのみ（Mathlib 不要）で動く、遊戯王OCGの基本ルー�
 * 攻撃対象がいなくなった場合（巻き戻し）は、その攻撃を終了する
 * 効果による特殊召喚・エクストラデッキからの特殊召喚は表側攻撃表示で行う
 * フェイズ移行はターンプレイヤーの宣言で行う（相手が発動したい場合は、事前にパスで優先権を受ける）
-* ダメージステップ中の発動、「1ターンに1度」の名称指定、蘇生制限
+* ダメージステップ中の発動、「1ターンに1度」の名称指定、召喚条件以外の蘇生制限
 -/
 
 namespace YGO
@@ -147,6 +149,9 @@ structure MonsterCard where
   kind    : MonsterKind := .main
   tuner   : Bool := false
   effects : List MonsterEffect := []
+  proper  : Bool := false
+    -- 召喚条件を持つモンスターが正規の方法で特殊召喚された。フィールドから墓地へ送られても保たれる
+    -- （墓地のカードを手札・デッキに戻す効果は無いので、印が消える場面は無い）
   deriving Repr, DecidableEq
 
 /-- 召喚条件（`MonsterEffect.specialOnly`）で特殊召喚するときにリリースする数 -/
@@ -872,12 +877,12 @@ def Action.isNextPhase : Action → Bool
 /-! ### 効果 -/
 
 /-- 対象の墓地のモンスターを蘇生できるか。召喚条件を持つモンスター（`specialOnly`）は、正規の方法で
-特殊召喚された後でなければ蘇生できないが、墓地のカードがそうかどうかは記録していないので、蘇生できないものとする。 -/
+特殊召喚された後（`MonsterCard.proper`）でなければ蘇生できない。 -/
 def reviveOk (b : Board) (l : ChainLink) : Option (PlayerId × Nat × MonsterCard) :=
   match l.graveTarget with
   | some (w, i, .monster m) =>
     if (b.get w).grave[i]? = some (.monster m) ∧ (l.eff = .revive true → w = l.owner) ∧
-        (b.get l.owner).mainFree ∧ m.specialTributes? = none then some (w, i, m) else none
+        (b.get l.owner).mainFree ∧ (m.specialTributes? = none ∨ m.proper) then some (w, i, m) else none
   | _ => none
 
 /-- 融合素材の条件を満たすか。満たすなら融合モンスターを出すゾーンを返す。 -/
@@ -1215,7 +1220,8 @@ def summonCore (c : Ctx) (b : Board) (h : Nat) (ts : List Nat) (pos : Position) 
   let b := b.modify c.active fun p => { p with hand := p.hand.eraseIdx h }
   -- リリースしたモンスターが離れた後のゾーンの空きを確認する
   unless (b.get c.active).mainFree do throw "モンスターゾーンに空きがない"
-  let b := b.place c.active m pos c.turn false
+  -- 召喚条件による特殊召喚は正規の方法なので、印を付ける
+  let b := b.place c.active (if special then { m with proper := true } else m) pos c.turn false
     (if special then some .specialSummoned else if pos = .attack then some .normalSummoned else none)
   return { b with normalSummoned := b.normalSummoned || !special }
 
@@ -1776,15 +1782,15 @@ end Theorems
 namespace Cards
 
 -- メインデッキのモンスター
-def blueEyes       : MonsterCard := ⟨"青眼の白龍", 8, 3000, 2500, .light, .dragon, .main, false, []⟩
-def darkMagician   : MonsterCard := ⟨"ブラック・マジシャン", 7, 2500, 2100, .dark, .spellcaster, .main, false, []⟩
-def redEyes        : MonsterCard := ⟨"真紅眼の黒竜", 7, 2400, 2000, .dark, .dragon, .main, false, []⟩
-def summonedSkull  : MonsterCard := ⟨"デーモンの召喚", 6, 2500, 1200, .dark, .fiend, .main, false, []⟩
-def celticGuardian : MonsterCard := ⟨"エルフの剣士", 4, 1400, 1200, .earth, .warrior, .main, false, []⟩
-def giantSoldier   : MonsterCard := ⟨"岩石の巨兵", 3, 1300, 2000, .earth, .rock, .main, false, []⟩
-def mysticalElf    : MonsterCard := ⟨"ホーリー・エルフ", 4, 800, 2000, .light, .spellcaster, .main, false, []⟩
-def kuriboh        : MonsterCard := ⟨"クリボー", 1, 300, 200, .dark, .fiend, .main, false, []⟩  -- 効果は省略
-def tuneWarrior    : MonsterCard := ⟨"チューン・ウォリアー", 3, 1600, 200, .earth, .warrior, .main, true, []⟩
+def blueEyes       : MonsterCard := ⟨"青眼の白龍", 8, 3000, 2500, .light, .dragon, .main, false, [], false⟩
+def darkMagician   : MonsterCard := ⟨"ブラック・マジシャン", 7, 2500, 2100, .dark, .spellcaster, .main, false, [], false⟩
+def redEyes        : MonsterCard := ⟨"真紅眼の黒竜", 7, 2400, 2000, .dark, .dragon, .main, false, [], false⟩
+def summonedSkull  : MonsterCard := ⟨"デーモンの召喚", 6, 2500, 1200, .dark, .fiend, .main, false, [], false⟩
+def celticGuardian : MonsterCard := ⟨"エルフの剣士", 4, 1400, 1200, .earth, .warrior, .main, false, [], false⟩
+def giantSoldier   : MonsterCard := ⟨"岩石の巨兵", 3, 1300, 2000, .earth, .rock, .main, false, [], false⟩
+def mysticalElf    : MonsterCard := ⟨"ホーリー・エルフ", 4, 800, 2000, .light, .spellcaster, .main, false, [], false⟩
+def kuriboh        : MonsterCard := ⟨"クリボー", 1, 300, 200, .dark, .fiend, .main, false, [], false⟩  -- 効果は省略
+def tuneWarrior    : MonsterCard := ⟨"チューン・ウォリアー", 3, 1600, 200, .earth, .warrior, .main, true, [], false⟩
 
 -- 効果モンスター
 /-- 永続効果：自分の戦士族モンスターの攻撃力400アップ（攻撃対象にならない効果は省略） -/
@@ -2647,6 +2653,33 @@ example : quadDrainJinzo.toOption.map quadNegated = some [true, false, true, fal
 /-- info: Except.error "永続効果の適用順を選ぶ場面ではない" -/
 #guard_msgs in
 #eval (quadDecree >>= (play · [.chooseAura 0])).map (fun _ => ())
+
+/-- 正規の方法で特殊召喚された Bloo－D は、墓地へ送られた後に蘇生できる。
+P1：フィールドにモンスター3体、手札に Bloo－D・ブラック・ホール・死者蘇生 -/
+def blooReviveStart : Game where
+  board := { p1 := { deck := [.monster kuriboh], hand := [.monster bloo, darkHole, monsterReborn],
+                     monsters := [fm 0 kuriboh, fm 1 kuriboh, fm 2 kuriboh] },
+             p2 := { deck := [.monster kuriboh] }, nextUid := 3 }
+  turn := 1
+  active := .one
+  phase := .main1
+
+/-- Bloo－D を特殊召喚し、ブラック・ホールで破壊する（墓地：クリボー3枚・Bloo－D・ブラック・ホール） -/
+def blooDestroyed : Except String Game :=
+  play blooReviveStart ([.specialSummon 0 [0, 1, 2]] ++ resolve (.activateSpell 0))
+
+-- 墓地の Bloo－D には正規の方法で特殊召喚された印が残っている
+/-- info: Except.ok (some true) -/
+#guard_msgs in
+#eval blooDestroyed.map fun g =>
+  match g.board.p1.grave[3]? with
+  | some (.monster m) => some m.proper
+  | _ => none
+
+/-- info: Except.ok ["D－HERO Bloo－D"] -/
+#guard_msgs in
+#eval (blooDestroyed >>= (play · (resolve (.activateSpell 0 { grave := some (.one, 3) })))).map
+  (fun g => names g.board.p1.monsters)
 
 end Demo
 
