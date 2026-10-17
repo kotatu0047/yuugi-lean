@@ -1,4 +1,4 @@
-import CardGen.Negation
+import CardGen.Report
 
 /-!
 # 中間表現の見本
@@ -175,5 +175,32 @@ theorem acyclic_settles (insts : List Inst) (hin : ∀ a ∈ insts, a.card ∈ a
     WellFounded (fun g f => S.Step f g) ∧ (∃ f, S.Stable f) ∧
     ∀ f g, S.Stable f → S.Stable g → ∀ x < S.n, f x = g x :=
   negation_settles (rank := rankFn acyclicCards (computeRanks acyclicCards)) (by decide) insts hin
+
+end CardGen.Sample
+
+namespace CardGen.Sample
+
+/-! ## 循環があるときの総当たり -/
+
+-- 4すくみの盤面（スキルドレイン・お触れ・ショッカーが自分、Bloo－D が相手）：
+-- 結果は1通りだが、選び方によって判定が回り続ける（yuugi-lean の quad_someEnd と同じ結論）
+#guard analyzeBoard [⟨skillDrain, true, true⟩, ⟨royalDecree, true, true⟩, ⟨jinzo, true, true⟩,
+  ⟨blooD, false, true⟩] == .someLoop
+
+-- お触れどうし：互いに無効にし合い、結果が順番で変わる
+#guard analyzeBoard [⟨royalDecree, true, true⟩, ⟨royalDecree, false, true⟩] == .multiStable
+
+/-- 自分も含めてすべてのモンスターの効果を無効にするモンスター -/
+def selfNegator : Card :=
+  { name := "自分も無効にするモンスター", type := monster, tags := [],
+    effects := [.negate (sel [monster] .both (faceUpOnly := true))] }
+
+-- 自分自身を無効にする：どの状態も安定しない
+#guard analyzeBoard [⟨selfNegator, true, true⟩] == .noStable
+
+-- 検査ツールは、自分自身を無効にするカードを反例として報告する
+#guard (negOut [selfNegator]).status == "counterexample"
+-- 4すくみの4枚は「プレイヤーの選択」
+#guard (negOut game.cards).status == "choice"
 
 end CardGen.Sample
