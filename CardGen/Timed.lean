@@ -190,8 +190,11 @@ end TSys
 
 /-! ## 盤面から作る -/
 
+/-- 盤面から作る。無効の関係（`instRel`）は最初に表にしておく（判定の1歩ごとに範囲の指定を調べ直さない） -/
 def TSys.ofInsts (insts : List Inst) : TSys :=
-  ⟨insts.length, instRel insts, fun i => (insts[i]?.map (·.controller)).getD true⟩
+  let n := insts.length
+  let table : Array (Array Bool) := (List.range n).toArray.map fun y => (List.range n).toArray.map fun x => instRel insts y x
+  ⟨n, fun y x => (table[y]?.bind (·[x]?)).getD false, fun i => (insts[i]?.map (·.controller)).getD true⟩
 
 /-- 時刻つきの判定の総当たりの分類（下ほど悪い） -/
 inductive TVerdict
@@ -295,7 +298,7 @@ def maxCopies : Nat := 2
 def boardLimit : Nat := 5
 
 /-- 時刻つきの判定で調べる盤面の最大の枚数（状態は `2^n × n!` 通りあるので小さくする） -/
-def timedLimit : Nat := 4
+def timedLimit : Nat := 5
 
 /-- まとまりの各カードを自分・相手にそれぞれ 0〜`maxCopies` 枚置いた盤面（すべて表側表示）のうち、
 枚数が `boardLimit` 以下で、ゾーンの容量を守って置けるもの（空の盤面は除く） -/
