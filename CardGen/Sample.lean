@@ -323,4 +323,11 @@ def battleState : State := fun p =>
 #guard (gameClaims game).isEmpty
 #guard (gameClaims { game with cards := game.cards.filter (· != potion) }).map (·.prop) == [.lifeMax 8000]
 
+-- 攻撃力と無効の衝突：スキルドレイン（4すくみの循環の中）は闇の指揮官を無効にしうるので「プレイヤーの選択」
+#guard (attackClaim game.cards).map (·.status) == some "choice"
+-- 循環がなければ、攻撃力はどの盤面でも1通り
+#guard (attackClaim [skillDrain, darkCommander, blackMagician]).map (·.status) == some "proved"
+-- 攻撃力の変化を持つカードがなければ出さない
+#guard (attackClaim [skillDrain, jinzo]).isNone
+
 end CardGen.Sample

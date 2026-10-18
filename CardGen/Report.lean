@@ -115,6 +115,33 @@ def negOut (r : Rules) (cards : List Card) : NegOut :=
     ⟨worst, "無効にしうる関係に循環があります。循環のまとまりごとに、小さな盤面を総当たりで調べました",
       edges, groups, none⟩
 
+def Effect.isBoost : Effect → Bool
+  | .boost .. => true
+  | _ => false
+
+/-- 攻撃力が1通りに決まるか（攻撃力の変化と無効の関係の衝突）。攻撃力の変化を持つカードがなければ `none` -/
+def attackClaim (cards : List Card) : Option ClaimOut :=
+  if !cards.any (·.effects.any Effect.isBoost) then none else
+  match checkNegation cards with
+  | .cyclic _ =>
+    let n := cards.length
+    let reach := (List.range n).map (reachFrom cards)
+    let onCycle := (List.range n).filter fun i => (reach.getD i []).contains i
+    -- 循環のカードから無効の矢印をたどって届く（＝有効かどうかが循環に左右されうる）攻撃力の変化のカード
+    let hit := (List.range n).filter fun j =>
+      (cards[j]?.any (·.effects.any Effect.isBoost)) && onCycle.any fun i => (reach.getD i []).contains j
+    let names := hit.filterMap fun j => cards[j]?.map (·.name)
+    if names.isEmpty then
+      some ⟨"攻撃力の変化を持つカードは、無効の循環の影響を受けません",
+        ["無効にしうる関係の循環から、攻撃力の変化を持つカードへは矢印がたどれない"], "unknown", ""⟩
+    else
+      some ⟨s!"攻撃力の変化（{"、".intercalate names}）が効くかどうかは無効の判定の進み方で変わりうるので、" ++
+          "攻撃力が1通りに決まらない盤面があります",
+        ["無効にしうる関係の循環から、これらのカードは無効にされうる"], "choice", ""⟩
+  | _ => some ⟨"攻撃力は、どの盤面でも1通りに決まります",
+      ["無効にしうる関係に循環がないので、どのカードの効果が有効かは1通りに決まる（メタ定理1）",
+       "攻撃力の変化は足し算なので、適用する順番によらない"], "proved", "CardGen.negation_settles"⟩
+
 def report (input : String) : Report :=
   let fail (es : List String) : Report := ⟨1, false, es, [], none⟩
   match Json.parse input with
@@ -127,7 +154,8 @@ def report (input : String) : Report :=
       | [] =>
         let claims := (derived g.rules).map (fun c =>
           (⟨c.text, c.grounds, "proved", "CardGen.derived_valid"⟩ : ClaimOut)) ++
-          (gameClaims g).map fun c => (⟨c.text, c.grounds, "proved", "CardGen.gameClaims_valid"⟩ : ClaimOut)
+          (gameClaims g).map (fun c => (⟨c.text, c.grounds, "proved", "CardGen.gameClaims_valid"⟩ : ClaimOut)) ++
+          (attackClaim g.cards).toList
         ⟨1, true, [], claims, some (negOut g.rules g.cards)⟩
       | es => fail es
 
