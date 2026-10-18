@@ -7,8 +7,8 @@ namespace CardGen
     public static class Check
     {
         /// <summary>2回以上現れる要素（最初に現れた順、重複なし）</summary>
-        static IEnumerable<string> Dups(List<string> l) =>
-            l.Where(a => l.Count(b => b == a) > 1).Distinct();
+        static IEnumerable<T> Dups<T>(List<T> l) =>
+            l.Where(a => l.Count(b => b.Equals(a)) > 1).Distinct();
 
         static IEnumerable<string> Selector(Rules r, string where, Selector s)
         {
@@ -37,6 +37,7 @@ namespace CardGen
                     break;
                 case Negate n:
                     foreach (var m in Selector(r, $"{where}の無効", n.Target)) yield return m;
+                    if (n.Target.Near != Near.Any) yield return $"{where}：無効の範囲には、マスの関係（隣・同じ縦列）はまだ使えません";
                     break;
                 case Boost b:
                     foreach (var m in Selector(r, $"{where}の攻撃力の変化", b.Target)) yield return m;
@@ -66,6 +67,11 @@ namespace CardGen
             if (special && z.OnField) yield return $"{w}：デッキや墓地の役割のゾーンは「フィールド上」に数えないでください";
             if (special && r.CardTypes.Any(t => !z.Admits.Contains(t)))
                 yield return $"{w}：デッキや墓地の役割のゾーンには、すべての種類のカードを置けるようにしてください";
+            if (special && z.Cells.Count > 0) yield return $"{w}：デッキや墓地の役割のゾーンにはマスの位置を付けないでください";
+            if (z.Cells.Count > 0 && z.Cells.Count != z.Count)
+                yield return $"{w}：マスの位置の数（{z.Cells.Count}）がマスの数（{z.Count}）と違います";
+            foreach (var c in z.Cells.Where(c => !(c.Col < Grid.Size && c.Row < Grid.Size)))
+                yield return $"{w}：マス（{c.Col}, {c.Row}）が盤面（{Grid.Size}×{Grid.Size}）の外です";
         }
 
         static IEnumerable<string> RulesErrors(Rules r)
@@ -80,6 +86,7 @@ namespace CardGen
             var graves = r.Zones.Count(z => z.Role == ZoneRole.Grave);
             if (graves != 1) yield return $"ルール：墓地の役割のゾーンがちょうど1つ必要です（{graves}個あります）";
             foreach (var m in r.Zones.SelectMany(z => Zone(r, z))) yield return m;
+            foreach (var c in Dups(r.AllCells())) yield return $"ルール：マス（{c.Col}, {c.Row}）が重なっています（相手の側のマスも含む）";
             foreach (var t in r.Fighters.Where(t => !r.CardTypes.Contains(t)))
                 yield return $"ルール：戦闘できる種類「{t}」はカードの種類にありません";
             if (r.Fighters.Count > 0 && r.Life == 0) yield return "ルール：戦闘できる種類があるのに、初期ライフが0です";

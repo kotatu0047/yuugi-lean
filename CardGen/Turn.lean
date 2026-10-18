@@ -70,8 +70,8 @@ structure Match where
 
 /-- ターンのある対戦の動き -/
 inductive TChoice
-  /-- ターンプレイヤーが手札の `hand` 番目のカードを `zone` 番目のゾーンに置く -/
-  | place (hand : Nat) (zone : Nat) (up : Bool)
+  /-- ターンプレイヤーが手札の `hand` 番目のカードを `zone` 番目のゾーンの `cell` 番目のマスに置く -/
+  | place (hand : Nat) (zone : Nat) (cell : Nat) (up : Bool)
   /-- `p` がフィールドの `k` 番目のカードの `eff` 番目の効果を発動して解決する（どちらのターンでもよい） -/
   | resolve (p : PlayerId) (k : Nat) (eff : Nat) (apply : Bool)
   /-- ターンプレイヤーがフィールドの `k` 番目のカードで攻撃する -/
@@ -98,12 +98,12 @@ def TurnInfo.prune (t : TurnInfo) (g : State) : TurnInfo := { t with attacked :=
 
 /-- 選んだ動きをしたあとの状態（できない動きなら `none`） -/
 def Match.step? (r : Rules) (m : Match) : TChoice → Option Match
-  | .place h i up => do
+  | .place h i j up => do
     let p := m.turn.tp
     let c ← (m.g p).hand[h]?
-    let fighter := r.fights ⟨i, c, up⟩
+    let fighter := r.fights ⟨i, j, c, up⟩
     guard (!fighter || r.summonsPerTurn == 0 || decide (m.turn.summons < r.summonsPerTurn))
-    let g ← m.g.step? r (.place p h i up)
+    let g ← m.g.step? r (.place p h i j up)
     return ⟨g, { m.turn with summons := m.turn.summons + (if fighter then 1 else 0) }⟩
   | .resolve p k e apply => do
     let g ← m.g.step? r (.resolve p k e apply)
@@ -126,23 +126,23 @@ inductive TReachable (r : Rules) (decks : PlayerId → List Card) (first : Playe
 
 /-! ## 1歩の中身 -/
 
-theorem Match.step?_place {r : Rules} {m m' : Match} {h i : Nat} {up : Bool}
-    (hs : m.step? r (.place h i up) = some m') :
+theorem Match.step?_place {r : Rules} {m m' : Match} {h i j : Nat} {up : Bool}
+    (hs : m.step? r (.place h i j up) = some m') :
     ∃ c, (m.g m.turn.tp).hand[h]? = some c ∧
-      (r.fights ⟨i, c, up⟩ = false ∨ r.summonsPerTurn = 0 ∨ m.turn.summons < r.summonsPerTurn) ∧
-      m.g.step? r (.place m.turn.tp h i up) = some m'.g ∧
-      m'.turn = { m.turn with summons := m.turn.summons + (if r.fights ⟨i, c, up⟩ then 1 else 0) } := by
+      (r.fights ⟨i, j, c, up⟩ = false ∨ r.summonsPerTurn = 0 ∨ m.turn.summons < r.summonsPerTurn) ∧
+      m.g.step? r (.place m.turn.tp h i j up) = some m'.g ∧
+      m'.turn = { m.turn with summons := m.turn.summons + (if r.fights ⟨i, j, c, up⟩ then 1 else 0) } := by
   simp only [Match.step?, Option.bind_eq_bind] at hs
   cases hc : (m.g m.turn.tp).hand[h]? with
   | none => simp [hc] at hs
   | some c =>
     simp only [hc, Option.bind_some] at hs
-    cases hb : (!r.fights ⟨i, c, up⟩ || r.summonsPerTurn == 0 || decide (m.turn.summons < r.summonsPerTurn))
+    cases hb : (!r.fights ⟨i, j, c, up⟩ || r.summonsPerTurn == 0 || decide (m.turn.summons < r.summonsPerTurn))
     · rw [hb] at hs
       simp only [guard, Bool.false_eq_true, ite_false] at hs
       cases hs
     · rw [hb] at hs
-      cases hg : m.g.step? r (.place m.turn.tp h i up) with
+      cases hg : m.g.step? r (.place m.turn.tp h i j up) with
       | none => simp [hg, guard] at hs
       | some g =>
         simp only [hg, guard, ite_true, Option.pure_def, Option.bind_some, Option.some.injEq] at hs
@@ -197,9 +197,9 @@ theorem Match.step?_endTurn {r : Rules} {m m' : Match} (hs : m.step? r .endTurn 
   exact ⟨rfl, rfl⟩
 
 /-- 置く動きをすると、置いたプレイヤーのフィールドの最後に1枚加わる -/
-theorem State.step?_place_field {r : Rules} {g g' : State} {p : PlayerId} {h i : Nat} {up : Bool} {c : Card}
-    (hc : (g p).hand[h]? = some c) (hg : g.step? r (.place p h i up) = some g') :
-    (g' p).field = (g p).field ++ [⟨i, c, up⟩] := by
+theorem State.step?_place_field {r : Rules} {g g' : State} {p : PlayerId} {h i j : Nat} {up : Bool} {c : Card}
+    (hc : (g p).hand[h]? = some c) (hg : g.step? r (.place p h i j up) = some g') :
+    (g' p).field = (g p).field ++ [⟨i, j, c, up⟩] := by
   simp only [State.step?, hc, Option.bind_eq_bind, Option.bind_some, Option.bind_eq_some_iff] at hg
   obtain ⟨_, _, _, _, hg⟩ := hg
   simp only [Option.pure_def, Option.some.injEq] at hg
@@ -229,7 +229,7 @@ theorem TReachable.reachable {r : Rules} {decks : PlayerId → List Card} {first
     · exact .start
   | step ch _ hs ih =>
     cases ch with
-    | place h i up =>
+    | place h i j up =>
       obtain ⟨_, _, _, hg, _⟩ := Match.step?_place hs
       exact ih.step (step?_sound hg)
     | resolve p k e apply => exact ih.step (step?_sound (Match.step?_resolve hs).1)
@@ -256,10 +256,10 @@ theorem TReachable.summons_le {r : Rules} {decks : PlayerId → List Card} {firs
   | start => simp [Match.start]
   | step ch _ hs ih =>
     cases ch with
-    | place h i up =>
+    | place h i j up =>
       obtain ⟨c, _, hok, _, ht⟩ := Match.step?_place hs
       rw [ht]
-      by_cases hf : r.fights ⟨i, c, up⟩ = true
+      by_cases hf : r.fights ⟨i, j, c, up⟩ = true
       · simp only [hf, ite_true]
         simp only [hf, hl, Bool.true_eq_false, false_or] at hok
         omega
@@ -280,7 +280,7 @@ theorem TReachable.attacked_bagLe {r : Rules} {decks : PlayerId → List Card} {
   | step ch _ hs ih =>
     rename_i m m'
     cases ch with
-    | place h i up =>
+    | place h i j up =>
       obtain ⟨c, hc, _, hg, ht⟩ := Match.step?_place hs
       rw [ht]
       -- 置くとターンプレイヤーのフィールドの最後に1枚加わる

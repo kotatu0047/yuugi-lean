@@ -227,7 +227,8 @@ namespace CardGen.App
         void LoadSample()
         {
             var asset = Resources.Load<UnityEngine.TextAsset>("sample");
-            SetDoc(GraphDoc.FromGame(IrJson.ParseGame(asset.text)), "見本（入力例のルールとカード13枚）を読み込みました");
+            var sample = IrJson.ParseGame(asset.text);
+            SetDoc(GraphDoc.FromGame(sample), $"見本（入力例のルールとカード{sample.Cards.Count}枚）を読み込みました");
         }
 
         void Open()
@@ -236,9 +237,13 @@ namespace CardGen.App
             {
                 var path = pathField.value;
                 var o = Newtonsoft.Json.Linq.JObject.Parse(File.ReadAllText(path));
+                var old = o["version"]?.ToString();
                 var upgraded = IrJson.Upgrade(o);
+                var v = Game.CurrentVersion;
                 SetDoc(GraphDoc.FromGame(IrJson.ParseGame(o)), upgraded
-                    ? $"開きました：{path}（版 2 のファイルなので版 3 に上げました。ターンのルールは既定の値です。保存すると版 3 で書き出します）"
+                    ? $"開きました：{path}（版 {old} のファイルなので版 {v} に上げました。" +
+                      (old == "2" ? "ターンのルールは既定の値です。" : "") +
+                      $"ゾーンはマス目の上にない状態です。保存すると版 {v} で書き出します）"
                     : $"開きました：{path}");
                 PlayerPrefs.SetString(PathKey, path);
             }

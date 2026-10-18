@@ -15,8 +15,8 @@ namespace CardGen
 inductive Choice
   /-- `p` がデッキの一番上を引く -/
   | draw (p : PlayerId)
-  /-- `p` が手札の `hand` 番目のカードを `zone` 番目のゾーンに置く（`up`：表側表示か） -/
-  | place (p : PlayerId) (hand : Nat) (zone : Nat) (up : Bool)
+  /-- `p` が手札の `hand` 番目のカードを `zone` 番目のゾーンの `cell` 番目のマスに置く（`up`：表側表示か） -/
+  | place (p : PlayerId) (hand : Nat) (zone : Nat) (cell : Nat) (up : Bool)
   /-- `p` がフィールドの `k` 番目のカードの `eff` 番目の効果を発動して解決する（`apply`：無効にされていないか） -/
   | resolve (p : PlayerId) (k : Nat) (eff : Nat) (apply : Bool)
   /-- `p` がフィールドの `k` 番目のカードで、相手のフィールドの `target` 番目のカード（`none` なら直接）を攻撃する。
@@ -29,18 +29,27 @@ def State.targetOK (r : Rules) (g : State) (p : PlayerId) : Option Nat → Bool
   | none => (g (!p)).field.all (!r.fights ·)
   | some j => ((g (!p)).field[j]?.map r.fights).getD false
 
+/-- `p` の `i` 番目のゾーンの、空いている最初のマス（なければ 0。「何枚でも」のゾーンなら 0） -/
+def State.freeCell (r : Rules) (g : State) (p : PlayerId) (i : Nat) : Nat :=
+  match r.zones[i]? with
+  | some z =>
+    if z.capacity == .one then
+      ((List.range z.count).find? fun j => (g p).field.all fun sl => !(sl.zone == i && sl.cell == j)).getD 0
+    else 0
+  | none => 0
+
 /-- 選んだ動きをしたあとの状態（できない動きなら `none`） -/
 def State.step? (r : Rules) (g : State) : Choice → Option State
   | .draw p =>
     match (g p).deck with
     | c :: d => some (g.set p { g p with deck := d, hand := (g p).hand ++ [c] })
     | [] => none
-  | .place p h i up => do
+  | .place p h i j up => do
     let c ← (g p).hand[h]?
     let z ← r.zones[i]?
-    guard (z.role == .plain && z.admits.contains c.type &&
-      (z.capacity != .one || decide (((g p).field.filter (·.zone == i)).length < z.count)))
-    return g.set p { g p with hand := (g p).hand.erase c, field := (g p).field ++ [⟨i, c, up⟩] }
+    guard (z.role == .plain && z.admits.contains c.type && decide (j < z.count) &&
+      (z.capacity != .one || (g p).field.all (fun sl => !(sl.zone == i && sl.cell == j))))
+    return g.set p { g p with hand := (g p).hand.erase c, field := (g p).field ++ [⟨i, j, c, up⟩] }
   | .resolve p k e apply => do
     let sl ← (g p).field[k]?
     match sl.card.effects[e]? with
@@ -59,7 +68,7 @@ theorem step?_sound {r : Rules} {g g' : State} {ch : Choice} (h : g.step? r ch =
     split at h
     · rename_i c d hd; cases h; exact .draw g p c d hd
     · cases h
-  | place p hi i up =>
+  | place p hi i j up =>
     simp only [State.step?, Option.bind_eq_bind] at h
     cases hc : (g p).hand[hi]? with
     | none => simp [hc] at h
@@ -68,16 +77,20 @@ theorem step?_sound {r : Rules} {g g' : State} {ch : Choice} (h : g.step? r ch =
       | none => simp [hc, hz] at h
       | some z =>
         simp only [hc, hz, Option.bind_some] at h
-        by_cases hg : (z.role == .plain && z.admits.contains c.type &&
-            (z.capacity != .one || decide (((g p).field.filter (·.zone == i)).length < z.count))) = true
+        by_cases hg : (z.role == .plain && z.admits.contains c.type && decide (j < z.count) &&
+            (z.capacity != .one || (g p).field.all (fun sl => !(sl.zone == i && sl.cell == j)))) = true
         · simp only [hg, guard, ite_true, Option.pure_def, Option.bind_some] at h
           cases h
           simp only [Bool.and_eq_true, beq_iff_eq, Bool.or_eq_true, bne_iff_ne, ne_eq,
-            decide_eq_true_eq] at hg
-          refine .place g p c i z up (List.mem_of_getElem? hc) hz hg.1.1 hg.1.2 fun hcap => ?_
+            decide_eq_true_eq, List.all_eq_true, Bool.not_eq_true', Bool.and_eq_false_iff,
+            beq_eq_false_iff_ne] at hg
+          refine .place g p c i j z up (List.mem_of_getElem? hc) hz hg.1.1.1 hg.1.1.2 hg.1.2 fun hcap => ?_
           rcases hg.2 with h1 | h1
           · exact absurd hcap h1
-          · exact h1
+          · intro sl hm ⟨h2, h3⟩
+            rcases h1 sl hm with h4 | h4
+            · exact h4 h2
+            · exact h4 h3
         · rw [Bool.not_eq_true] at hg
           simp only [hg, guard] at h
           cases h

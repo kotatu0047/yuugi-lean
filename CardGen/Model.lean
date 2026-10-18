@@ -8,7 +8,7 @@ import CardGen.IR
 （実際の対戦より多くの動きを許すので、ここで証明した性質は実際の対戦でも成り立つ）。
 
 - ドロー：デッキの一番上を手札に加える
-- 置く：手札のカードを、その種類を置けるゾーンに置く（「1枚まで」のゾーンは空きがあるときだけ）
+- 置く：手札のカードを、その種類を置けるゾーンのマスに置く（「1枚まで」のゾーンは空いているマスだけ）
 - 発動して解決する：フィールドの、発動する効果を持つカードを取り除き、効果の動き（破壊・手札に戻す・
   ドロー・ダメージ・回復）を順に行い（無効にされていれば何もしない）、そのカードを墓地へ送る
 - 攻撃する：表側表示の戦闘できるカードで、相手の戦闘できるカードを攻撃する（相手に戦闘できるカードが
@@ -28,6 +28,8 @@ open Lean
 structure Slot where
   /-- `Rules.zones` の何番目のゾーンか -/
   zone : Nat
+  /-- ゾーンの何番目のマスか -/
+  cell : Nat
   card : Card
   faceUp : Bool
 deriving Repr, DecidableEq
@@ -63,18 +65,42 @@ def Rules.onFieldZone (r : Rules) (i : Nat) : Bool :=
   | some z => z.role == .plain && z.onField
   | none => false
 
-def Slot.view (sl : Slot) (mine : Bool) : View :=
-  { type := sl.card.type, tags := sl.card.tags, mine, faceUp := sl.faceUp, isSelf := false }
+/-- `q` のフィールドのカード `sl` の、盤面のマス目の位置（マス目の上にないゾーンなら `none`）。
+`false` のプレイヤーのマスは、点対称の位置 -/
+def Rules.cellOf (r : Rules) (q : PlayerId) (sl : Slot) : Option Cell :=
+  match r.zones[sl.zone]? with
+  | some z => (z.cells[sl.cell]?).map fun c => if q then c else c.flip
+  | none => none
 
-/-- フィールド上の、範囲に合うカードをすべて破壊して墓地へ送る（`mine`：効果の持ち主の側か） -/
-def PState.destroy (r : Rules) (sel : Selector) (mine : Bool) (s : PState) : PState :=
-  let hit := fun sl : Slot => r.onFieldZone sl.zone && sel.matches (sl.view mine)
+/-- 効果を出したもの：効果の持ち主と、効果を持つカードのマス -/
+structure Src where
+  p : PlayerId
+  cell : Option Cell
+deriving Repr, DecidableEq
+
+def Cell.adjacentOpt : Option Cell → Option Cell → Bool
+  | some a, some b => a.adjacent b
+  | _, _ => false
+
+def Cell.sameColumnOpt : Option Cell → Option Cell → Bool
+  | some a, some b => a.col == b.col
+  | _, _ => false
+
+/-- `q` のフィールドのカード `sl` を、効果を出したもの `src` から見た情報 -/
+def Slot.view (r : Rules) (sl : Slot) (q : PlayerId) (src : Src) : View :=
+  let c := r.cellOf q sl
+  { type := sl.card.type, tags := sl.card.tags, mine := q == src.p, faceUp := sl.faceUp, isSelf := false,
+    adjacent := Cell.adjacentOpt src.cell c, sameColumn := Cell.sameColumnOpt src.cell c }
+
+/-- `q` のフィールド上の、範囲に合うカードをすべて破壊して墓地へ送る -/
+def PState.destroy (r : Rules) (sel : Selector) (q : PlayerId) (src : Src) (s : PState) : PState :=
+  let hit := fun sl : Slot => r.onFieldZone sl.zone && sel.matches (sl.view r q src)
   { s with field := s.field.filter (fun sl => !hit sl),
            grave := s.grave ++ (s.field.filter hit).map (·.card) }
 
-/-- フィールド上の、範囲に合うカードをすべて手札に戻す -/
-def PState.bounce (r : Rules) (sel : Selector) (mine : Bool) (s : PState) : PState :=
-  let hit := fun sl : Slot => r.onFieldZone sl.zone && sel.matches (sl.view mine)
+/-- `q` のフィールド上の、範囲に合うカードをすべて手札に戻す -/
+def PState.bounce (r : Rules) (sel : Selector) (q : PlayerId) (src : Src) (s : PState) : PState :=
+  let hit := fun sl : Slot => r.onFieldZone sl.zone && sel.matches (sl.view r q src)
   { s with field := s.field.filter (fun sl => !hit sl),
            hand := s.hand ++ (s.field.filter hit).map (·.card) }
 
@@ -85,19 +111,20 @@ def PState.drawN (n : Nat) (s : PState) : PState :=
 /-- ダメージを受ける（ライフは 0 より下がらない） -/
 def PState.damage (n : Nat) (s : PState) : PState := { s with life := s.life - n }
 
-/-- プレイヤー `p` の効果の動きを1つ行う -/
-def State.applyAction (r : Rules) (p : PlayerId) (g : State) : Action → State
-  | .destroy sel => fun q => (g q).destroy r sel (q == p)
-  | .bounce sel => fun q => (g q).bounce r sel (q == p)
-  | .draw n => g.set p ((g p).drawN n)
-  | .damage n => g.set (!p) ((g (!p)).damage n)
-  | .heal n => g.set p { g p with life := (g p).life + n }
+/-- 効果を出したもの `src`（持ち主 `src.p`）の効果の動きを1つ行う -/
+def State.applyAction (r : Rules) (src : Src) (g : State) : Action → State
+  | .destroy sel => fun q => (g q).destroy r sel q src
+  | .bounce sel => fun q => (g q).bounce r sel q src
+  | .draw n => g.set src.p ((g src.p).drawN n)
+  | .damage n => g.set (!src.p) ((g (!src.p)).damage n)
+  | .heal n => g.set src.p { g src.p with life := (g src.p).life + n }
 
-/-- プレイヤー `p` が、フィールドの `k` 番目のカード `sl` の効果（動き `as`）を発動して解決したあとの状態 -/
+/-- プレイヤー `p` が、フィールドの `k` 番目のカード `sl` の効果（動き `as`）を発動して解決したあとの状態。
+マスの関係は、カードが置かれていたマスから見る -/
 def State.resolve (r : Rules) (p : PlayerId) (g : State) (k : Nat) (sl : Slot) (as : List Action)
     (apply : Bool) : State :=
   let g1 := g.set p { g p with field := (g p).field.eraseIdx k }
-  let g2 := if apply then as.foldl (State.applyAction r p) g1 else g1
+  let g2 := if apply then as.foldl (State.applyAction r ⟨p, r.cellOf p sl⟩) g1 else g1
   g2.set p { g2 p with grave := (g2 p).grave ++ [sl.card] }
 
 /-! ## 戦闘 -/
@@ -110,7 +137,8 @@ abbrev Pos := PlayerId × Nat
 def boostFrom (r : Rules) (neg : List Pos) (t : Pos) (tsl : Slot) (q : PlayerId) (j : Nat) (src : Slot) : Int :=
   if src.faceUp && r.onFieldZone src.zone && !neg.contains (q, j) then
     (src.card.effects.map fun
-      | .boost sel n => if sel.matches { tsl.view (q == t.1) with isSelf := (q, j) == t } then n else 0
+      | .boost sel n =>
+        if sel.matches { tsl.view r t.1 ⟨q, r.cellOf q src⟩ with isSelf := (q, j) == t } then n else 0
       | _ => 0).sum
   else 0
 
@@ -161,10 +189,10 @@ inductive Step (r : Rules) : State → State → Prop
   | draw (g : State) (p : PlayerId) (c : Card) (d : List Card) :
       (g p).deck = c :: d →
       Step r g (g.set p { g p with deck := d, hand := (g p).hand ++ [c] })
-  | place (g : State) (p : PlayerId) (c : Card) (i : Nat) (z : Zone) (up : Bool) :
-      c ∈ (g p).hand → r.zones[i]? = some z → z.role = .plain → z.admits.contains c.type →
-      (z.capacity = .one → ((g p).field.filter (·.zone == i)).length < z.count) →
-      Step r g (g.set p { g p with hand := (g p).hand.erase c, field := (g p).field ++ [⟨i, c, up⟩] })
+  | place (g : State) (p : PlayerId) (c : Card) (i j : Nat) (z : Zone) (up : Bool) :
+      c ∈ (g p).hand → r.zones[i]? = some z → z.role = .plain → z.admits.contains c.type → j < z.count →
+      (z.capacity = .one → ∀ sl ∈ (g p).field, ¬(sl.zone = i ∧ sl.cell = j)) →
+      Step r g (g.set p { g p with hand := (g p).hand.erase c, field := (g p).field ++ [⟨i, j, c, up⟩] })
   | resolve (g : State) (p : PlayerId) (k : Nat) (sl : Slot) (as : List Action) (apply : Bool) :
       (g p).field[k]? = some sl → .activated as ∈ sl.card.effects →
       Step r g (g.resolve r p k sl as apply)

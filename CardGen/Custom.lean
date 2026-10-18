@@ -98,7 +98,7 @@ def greedyPlace (r : Rules) (q : Card → Bool) (p : PlayerId) (fuel : Nat) (g :
     let place := (List.range s.hand.length).findSome? fun h =>
       if (s.hand[h]?.map q).getD false then
         (List.range r.zones.length).findSome? fun i =>
-          let ch := Choice.place p h i true
+          let ch := Choice.place p h i (g.freeCell r p i) true
           (g.step? r ch).map (ch, ·)
       else none
     match place with
@@ -114,7 +114,9 @@ def choicesFor (r : Rules) (g : State) (p : PlayerId) : List Choice :=
   let res := (List.range s.field.length).flatMap fun k =>
     (List.range ((s.field[k]?.map (·.card.effects.length)).getD 0)).map fun e => Choice.resolve p k e true
   let pl := (List.range s.hand.length).flatMap fun h =>
-    (List.range r.zones.length).flatMap fun i => [Choice.place p h i true, Choice.place p h i false]
+    (List.range r.zones.length).flatMap fun i =>
+      let j := g.freeCell r p i
+      [Choice.place p h i j true, Choice.place p h i j false]
   res ++ pl ++ [.draw p]
 
 /-- 命題の数える枚数（`both` なら合計、そうでなければ `true` のプレイヤー） -/

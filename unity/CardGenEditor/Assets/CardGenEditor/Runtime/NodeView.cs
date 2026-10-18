@@ -134,7 +134,8 @@ namespace CardGen.App
             NodeKind.Zone =>
                 $"{n.Zone.Count}マス・{(n.Zone.Capacity == Capacity.One ? "1枚まで" : "何枚でも")}・" +
                 $"{(n.Zone.Role == ZoneRole.Deck ? "デッキ" : n.Zone.Role == ZoneRole.Grave ? "墓地" : n.Zone.OnField ? "フィールド上" : "フィールド外")}\n" +
-                $"置ける種類：{List(n.Zone.Admits)}",
+                $"置ける種類：{List(n.Zone.Admits)}" +
+                (n.Zone.Cells.Count > 0 ? $"\nマス：{Inspector.CellsText(n.Zone.Cells.Take(3))}{(n.Zone.Cells.Count > 3 ? " …" : "")}" : ""),
             NodeKind.Card =>
                 $"種類：{(n.Card.Type.Length == 0 ? "（未設定）" : n.Card.Type)}" + (n.Card.Tags.Count > 0 ? $"\nタグ：{List(n.Card.Tags)}" : "") +
                 (n.Card.Attack > 0 || n.Card.Defense > 0 ? $"\n攻撃力 {n.Card.Attack}・守備力 {n.Card.Defense}" : ""),
@@ -155,6 +156,8 @@ namespace CardGen.App
             var parts = $"{side}{(s.FaceUpOnly ? "表側表示の" : "")}{List(s.Types, "（種類なし）")}";
             if (s.Tags.Count > 0) parts += $"（{List(s.Tags)}）";
             if (s.ExcludeSelf) parts += "\nこのカード自身を除く";
+            if (s.Near == Near.Adjacent) parts = "隣のマスの" + parts;
+            if (s.Near == Near.SameColumn) parts = "同じ縦列の" + parts;
             return parts;
         }
     }

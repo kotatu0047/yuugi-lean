@@ -6,7 +6,17 @@ import CardGen.Turn
 # 中間表現の見本
 
 ユーザーの入力例のルール（初期手札5枚、デッキ40枚、モンスター・魔法・罠、ゾーン12マス、
-ライフ8000、モンスターが戦闘する）と、プロトタイプで表せるカード13枚。同じ内容の JSON が `CardGen/sample.json` にある。
+ライフ8000、モンスターが戦闘する）と、プロトタイプで表せるカード15枚。
+モンスターカードゾーンと魔法罠ゾーンは、盤面のマス目の中央の 5列×2行（相手の側と合わせて 5列×4行）に置く。
+
+```
+列 →        22   23   24   25   26
+行 22  相手の魔法罠ゾーン（4 3 2 1 0 番目のマス）
+行 23  相手のモンスターカードゾーン（4 3 2 1 0）
+行 24  （空き：盤面の中心の行）
+行 25  自分のモンスターカードゾーン（0 1 2 3 4）
+行 26  自分の魔法罠ゾーン（0 1 2 3 4）
+```同じ内容の JSON が `CardGen/sample.json` にある。
 -/
 
 namespace CardGen.Sample
@@ -16,15 +26,18 @@ def monster : TypeName := "モンスター"
 def spell : TypeName := "魔法"
 def trap : TypeName := "罠"
 
+/-- 行 `y` の、列 22〜26 の5マス -/
+def row (y : Nat) : List Cell := (List.range 5).map fun i => ⟨22 + i, y⟩
+
 def rules : Rules where
   cardTypes := [monster, spell, trap]
   deckSize := 40
   handSize := 5
   zones := [
     { name := "モンスターカードゾーン", count := 5, capacity := .one, role := .plain,
-      onField := true, admits := [monster] },
+      onField := true, admits := [monster], cells := row 25 },
     { name := "魔法罠ゾーン", count := 5, capacity := .one, role := .plain,
-      onField := true, admits := [spell, trap] },
+      onField := true, admits := [spell, trap], cells := row 26 },
     { name := "デッキゾーン", count := 1, capacity := .many, role := .deck,
       onField := false, admits := [monster, spell, trap] },
     { name := "墓地ゾーン", count := 1, capacity := .many, role := .grave,
@@ -98,11 +111,22 @@ def fireball : Card :=
 def potion : Card :=
   { name := "レッド・ポーション", type := spell, tags := [], effects := [.activated [.heal 500]] }
 
+/-- 発動して、このカードと同じ縦列の相手のカードをすべて破壊する魔法 -/
+def columnStrike : Card :=
+  { name := "縦一閃", type := spell, tags := [],
+    effects := [.activated [.destroy { sel [monster, spell, trap] .opp with near := .sameColumn }]] }
+
+/-- 隣のマスの自分のモンスターの攻撃力を上げるモンスター -/
+def escort : Card :=
+  { name := "援護の兵士", type := monster, tags := ["戦士族"],
+    effects := [.boost { sel [monster] .self (faceUpOnly := true) (excludeSelf := true) with near := .adjacent } 400],
+    attack := 1200, defense := 1200 }
+
 def game : Game where
   version := currentVersion
   rules := rules
   cards := [thunderbolt, featherDuster, skillDrain, royalDecree, jinzo, blooD, returnSpell, drawSpell,
-    blackMagician, darkCommander, darkBlessing, fireball, potion]
+    blackMagician, darkCommander, darkBlessing, fireball, potion, columnStrike, escort]
 
 /-! ## 検査 -/
 
@@ -288,18 +312,18 @@ namespace CardGen.Sample
 /-- 自分：闇の指揮官・ブラック・マジシャン・闇の加護、相手：サイコ・ショッカー・裏側表示の Bloo－D -/
 def battleState : State := fun p =>
   if p then { deck := [], hand := [], grave := [], life := 8000,
-              field := [⟨0, darkCommander, true⟩, ⟨0, blackMagician, true⟩, ⟨1, darkBlessing, true⟩] }
+              field := [⟨0, 0, darkCommander, true⟩, ⟨0, 1, blackMagician, true⟩, ⟨1, 0, darkBlessing, true⟩] }
   else { deck := [], hand := [], grave := [], life := 8000,
-         field := [⟨0, jinzo, true⟩, ⟨0, blooD, false⟩] }
+         field := [⟨0, 0, jinzo, true⟩, ⟨0, 1, blooD, false⟩] }
 
 -- ブラック・マジシャンの攻撃力：2500 ＋ 指揮官 300 ＋ 加護 500
-#guard battleState.atkOf rules [] (true, 1) ⟨0, blackMagician, true⟩ == 3300
+#guard battleState.atkOf rules [] (true, 1) ⟨0, 1, blackMagician, true⟩ == 3300
 -- 指揮官自身には指揮官の効果は及ばない：1600 ＋ 加護 500
-#guard battleState.atkOf rules [] (true, 0) ⟨0, darkCommander, true⟩ == 2100
+#guard battleState.atkOf rules [] (true, 0) ⟨0, 0, darkCommander, true⟩ == 2100
 -- 指揮官の効果が無効（スキルドレインなど）なら 2500 ＋ 500
-#guard battleState.atkOf rules [(true, 0)] (true, 1) ⟨0, blackMagician, true⟩ == 3000
+#guard battleState.atkOf rules [(true, 0)] (true, 1) ⟨0, 1, blackMagician, true⟩ == 3000
 -- サイコ・ショッカーは相手の加護の範囲外（「自分の」闇属性モンスター）：2400 のまま
-#guard battleState.atkOf rules [] (false, 0) ⟨0, jinzo, true⟩ == 2400
+#guard battleState.atkOf rules [] (false, 0) ⟨0, 0, jinzo, true⟩ == 2400
 
 -- ブラック・マジシャン（3300）でサイコ・ショッカー（2400）を攻撃：ショッカーは破壊され、相手は 900 のダメージ
 #guard match battleState.step? rules (.attack true 1 (some 0) []) with
@@ -318,7 +342,7 @@ def battleState : State := fun p =>
 #guard (battleState.step? rules (.attack true 2 (some 0) [])).isNone
 
 -- ファイヤー・ボールのダメージはライフ 0 で止まる
-#guard ((battleState.set false { battleState false with life := 300 }).applyAction rules true (.damage 500) false).life == 0
+#guard ((battleState.set false { battleState false with life := 300 }).applyAction rules ⟨true, none⟩ (.damage 500) false).life == 0
 
 -- 見本には回復の魔法があるので、ライフの上限の★はない。回復の魔法を除けば★「ライフは最大8000」が出る
 #guard (gameClaims game).isEmpty
@@ -346,31 +370,72 @@ def turn0 : Match := Match.start rules (fun _ => turnDeck) true
 -- 先攻の最初のターンは引かない
 #guard (turn0.g true).hand.length == 5 && turn0.turn.tp == true
 -- 1ターンにモンスターを置けるのは1枚まで。魔法・罠はいくつでも置ける
-#guard (Match.run rules turn0 [.place 0 0 true]).isSome
-#guard (Match.run rules turn0 [.place 0 0 true, .place 0 0 true]).isNone
-#guard (Match.run rules turn0 [.place 0 0 true, .place 1 1 true, .place 1 1 true]).isSome
+#guard (Match.run rules turn0 [.place 0 0 0 true]).isSome
+#guard (Match.run rules turn0 [.place 0 0 0 true, .place 0 0 1 true]).isNone
+#guard (Match.run rules turn0 [.place 0 0 0 true, .place 1 1 0 true, .place 1 1 1 true]).isSome
 -- 先攻の最初のターンは攻撃できない
-#guard (Match.run rules turn0 [.place 0 0 true, .attack 0 none []]).isNone
+#guard (Match.run rules turn0 [.place 0 0 0 true, .attack 0 none []]).isNone
 -- ターン終了：相手のターンになり、相手が1枚引く
-#guard match Match.run rules turn0 [.place 0 0 true, .endTurn] with
+#guard match Match.run rules turn0 [.place 0 0 0 true, .endTurn] with
   | some m => m.turn.tp == false && m.turn.count == 2 && (m.g false).hand.length == 6 && (m.g true).hand.length == 4
   | none => false
 -- 相手のターンには、自分はカードを置けない（置くのはターンプレイヤー）が、場のカードの発動はできる
-#guard match Match.run rules turn0 [.place 0 0 true, .endTurn, .place 0 0 true] with
+#guard match Match.run rules turn0 [.place 0 0 0 true, .endTurn, .place 0 0 0 true] with
   | some m => (m.g false).field.length == 1 && (m.g true).field.length == 1
   | none => false
 -- 3ターン目：自分のサイコ・ショッカー（2400）で相手の Bloo－D（1900）……ではなく、相手が置いたショッカーを攻撃（相打ち）
 -- 同じカードで2回は攻撃できない
-#guard (Match.run rules turn0 [.place 0 0 true, .endTurn, .endTurn, .attack 0 none []]).isSome
-#guard (Match.run rules turn0 [.place 0 0 true, .endTurn, .endTurn, .attack 0 none [], .attack 0 none []]).isNone
+#guard (Match.run rules turn0 [.place 0 0 0 true, .endTurn, .endTurn, .attack 0 none []]).isSome
+#guard (Match.run rules turn0 [.place 0 0 0 true, .endTurn, .endTurn, .attack 0 none [], .attack 0 none []]).isNone
 -- 次のターンにはまた攻撃できる
 #guard (Match.run rules turn0
-  [.place 0 0 true, .endTurn, .endTurn, .attack 0 none [], .endTurn, .endTurn, .attack 0 none []]).isSome
+  [.place 0 0 0 true, .endTurn, .endTurn, .attack 0 none [], .endTurn, .endTurn, .attack 0 none []]).isSome
 -- ルールで先攻の最初のターンの攻撃を許せば、1ターン目から攻撃できる
 #guard (Match.run { rules with firstTurnAttack := true }
-  (Match.start { rules with firstTurnAttack := true } (fun _ => turnDeck) true) [.place 0 0 true, .attack 0 none []]).isSome
+  (Match.start { rules with firstTurnAttack := true } (fun _ => turnDeck) true) [.place 0 0 0 true, .attack 0 none []]).isSome
 -- 召喚の上限を 0（制限なし）にすれば、1ターンに何枚でも置ける
 #guard (Match.run { rules with summonsPerTurn := 0 }
-  (Match.start { rules with summonsPerTurn := 0 } (fun _ => turnDeck) true) [.place 0 0 true, .place 0 0 true]).isSome
+  (Match.start { rules with summonsPerTurn := 0 } (fun _ => turnDeck) true) [.place 0 0 0 true, .place 0 0 1 true]).isSome
+
+/-! ## マスの並び -/
+
+-- 見本のゾーンのマスは盤面の中で重ならない（相手の側も含む）。重ねたり、盤面の外に置いたりすると誤り
+#guard rules.allCells.length == 20 && (dups rules.allCells).isEmpty
+#guard !({ game with rules := { rules with zones := rules.zones.modify 1 fun z => { z with cells := row 25 } } }).WellFormed
+#guard !({ game with rules := { rules with zones := rules.zones.modify 1 fun z => { z with cells := row 24 } } }).WellFormed
+#guard !({ game with rules := { rules with zones := rules.zones.modify 1 fun z => { z with cells := row 49 } } }).WellFormed
+#guard !({ game with rules := { rules with zones := rules.zones.modify 1 fun z => { z with cells := (row 26).take 4 } } }).WellFormed
+
+-- 相手のマスは点対称の位置：自分のモンスターカードゾーンの 0 番目（22, 25）と、相手の 0 番目（26, 23）
+#guard rules.cellOf true ⟨0, 0, jinzo, true⟩ == some ⟨22, 25⟩
+#guard rules.cellOf false ⟨0, 0, jinzo, true⟩ == some ⟨26, 23⟩
+-- デッキ・墓地はマス目の上にない
+#guard rules.cellOf true ⟨2, 0, jinzo, true⟩ == none
+
+/-- 自分：縦一閃（魔法罠の 2 番目、列 24）・ブラック・マジシャン（モンスターの 2 番目、列 24）・援護の兵士（3 番目、列 25）・
+ブラック・マジシャン（0 番目、列 22）。相手：サイコ・ショッカー（相手の 2 番目＝列 24）・Bloo－D（相手の 0 番目＝列 26）・
+裏側表示のハーピィの羽根帚（相手の魔法罠の 2 番目＝列 24） -/
+def gridState : State := fun p =>
+  if p then { deck := [], hand := [jinzo], grave := [], life := 8000,
+              field := [⟨1, 2, columnStrike, true⟩, ⟨0, 2, blackMagician, true⟩, ⟨0, 3, escort, true⟩,
+                        ⟨0, 0, blackMagician, true⟩] }
+  else { deck := [], hand := [], grave := [], life := 8000,
+         field := [⟨0, 2, jinzo, true⟩, ⟨0, 0, blooD, true⟩, ⟨1, 2, featherDuster, false⟩] }
+
+-- 縦一閃：同じ縦列（列 24）の相手のショッカーと羽根帚だけを破壊する。自分の側は範囲外
+#guard match gridState.step? rules (.resolve true 0 0 true) with
+  | some g => (g false).field.map (·.card.name) == [blooD.name] && (g false).grave == [jinzo, featherDuster] &&
+      (g true).field.length == 3
+  | none => false
+-- 援護の兵士は隣のマスのブラック・マジシャンだけ攻撃力を上げる（2500 ＋ 400）。離れたマスのものは 2500 のまま
+#guard gridState.atkOf rules [] (true, 1) ⟨0, 2, blackMagician, true⟩ == 2900
+#guard gridState.atkOf rules [] (true, 3) ⟨0, 0, blackMagician, true⟩ == 2500
+-- 援護の兵士が無効なら上がらない
+#guard gridState.atkOf rules [(true, 2)] (true, 1) ⟨0, 2, blackMagician, true⟩ == 2500
+-- 1マス1枚：使っているマス（2 番目）には置けない。空いているマス（1 番目）には置ける。5 番目のマスはない
+#guard (gridState.step? rules (.place true 0 0 2 true)).isNone
+#guard (gridState.step? rules (.place true 0 0 1 true)).isSome
+#guard (gridState.step? rules (.place true 0 0 5 true)).isNone
+#guard gridState.freeCell rules true 0 == 1
 
 end CardGen.Sample

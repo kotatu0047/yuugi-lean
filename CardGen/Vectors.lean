@@ -11,7 +11,7 @@ C# のゲームエンジンが Lean の定義と同じ結果を出すかを確�
 
 - `selector`：範囲の指定（`Selector.matches`）
 - `check`：形式の検査（`Game.check`）。誤りの文章も一致させる
-- `destroy`：破壊の動き（`PState.destroy`）
+- `destroy`：破壊の動き（`PState.destroy`）。効果を出したカードのマスとの関係（隣・同じ縦列）も含む
 - `boards`：盤面の無効の関係（`instRel`）と判定の手続きの分類（`analyzeBoard`）
 - `timed`：適用の時刻つきの判定の1歩（`TSys.succ`）。有効・無効と適用の順番、ターンプレイヤーをいろいろに選ぶ
 - `attack`：攻撃力（`State.atkOf`）。無効になっているカードの位置もいろいろに選ぶ
@@ -43,6 +43,8 @@ def Rand.subset {α} (l : List α) : Rand (List α) := l.filterM fun _ => Rand.b
 def Rand.list {α} (n : Nat) (m : Rand α) : Rand (List α) := (List.range n).mapM fun _ => m
 
 instance : Inhabited Side := ⟨.both⟩
+instance : Inhabited Near := ⟨.any⟩
+instance : Inhabited Cell := ⟨⟨0, 0⟩⟩
 
 def vecTypes : List TypeName := ["モンスター", "魔法", "罠"]
 def vecTags : List String := ["闇属性", "機械族", "戦士族"]
@@ -51,16 +53,21 @@ def Rand.selector : Rand Selector := do
   let ts ← Rand.subset vecTypes
   let types ← if ts.isEmpty then (do return [← Rand.pick vecTypes]) else pure ts
   return { types, tags := ← Rand.subset vecTags, side := ← Rand.pick [.self, .opp, .both],
-           faceUpOnly := ← Rand.bool, excludeSelf := ← Rand.bool }
+           faceUpOnly := ← Rand.bool, excludeSelf := ← Rand.bool,
+           near := ← Rand.pick [.any, .any, .adjacent, .sameColumn] }
 
 def Rand.view : Rand View := do
   return { type := ← Rand.pick vecTypes, tags := ← Rand.subset vecTags, mine := ← Rand.bool,
-           faceUp := ← Rand.bool, isSelf := ← Rand.bool }
+           faceUp := ← Rand.bool, isSelf := ← Rand.bool, adjacent := ← Rand.bool, sameColumn := ← Rand.bool }
 
 def viewJson (v : View) : Json :=
-  json% {type: $(v.type), tags: $(v.tags), mine: $(v.mine), faceUp: $(v.faceUp), isSelf: $(v.isSelf)}
+  json% {type: $(v.type), tags: $(v.tags), mine: $(v.mine), faceUp: $(v.faceUp), isSelf: $(v.isSelf),
+         adjacent: $(v.adjacent), sameColumn: $(v.sameColumn)}
 
-def slotJson (sl : Slot) : Json := json% {zone: $(sl.zone), card: $(sl.card.name), faceUp: $(sl.faceUp)}
+def slotJson (sl : Slot) : Json :=
+  json% {zone: $(sl.zone), cell: $(sl.cell), card: $(sl.card.name), faceUp: $(sl.faceUp)}
+
+def srcJson (s : Src) : Json := json% {player: $(s.p), cell: $(toJson s.cell)}
 
 def pstateJson (s : PState) : Json :=
   json% {deck: $(s.deck.map (·.name)), hand: $(s.hand.map (·.name)), grave: $(s.grave.map (·.name)),
@@ -74,6 +81,16 @@ def verdictName : Verdict → String
 
 /-- テストに使うカード：見本の13枚と、循環のない例・自分を無効にする例 -/
 def vecCards : List Card := Sample.game.cards ++ [Sample.spellBreaker, Sample.selfNegator]
+
+/-- フィールドのカード：ゾーンは見本の 4 つと存在しない番号、マスは 0〜5 -/
+def Rand.slot (zones : Nat) : Rand Slot := do
+  return ⟨← Rand.next zones, ← Rand.next 6, ← Rand.pick vecCards, ← Rand.bool⟩
+
+/-- 効果を出したもの（マスは見本のマス目の上か、マス目の外か） -/
+def Rand.src : Rand Src := do
+  let cells := Sample.rules.allCells
+  let c ← Rand.pick cells
+  return ⟨← Rand.bool, if (← Rand.next 4) == 0 then none else some c⟩
 
 /-- 形式の検査のテスト：見本と、1か所ずつ間違えたもの -/
 def checkCases : List Game :=
@@ -92,6 +109,12 @@ def checkCases : List Game :=
     zone (fun z => { z with admits := ["儀式"] }) 1,
     zone (fun z => { z with onField := true }) 2,
     zone (fun z => { z with capacity := .one, count := 2 }) 3,
+    zone (fun z => { z with cells := Sample.row 25 }) 1,
+    zone (fun z => { z with cells := Sample.row 24 }) 0,
+    zone (fun z => { z with cells := (Sample.row 26).take 3 }) 1,
+    zone (fun z => { z with cells := [⟨48, 2⟩, ⟨49, 2⟩, ⟨2, 51⟩, ⟨3, 2⟩, ⟨4, 2⟩] }) 1,
+    zone (fun z => { z with cells := [⟨0, 0⟩] }) 2,
+    { g with cards := [{ Sample.skillDrain with effects := [.negate { Sample.sel ["モンスター"] .both with near := .adjacent }] }] },
     { g with cards := g.cards ++ [g.cards[0]!] },
     { g with cards := [{ Sample.thunderbolt with effects := [.activated [.destroy { Sample.sel [] .opp with types := [] }]] }] },
     { g with cards := [{ Sample.skillDrain with effects := [.negate (Sample.sel ["融合"] .both)] }] },
@@ -108,7 +131,7 @@ def stateJson (g : State) : Json := json% [$(pstateJson (g true)), $(pstateJson 
 
 def choiceJson : Choice → Json
   | .draw p => json% {kind: "draw", player: $(p)}
-  | .place p h z up => json% {kind: "place", player: $(p), hand: $(h), zone: $(z), faceUp: $(up)}
+  | .place p h z c up => json% {kind: "place", player: $(p), hand: $(h), zone: $(z), cell: $(c), faceUp: $(up)}
   | .resolve p k e apply => json% {kind: "resolve", player: $(p), field: $(k), effect: $(e), apply: $(apply)}
   | .attack p k t neg => json% {kind: "attack", player: $(p), field: $(k), target: $(t),
       neg: $(neg.map fun (q, j) => json% [$(q), $(j)])}
@@ -139,7 +162,9 @@ def Rand.choice (g : State) : Rand Choice := do
           (playRules.zones[i]?.map fun z => z.role == .plain && z.admits.contains c.type).getD false
       | none => []
     let z ← if ok.isEmpty || (← Rand.next 4) == 0 then Rand.next (playRules.zones.length + 1) else Rand.pick ok
-    return .place p h z (← Rand.bool)
+    -- 空いているマスを選びやすくする
+    let c ← if (← Rand.next 3) == 0 then Rand.next 6 else pure (g.freeCell playRules p z)
+    return .place p h z c (← Rand.bool)
   | _ =>
     -- 魔法を探して発動することが多くなるように、フィールドにあるカードを選びやすくする
     let n := (g p).field.length
@@ -152,7 +177,7 @@ def turnJson (t : TurnInfo) : Json :=
   json% {tp: $(t.tp), count: $(t.count), summons: $(t.summons), attacked: $(t.attacked.map slotJson)}
 
 def tchoiceJson : TChoice → Json
-  | .place h z up => json% {kind: "place", hand: $(h), zone: $(z), faceUp: $(up)}
+  | .place h z c up => json% {kind: "place", hand: $(h), zone: $(z), cell: $(c), faceUp: $(up)}
   | .resolve p k e apply => json% {kind: "resolve", player: $(p), field: $(k), effect: $(e), apply: $(apply)}
   | .attack k t neg => json% {kind: "attack", field: $(k), target: $(t),
       neg: $(neg.map fun (q, j) => json% [$(q), $(j)])}
@@ -178,10 +203,10 @@ def Rand.tchoice (m : Match) : Rand TChoice := do
     -- ターンプレイヤーを「自分」として選ぶ（置く・発動）。発動はときどき相手のカードも
     let ch ← Rand.choice (fun q => m.g (if q then tp else !tp))
     match ch with
-    | .place q h z up => return if q then .place h z up else .resolve (!tp) 0 0 true
+    | .place q h z c up => return if q then .place h z c up else .resolve (!tp) 0 0 true
     | .attack _ k t neg => return .attack k t neg
     | .resolve q k e apply => return .resolve (if q then tp else !tp) k e apply
-    | .draw _ => return .place 0 0 true
+    | .draw _ => return .place 0 0 0 true
 
 def vectors : Json := Id.run do
   let (j, _) := (do
@@ -190,17 +215,17 @@ def vectors : Json := Id.run do
       let v ← Rand.view
       return json% {selector: $(toJson s), view: $(viewJson v), expected: $(s.matches v)}
     let destroy ← Rand.list 100 do
-      let slot : Rand Slot := do
-        return ⟨← Rand.next 5, ← Rand.pick vecCards, ← Rand.bool⟩
+      let slot := Rand.slot 5
       let deck ← Rand.list (← Rand.next 3) (Rand.pick vecCards)
       let hand ← Rand.list (← Rand.next 3) (Rand.pick vecCards)
       let grave ← Rand.list (← Rand.next 3) (Rand.pick vecCards)
       let field ← Rand.list (← Rand.next 7) slot
       let s : PState := ⟨deck, hand, grave, field, ← Rand.next 9000⟩
       let sel ← Rand.selector
-      let mine ← Rand.bool
-      return json% {state: $(pstateJson s), selector: $(toJson sel), mine: $(mine),
-                    expected: $(pstateJson (s.destroy Sample.rules sel mine))}
+      let q ← Rand.bool
+      let src ← Rand.src
+      return json% {state: $(pstateJson s), selector: $(toJson sel), owner: $(q), src: $(srcJson src),
+                    expected: $(pstateJson (s.destroy Sample.rules sel q src))}
     let boards ← Rand.list 150 do
       let n := (← Rand.next 6) + 1
       let insts ← Rand.list n do
@@ -217,8 +242,7 @@ def vectors : Json := Id.run do
       return json% {insts: $(insts.map instJson), state: $(tjson s), turn: $(tp),
                     expected: $((TSys.ofInsts insts).succ tp s |>.map tjson)}
     let attack ← Rand.list 100 do
-      let slot : Rand Slot := do
-        return ⟨← Rand.next 3, ← Rand.pick vecCards, ← Rand.bool⟩
+      let slot := Rand.slot 3
       let f1 ← Rand.list (← Rand.next 6) slot
       let f2 ← Rand.list (← Rand.next 6) slot
       let g : State := fun p => ⟨[], [], [], if p then f1 else f2, 0⟩

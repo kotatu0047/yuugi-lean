@@ -16,8 +16,9 @@ namespace CardGen
         /// <summary>このターンに攻撃したカード（ターンプレイヤーのフィールドにあるものだけ）</summary>
         public List<Slot> Attacked = new List<Slot>();
 
-        /// <summary>Lean の Slot の等しさ（ゾーン・カード・表裏が同じ）</summary>
-        public static bool SameSlot(Slot a, Slot b) => a.Zone == b.Zone && a.Card.Name == b.Card.Name && a.FaceUp == b.FaceUp;
+        /// <summary>Lean の Slot の等しさ（ゾーン・マス・カード・表裏が同じ）</summary>
+        public static bool SameSlot(Slot a, Slot b) =>
+            a.Zone == b.Zone && a.Cell == b.Cell && a.Card.Name == b.Card.Name && a.FaceUp == b.FaceUp;
 
         static int CountOf(IEnumerable<Slot> l, Slot s) => l.Count(x => SameSlot(x, s));
 
@@ -53,13 +54,13 @@ namespace CardGen
         public TChoiceKind Kind;
         /// <summary>発動するプレイヤー（Resolve のみ。ほかはターンプレイヤー）</summary>
         public bool Player;
-        public int Hand, Zone, Field, Effect;
+        public int Hand, Zone, Cell, Field, Effect;
         public bool FaceUp, Apply;
         public int? Target;
         public List<(bool player, int index)> Neg = new List<(bool, int)>();
 
-        public static TChoice Place(int hand, int zone, bool faceUp) =>
-            new TChoice { Kind = TChoiceKind.Place, Hand = hand, Zone = zone, FaceUp = faceUp };
+        public static TChoice Place(int hand, int zone, int cell, bool faceUp) =>
+            new TChoice { Kind = TChoiceKind.Place, Hand = hand, Zone = zone, Cell = cell, FaceUp = faceUp };
         public static TChoice Resolve(bool p, int field, int effect, bool apply) =>
             new TChoice { Kind = TChoiceKind.Resolve, Player = p, Field = field, Effect = effect, Apply = apply };
         public static TChoice Attack(int field, int? target, List<(bool, int)> neg) =>
@@ -105,9 +106,9 @@ namespace CardGen
                 {
                     var hand = G.Get(p).Hand;
                     if (ch.Hand < 0 || ch.Hand >= hand.Count) return null;
-                    var fighter = MatchState.Fights(r, new Slot(ch.Zone, hand[ch.Hand], ch.FaceUp));
+                    var fighter = MatchState.Fights(r, new Slot(ch.Zone, ch.Cell, hand[ch.Hand], ch.FaceUp));
                     if (fighter && r.SummonsPerTurn != 0 && Turn.Summons >= r.SummonsPerTurn) return null;
-                    var g = G.Step(r, Choice.Place(p, ch.Hand, ch.Zone, ch.FaceUp));
+                    var g = G.Step(r, Choice.Place(p, ch.Hand, ch.Zone, ch.Cell, ch.FaceUp));
                     if (g == null) return null;
                     return new Match { G = g, Turn = Turn.With(summons: Turn.Summons + (fighter ? 1 : 0)) };
                 }

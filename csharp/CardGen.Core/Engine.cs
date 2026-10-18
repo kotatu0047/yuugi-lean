@@ -8,11 +8,28 @@ namespace CardGen
     public sealed class Slot
     {
         public int Zone;
+        /// <summary>ゾーンの何番目のマスか</summary>
+        public int Cell;
         public Card Card;
         public bool FaceUp;
-        public Slot(int zone, Card card, bool faceUp) { Zone = zone; Card = card; FaceUp = faceUp; }
+        public Slot(int zone, int cell, Card card, bool faceUp) { Zone = zone; Cell = cell; Card = card; FaceUp = faceUp; }
 
-        public View ViewFor(bool mine) => new View(Card.Type, Card.Tags, mine, FaceUp, false);
+        /// <summary>Slot.view：owner のフィールドのこのカードを、効果を出したもの src から見た情報</summary>
+        public View ViewFor(Rules r, bool owner, Src src)
+        {
+            var c = r.CellOf(owner, Zone, Cell);
+            var adj = src.Cell.HasValue && c.HasValue && src.Cell.Value.Adjacent(c.Value);
+            var col = src.Cell.HasValue && c.HasValue && src.Cell.Value.Col == c.Value.Col;
+            return new View(Card.Type, Card.Tags, owner == src.Player, FaceUp, false, adj, col);
+        }
+    }
+
+    /// <summary>Src：効果を出したもの（効果の持ち主と、効果を持つカードのマス）</summary>
+    public readonly struct Src
+    {
+        public readonly bool Player;
+        public readonly Cell? Cell;
+        public Src(bool player, Cell? cell) { Player = player; Cell = cell; }
     }
 
     /// <summary>1人分の状態</summary>
@@ -24,10 +41,10 @@ namespace CardGen
         public List<Slot> Field = new List<Slot>();
         public int Life;
 
-        /// <summary>PState.destroy：フィールド上の、範囲に合うカードをすべて破壊して墓地へ送る</summary>
-        public PState Destroy(Rules r, Selector sel, bool mine)
+        /// <summary>PState.destroy：owner のフィールド上の、範囲に合うカードをすべて破壊して墓地へ送る</summary>
+        public PState Destroy(Rules r, Selector sel, bool owner, Src src)
         {
-            bool Hit(Slot sl) => r.OnFieldZone(sl.Zone) && sel.Matches(sl.ViewFor(mine));
+            bool Hit(Slot sl) => r.OnFieldZone(sl.Zone) && sel.Matches(sl.ViewFor(r, owner, src));
             return new PState
             {
                 Deck = Deck.ToList(),
@@ -42,9 +59,9 @@ namespace CardGen
     public static class PStateActions
     {
         /// <summary>PState.bounce：フィールド上の、範囲に合うカードをすべて手札に戻す</summary>
-        public static PState Bounce(this PState s, Rules r, Selector sel, bool mine)
+        public static PState Bounce(this PState s, Rules r, Selector sel, bool owner, Src src)
         {
-            bool Hit(Slot sl) => r.OnFieldZone(sl.Zone) && sel.Matches(sl.ViewFor(mine));
+            bool Hit(Slot sl) => r.OnFieldZone(sl.Zone) && sel.Matches(sl.ViewFor(r, owner, src));
             return new PState
             {
                 Deck = s.Deck.ToList(),

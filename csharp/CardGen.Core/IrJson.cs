@@ -59,7 +59,14 @@ namespace CardGen
                 Side = Enum(o, "side", ("self", Side.Self), ("opp", Side.Opp), ("both", Side.Both)),
                 FaceUpOnly = Bool(o, "faceUpOnly"),
                 ExcludeSelf = Bool(o, "excludeSelf"),
+                Near = Enum(o, "near", ("any", Near.Any), ("adjacent", Near.Adjacent), ("sameColumn", Near.SameColumn)),
             };
+        }
+
+        static Cell ParseCell(JToken t)
+        {
+            var o = Obj(t);
+            return new Cell(Int(o, "col"), Int(o, "row"));
         }
 
         static Action ParseAction(JToken t)
@@ -113,6 +120,7 @@ namespace CardGen
                 Role = Enum(o, "role", ("deck", ZoneRole.Deck), ("grave", ZoneRole.Grave), ("plain", ZoneRole.Plain)),
                 OnField = Bool(o, "onField"),
                 Admits = Strs(o, "admits"),
+                Cells = Arr(o, "cells", ParseCell),
             };
         }
 
@@ -148,17 +156,30 @@ namespace CardGen
         public static Game ParseGame(string json) => ParseGame(JToken.Parse(json));
 
         /// <summary>
-        /// 古い版の中間表現を今の版に上げる（エディタで開くとき用）。版 2 → 3 はターンのルールを既定の値で加える。
+        /// 古い版の中間表現を今の版に上げる（エディタで開くとき用）。
+        /// 版 2 → 3 はターンのルールを既定の値で加え、版 3 → 4 はゾーンのマスの位置を空（マス目の上にない）、
+        /// 範囲の指定のマスの関係を「条件なし」にする。
         /// 上げたときは true。版が分からない・新しすぎるときは何もしない
         /// </summary>
         public static bool Upgrade(JObject o)
         {
-            if (o["version"]?.Type != JTokenType.Integer || (int)o["version"] != 2 || !(o["rules"] is JObject r)) return false;
-            if (r["summonsPerTurn"] == null) r["summonsPerTurn"] = 1;
-            if (r["drawPerTurn"] == null) r["drawPerTurn"] = 1;
-            if (r["firstTurnDraw"] == null) r["firstTurnDraw"] = false;
-            if (r["firstTurnAttack"] == null) r["firstTurnAttack"] = false;
-            o["version"] = 3;
+            if (o["version"]?.Type != JTokenType.Integer || !(o["rules"] is JObject r)) return false;
+            var v = (int)o["version"];
+            if (v != 2 && v != 3) return false;
+            if (v == 2)
+            {
+                if (r["summonsPerTurn"] == null) r["summonsPerTurn"] = 1;
+                if (r["drawPerTurn"] == null) r["drawPerTurn"] = 1;
+                if (r["firstTurnDraw"] == null) r["firstTurnDraw"] = false;
+                if (r["firstTurnAttack"] == null) r["firstTurnAttack"] = false;
+            }
+            if (r["zones"] is JArray zones)
+                foreach (var z in zones.OfType<JObject>())
+                    if (z["cells"] == null) z["cells"] = new JArray();
+            if (o["cards"] is JArray cards)
+                foreach (var t in cards.Descendants().OfType<JProperty>().Where(p => p.Name == "target").ToList())
+                    if (t.Value is JObject sel && sel["near"] == null) sel["near"] = "any";
+            o["version"] = Game.CurrentVersion;
             return true;
         }
 
@@ -171,6 +192,7 @@ namespace CardGen
             ["side"] = s.Side == Side.Self ? "self" : s.Side == Side.Opp ? "opp" : "both",
             ["faceUpOnly"] = s.FaceUpOnly,
             ["excludeSelf"] = s.ExcludeSelf,
+            ["near"] = s.Near == Near.Adjacent ? "adjacent" : s.Near == Near.SameColumn ? "sameColumn" : "any",
         };
 
         static JObject ToJson(Action a) => a switch
@@ -209,6 +231,7 @@ namespace CardGen
             ["role"] = z.Role == ZoneRole.Deck ? "deck" : z.Role == ZoneRole.Grave ? "grave" : "plain",
             ["onField"] = z.OnField,
             ["admits"] = new JArray(z.Admits),
+            ["cells"] = new JArray(z.Cells.Select(c => new JObject { ["col"] = c.Col, ["row"] = c.Row })),
         };
 
         public static JObject ToJson(Rules r) => new JObject

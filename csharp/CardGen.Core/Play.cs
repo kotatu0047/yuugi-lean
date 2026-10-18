@@ -12,7 +12,7 @@ namespace CardGen
         public ChoiceKind Kind;
         /// <summary>動くプレイヤー（true と false の2人）</summary>
         public bool Player;
-        public int Hand, Zone, Field, Effect;
+        public int Hand, Zone, Cell, Field, Effect;
         public bool FaceUp, Apply;
         /// <summary>攻撃の対象（相手のフィールドの何番目か。null なら直接攻撃）</summary>
         public int? Target;
@@ -20,8 +20,8 @@ namespace CardGen
         public List<(bool player, int index)> Neg = new List<(bool, int)>();
 
         public static Choice Draw(bool p) => new Choice { Kind = ChoiceKind.Draw, Player = p };
-        public static Choice Place(bool p, int hand, int zone, bool faceUp) =>
-            new Choice { Kind = ChoiceKind.Place, Player = p, Hand = hand, Zone = zone, FaceUp = faceUp };
+        public static Choice Place(bool p, int hand, int zone, int cell, bool faceUp) =>
+            new Choice { Kind = ChoiceKind.Place, Player = p, Hand = hand, Zone = zone, Cell = cell, FaceUp = faceUp };
         public static Choice Resolve(bool p, int field, int effect, bool apply) =>
             new Choice { Kind = ChoiceKind.Resolve, Player = p, Field = field, Effect = effect, Apply = apply };
         public static Choice Attack(bool p, int field, int? target, List<(bool, int)> neg) =>
@@ -75,12 +75,18 @@ namespace CardGen
                              r.Zones[sl.Zone].Admits.Contains(sl.Card.Type);
                     if (!ok) v.Add($"{who}の「{sl.Card.Name}」は置けないゾーンにあります");
                 }
-                for (int i = 0; i < r.Zones.Count; i++)
-                {
-                    var z = r.Zones[i];
-                    var n = s.Field.Count(sl => sl.Zone == i);
-                    if (z.Capacity == Capacity.One && n > z.Count) v.Add($"{who}の「{z.Name}」に {n} 枚（{z.Count} マス）");
-                }
+                foreach (var sl in s.Field)
+                    if (sl.Zone >= 0 && sl.Zone < r.Zones.Count && (sl.Cell < 0 || sl.Cell >= r.Zones[sl.Zone].Count))
+                        v.Add($"{who}の「{sl.Card.Name}」は「{r.Zones[sl.Zone].Name}」にない {sl.Cell} 番目のマスにあります");
+                for (int i = 0; i < s.Field.Count; i++)
+                    for (int j = i + 1; j < s.Field.Count; j++)
+                    {
+                        var a = s.Field[i];
+                        var b = s.Field[j];
+                        if (a.Zone == b.Zone && a.Cell == b.Cell && a.Zone >= 0 && a.Zone < r.Zones.Count &&
+                            r.Zones[a.Zone].Capacity == Capacity.One)
+                            v.Add($"{who}の「{r.Zones[a.Zone].Name}」の {a.Cell} 番目のマスに2枚（「{a.Card.Name}」と「{b.Card.Name}」）");
+                    }
             }
             return v;
         }
@@ -101,7 +107,8 @@ namespace CardGen
         static long BoostFrom(Rules r, List<(bool, int)> neg, (bool p, int i) t, Slot tsl, bool q, int j, Slot src)
         {
             if (!src.FaceUp || !r.OnFieldZone(src.Zone) || neg.Contains((q, j))) return 0;
-            var v = new View(tsl.Card.Type, tsl.Card.Tags, q == t.p, tsl.FaceUp, q == t.p && j == t.i);
+            var w = tsl.ViewFor(r, t.p, new Src(q, r.CellOf(q, src.Zone, src.Cell)));
+            var v = new View(w.Type, w.Tags, w.Mine, w.FaceUp, q == t.p && j == t.i, w.Adjacent, w.SameColumn);
             return src.Card.Effects.OfType<Boost>().Where(b => b.Target.Matches(v)).Sum(b => (long)b.Amount);
         }
 
@@ -140,6 +147,17 @@ namespace CardGen
             return this;
         }
 
+        /// <summary>State.freeCell：p の i 番目のゾーンの、空いている最初のマス（なければ 0。「何枚でも」のゾーンなら 0）</summary>
+        public int FreeCell(Rules r, bool p, int i)
+        {
+            if (i < 0 || i >= r.Zones.Count) return 0;
+            var z = r.Zones[i];
+            if (z.Capacity != Capacity.One) return 0;
+            for (int j = 0; j < z.Count; j++)
+                if (Get(p).Field.All(sl => !(sl.Zone == i && sl.Cell == j))) return j;
+            return 0;
+        }
+
         /// <summary>State.step?：選んだ動きをしたあとの状態（できない動きなら null）</summary>
         public MatchState Step(Rules r, Choice ch)
         {
@@ -161,12 +179,13 @@ namespace CardGen
                     if (ch.Hand < 0 || ch.Hand >= s.Hand.Count || ch.Zone < 0 || ch.Zone >= r.Zones.Count) return null;
                     var c = s.Hand[ch.Hand];
                     var z = r.Zones[ch.Zone];
-                    var room = z.Capacity != Capacity.One || s.Field.Count(sl => sl.Zone == ch.Zone) < z.Count;
-                    if (z.Role != ZoneRole.Plain || !z.Admits.Contains(c.Type) || !room) return null;
+                    var free = z.Capacity != Capacity.One || s.Field.All(sl => !(sl.Zone == ch.Zone && sl.Cell == ch.Cell));
+                    if (z.Role != ZoneRole.Plain || !z.Admits.Contains(c.Type) || ch.Cell < 0 || ch.Cell >= z.Count || !free)
+                        return null;
                     var n = Copy(s);
                     // List.erase：同じカードのうち最初の1枚を取り除く
                     n.Hand.RemoveAt(n.Hand.FindIndex(x => x.Name == c.Name));
-                    n.Field.Add(new Slot(ch.Zone, c, ch.FaceUp));
+                    n.Field.Add(new Slot(ch.Zone, ch.Cell, c, ch.FaceUp));
                     return With(p, n);
                 }
                 case ChoiceKind.Attack:
@@ -184,12 +203,13 @@ namespace CardGen
                     var n1 = Copy(s);
                     n1.Field.RemoveAt(ch.Field);
                     var g = With(p, n1);
+                    var src = new Src(p, r.CellOf(p, sl.Zone, sl.Cell));
                     if (ch.Apply)
                         foreach (var a in act.Actions)
                             g = a switch
                             {
-                                Destroy d => new MatchState { P1 = g.P1.Destroy(r, d.Target, p), P2 = g.P2.Destroy(r, d.Target, !p) },
-                                Bounce b => new MatchState { P1 = g.P1.Bounce(r, b.Target, p), P2 = g.P2.Bounce(r, b.Target, !p) },
+                                Destroy d => new MatchState { P1 = g.P1.Destroy(r, d.Target, true, src), P2 = g.P2.Destroy(r, d.Target, false, src) },
+                                Bounce b => new MatchState { P1 = g.P1.Bounce(r, b.Target, true, src), P2 = g.P2.Bounce(r, b.Target, false, src) },
                                 DrawCards dc => g.With(p, g.Get(p).DrawN(dc.Count)),
                                 Damage dm => g.With(!p, g.Get(!p).Damage(dm.Amount)),
                                 Heal h => g.With(p, g.Get(p).With(life: g.Get(p).Life + h.Amount)),

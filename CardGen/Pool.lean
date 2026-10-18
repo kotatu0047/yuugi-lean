@@ -38,8 +38,8 @@ theorem CardsSub.set {g : State} {p : PlayerId} {s : PState} (h : ∀ x ∈ s.ca
   · subst hq; rw [State.set_same] at hx; exact h x hx
   · rwa [State.set_other _ _ hq] at hx
 
-theorem cards_destroy (r : Rules) (sel : Selector) (m : Bool) (s : PState) :
-    ∀ x ∈ (s.destroy r sel m).cards, x ∈ s.cards := by
+theorem cards_destroy (r : Rules) (sel : Selector) (q : PlayerId) (src : Src) (s : PState) :
+    ∀ x ∈ (s.destroy r sel q src).cards, x ∈ s.cards := by
   intro x hx
   simp only [PState.mem_cards, PState.destroy, List.mem_append, List.mem_map, List.mem_filter] at hx ⊢
   rcases hx with h | h | (h | ⟨sl, ⟨hsl, _⟩, rfl⟩) | ⟨sl, ⟨hsl, _⟩, rfl⟩
@@ -49,8 +49,8 @@ theorem cards_destroy (r : Rules) (sel : Selector) (m : Bool) (s : PState) :
   · exact .inr (.inr (.inr ⟨sl, hsl, rfl⟩))
   · exact .inr (.inr (.inr ⟨sl, hsl, rfl⟩))
 
-theorem cards_bounce (r : Rules) (sel : Selector) (m : Bool) (s : PState) :
-    ∀ x ∈ (s.bounce r sel m).cards, x ∈ s.cards := by
+theorem cards_bounce (r : Rules) (sel : Selector) (q : PlayerId) (src : Src) (s : PState) :
+    ∀ x ∈ (s.bounce r sel q src).cards, x ∈ s.cards := by
   intro x hx
   simp only [PState.mem_cards, PState.bounce, List.mem_append, List.mem_map, List.mem_filter] at hx ⊢
   rcases hx with h | (h | ⟨sl, ⟨hsl, _⟩, rfl⟩) | h | ⟨sl, ⟨hsl, _⟩, rfl⟩
@@ -86,20 +86,20 @@ theorem cards_destroyAt (k : Nat) (s : PState) : ∀ x ∈ (s.destroyAt k).cards
     · exact .inr (.inr (.inr ⟨sl', (List.eraseIdx_sublist _ _).subset hsl, rfl⟩))
   · exact hx
 
-theorem cardsSub_applyAction (r : Rules) (p : PlayerId) (g : State) (a : Action) :
-    CardsSub g (g.applyAction r p a) := by
+theorem cardsSub_applyAction (r : Rules) (src : Src) (g : State) (a : Action) :
+    CardsSub g (g.applyAction r src a) := by
   cases a with
-  | destroy sel => exact fun q => cards_destroy r sel (q == p) (g q)
-  | bounce sel => exact fun q => cards_bounce r sel (q == p) (g q)
-  | draw n => exact CardsSub.set (cards_drawN n (g p))
-  | damage n => exact CardsSub.set (cards_damage n (g (!p)))
+  | destroy sel => exact fun q => cards_destroy r sel q src (g q)
+  | bounce sel => exact fun q => cards_bounce r sel q src (g q)
+  | draw n => exact CardsSub.set (cards_drawN n (g src.p))
+  | damage n => exact CardsSub.set (cards_damage n (g (!src.p)))
   | heal n => exact CardsSub.set fun _ h => h
 
-theorem cardsSub_foldl (r : Rules) (p : PlayerId) (as : List Action) (g : State) :
-    CardsSub g (as.foldl (State.applyAction r p) g) := by
+theorem cardsSub_foldl (r : Rules) (src : Src) (as : List Action) (g : State) :
+    CardsSub g (as.foldl (State.applyAction r src) g) := by
   induction as generalizing g with
   | nil => exact CardsSub.refl g
-  | cons a t ih => exact (cardsSub_applyAction r p g a).trans (ih _)
+  | cons a t ih => exact (cardsSub_applyAction r src g a).trans (ih _)
 
 theorem cardsSub_battle (r : Rules) (g : State) (neg : List Pos) (p : PlayerId) (k : Nat) (sl : Slot)
     (t : Option Nat) : CardsSub g (g.battle r neg p k sl t) := by
@@ -131,7 +131,7 @@ theorem cardsSub_battle (r : Rules) (g : State) (neg : List Pos) (p : PlayerId) 
 theorem cardsSub_resolve (r : Rules) (p : PlayerId) (g : State) {k : Nat} {sl : Slot} (as : List Action)
     (apply : Bool) (hk : (g p).field[k]? = some sl) : CardsSub g (g.resolve r p k sl as apply) := by
   let g1 := g.set p { g p with field := (g p).field.eraseIdx k }
-  let g2 := if apply then as.foldl (State.applyAction r p) g1 else g1
+  let g2 := if apply then as.foldl (State.applyAction r ⟨p, r.cellOf p sl⟩) g1 else g1
   have h01 : CardsSub g g1 := CardsSub.set fun x hx => by
     simp only [PState.mem_cards] at hx ⊢
     rcases hx with h | h | h | ⟨sl', hsl, rfl⟩
@@ -141,7 +141,7 @@ theorem cardsSub_resolve (r : Rules) (p : PlayerId) (g : State) {k : Nat} {sl : 
     · exact .inr (.inr (.inr ⟨sl', (List.eraseIdx_sublist _ _).subset hsl, rfl⟩))
   have h12 : CardsSub g1 g2 := by
     by_cases ha : apply
-    · simp only [g2, ha, ite_true]; exact cardsSub_foldl r p as g1
+    · simp only [g2, ha, ite_true]; exact cardsSub_foldl r _ as g1
     · simp only [g2, ha]; exact CardsSub.refl g1
   have h02 := h01.trans h12
   have hsl : sl.card ∈ (g p).cards :=
@@ -171,7 +171,7 @@ theorem cardsSub_step {r : Rules} {g g' : State} : Step r g g' → CardsSub g g'
       · exact .inl List.mem_cons_self
       · exact .inr (.inr (.inl h))
       · exact .inr (.inr (.inr h))
-  | .place _ p c i z up hc _ _ _ _ => CardsSub.set fun x hx => by
+  | .place _ p c i _ z up hc _ _ _ _ _ => CardsSub.set fun x hx => by
       simp only [PState.mem_cards, List.mem_append, List.mem_singleton] at hx
       rw [PState.mem_cards]
       rcases hx with h | h | h | ⟨sl, h | rfl, rfl⟩
@@ -219,8 +219,9 @@ def Card.heals (c : Card) : Bool := c.effects.any fun
 /-- ライフが `L` 以下 -/
 def LifeLe (L : Nat) (g : State) : Prop := ∀ q, (g q).life ≤ L
 
-theorem lifeLe_applyAction {L : Nat} (r : Rules) (p : PlayerId) {g : State} (h : LifeLe L g) (a : Action)
-    (ha : a.isHeal = false) : LifeLe L (g.applyAction r p a) := by
+theorem lifeLe_applyAction {L : Nat} (r : Rules) (src : Src) {g : State} (h : LifeLe L g) (a : Action)
+    (ha : a.isHeal = false) : LifeLe L (g.applyAction r src a) := by
+  obtain ⟨p, c⟩ := src
   intro q
   cases a with
   | destroy sel => exact h q
@@ -235,7 +236,7 @@ theorem lifeLe_applyAction {L : Nat} (r : Rules) (p : PlayerId) {g : State} (h :
     · simp only [State.applyAction, State.set_other _ _ hq]; exact h q
   | heal n => simp [Action.isHeal] at ha
 
-theorem lifeLe_foldl {L : Nat} (r : Rules) (p : PlayerId) (as : List Action) (has : as.any Action.isHeal = false) :
+theorem lifeLe_foldl {L : Nat} (r : Rules) (p : Src) (as : List Action) (has : as.any Action.isHeal = false) :
     ∀ {g : State}, LifeLe L g → LifeLe L (as.foldl (State.applyAction r p) g) := by
   induction as with
   | nil => exact fun h => h
@@ -304,9 +305,9 @@ theorem Reachable.life_le {r : Rules} {decks : PlayerId → List Card} {pool : L
         simpa using this
       let g1 := g.set p { g p with field := (g p).field.eraseIdx k }
       have h1 : LifeLe r.life g1 := lifeLe_set ih (Nat.le_refl _)
-      have h2 : LifeLe r.life (if apply then as.foldl (State.applyAction r p) g1 else g1) := by
+      have h2 : LifeLe r.life (if apply then as.foldl (State.applyAction r ⟨p, r.cellOf p sl⟩) g1 else g1) := by
         split
-        · exact lifeLe_foldl r p as has h1
+        · exact lifeLe_foldl r _ as has h1
         · exact h1
       exact lifeLe_set h2 (Nat.le_refl _)
 

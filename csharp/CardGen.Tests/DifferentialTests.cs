@@ -15,14 +15,19 @@ public class DifferentialTests
         ((JArray)V["cards"]).Select(IrJson.ParseCard).ToDictionary(c => c.Name);
 
     static View ParseView(JToken t) => new View((string)t["type"], t["tags"].Select(x => (string)x).ToList(),
-        (bool)t["mine"], (bool)t["faceUp"], (bool)t["isSelf"]);
+        (bool)t["mine"], (bool)t["faceUp"], (bool)t["isSelf"], (bool)t["adjacent"], (bool)t["sameColumn"]);
+
+    static Slot ParseSlot(JToken x) => new Slot((int)x["zone"], (int)x["cell"], Cards[(string)x["card"]], (bool)x["faceUp"]);
+
+    static JObject SlotJson(Slot sl) => new JObject
+        { ["zone"] = sl.Zone, ["cell"] = sl.Cell, ["card"] = sl.Card.Name, ["faceUp"] = sl.FaceUp };
 
     static PState ParseState(JToken t) => new PState
     {
         Deck = t["deck"].Select(x => Cards[(string)x]).ToList(),
         Hand = t["hand"].Select(x => Cards[(string)x]).ToList(),
         Grave = t["grave"].Select(x => Cards[(string)x]).ToList(),
-        Field = t["field"].Select(x => new Slot((int)x["zone"], Cards[(string)x["card"]], (bool)x["faceUp"])).ToList(),
+        Field = t["field"].Select(ParseSlot).ToList(),
         Life = (int)t["life"],
     };
 
@@ -31,8 +36,7 @@ public class DifferentialTests
         ["deck"] = new JArray(s.Deck.Select(c => c.Name)),
         ["hand"] = new JArray(s.Hand.Select(c => c.Name)),
         ["grave"] = new JArray(s.Grave.Select(c => c.Name)),
-        ["field"] = new JArray(s.Field.Select(sl => new JObject
-            { ["zone"] = sl.Zone, ["card"] = sl.Card.Name, ["faceUp"] = sl.FaceUp })),
+        ["field"] = new JArray(s.Field.Select(SlotJson)),
         ["life"] = s.Life,
     };
 
@@ -68,7 +72,10 @@ public class DifferentialTests
     {
         foreach (var c in V["destroy"])
         {
-            var result = ParseState(c["state"]).Destroy(R, IrJson.ParseSelector(c["selector"]), (bool)c["mine"]);
+            var src = c["src"];
+            var cell = src["cell"].Type == JTokenType.Null ? (Cell?)null : new Cell((int)src["cell"]["col"], (int)src["cell"]["row"]);
+            var result = ParseState(c["state"]).Destroy(R, IrJson.ParseSelector(c["selector"]), (bool)c["owner"],
+                new Src((bool)src["player"], cell));
             Assert.True(JToken.DeepEquals(c["expected"], StateJson(result)), $"不一致：{c}");
         }
     }
@@ -109,7 +116,7 @@ public class DifferentialTests
     static Choice ParseChoice(JToken c) => (string)c["kind"] switch
     {
         "draw" => Choice.Draw((bool)c["player"]),
-        "place" => Choice.Place((bool)c["player"], (int)c["hand"], (int)c["zone"], (bool)c["faceUp"]),
+        "place" => Choice.Place((bool)c["player"], (int)c["hand"], (int)c["zone"], (int)c["cell"], (bool)c["faceUp"]),
         "attack" => Choice.Attack((bool)c["player"], (int)c["field"],
             c["target"].Type == JTokenType.Null ? (int?)null : (int)c["target"], ParseNeg(c["neg"])),
         _ => Choice.Resolve((bool)c["player"], (int)c["field"], (int)c["effect"], (bool)c["apply"]),
@@ -169,7 +176,7 @@ public class DifferentialTests
 
     static TChoice ParseTChoice(JToken c) => (string)c["kind"] switch
     {
-        "place" => TChoice.Place((int)c["hand"], (int)c["zone"], (bool)c["faceUp"]),
+        "place" => TChoice.Place((int)c["hand"], (int)c["zone"], (int)c["cell"], (bool)c["faceUp"]),
         "resolve" => TChoice.Resolve((bool)c["player"], (int)c["field"], (int)c["effect"], (bool)c["apply"]),
         "attack" => TChoice.Attack((int)c["field"],
             c["target"].Type == JTokenType.Null ? (int?)null : (int)c["target"], ParseNeg(c["neg"])),
@@ -181,8 +188,7 @@ public class DifferentialTests
         ["tp"] = t.Tp,
         ["count"] = t.Count,
         ["summons"] = t.Summons,
-        ["attacked"] = new JArray(t.Attacked.Select(sl => new JObject
-            { ["zone"] = sl.Zone, ["card"] = sl.Card.Name, ["faceUp"] = sl.FaceUp })),
+        ["attacked"] = new JArray(t.Attacked.Select(SlotJson)),
     };
 
     static JObject MatchJson(Match m) => new JObject
@@ -231,11 +237,45 @@ public class DifferentialTests
         Assert.True(JToken.DeepEquals(src, IrJson.ToJson(g)));
     }
 
-    [Fact]
-    public void Version_2_is_upgraded()
+    /// <summary>見本から、版 3 にないもの（マスの位置・マスの関係）を除いた JSON と、それを上げたときに期待する Game</summary>
+    static (JObject old, Game expected) WithoutGrid()
     {
         var o = (JObject)JToken.Parse(File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "sample.json")));
         var expected = IrJson.ParseGame(o.DeepClone());
+        foreach (var z in expected.Rules.Zones) z.Cells.Clear();
+        foreach (var c in expected.Cards)
+            foreach (var e in c.Effects)
+            {
+                var sels = e switch
+                {
+                    Negate n => new[] { n.Target },
+                    Boost b => new[] { b.Target },
+                    Activated a => a.Actions.Select(x => x is Destroy d ? d.Target : x is Bounce bo ? bo.Target : null)
+                        .Where(x => x != null).ToArray(),
+                    _ => new Selector[0],
+                };
+                foreach (var sel in sels) sel.Near = Near.Any;
+            }
+        o["version"] = 3;
+        foreach (var z in o["rules"]["zones"]) ((JObject)z).Remove("cells");
+        foreach (var p in ((JArray)o["cards"]).Descendants().OfType<JProperty>().Where(p => p.Name == "near").ToList()) p.Remove();
+        return (o, expected);
+    }
+
+    [Fact]
+    public void Version_3_is_upgraded()
+    {
+        var (o, expected) = WithoutGrid();
+        Assert.Throws<FormatException>(() => IrJson.ParseGame(o.DeepClone()));
+        Assert.True(IrJson.Upgrade(o));
+        Assert.True(JToken.DeepEquals(IrJson.ToJson(expected), IrJson.ToJson(IrJson.ParseGame(o))));
+        Assert.False(IrJson.Upgrade(o));
+    }
+
+    [Fact]
+    public void Version_2_is_upgraded()
+    {
+        var (o, expected) = WithoutGrid();
         o["version"] = 2;
         foreach (var k in new[] { "summonsPerTurn", "drawPerTurn", "firstTurnDraw", "firstTurnAttack" }) ((JObject)o["rules"]).Remove(k);
         Assert.Throws<FormatException>(() => IrJson.ParseGame(o.DeepClone()));

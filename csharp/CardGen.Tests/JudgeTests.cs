@@ -11,7 +11,8 @@ public class JudgeTests
     static readonly Game G = IrJson.ParseGame(File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "sample.json")));
     static Card C(string name) => G.Cards.First(c => c.Name == name);
     static int ZoneFor(Card c) => G.Rules.Zones.FindIndex(z => z.Role == ZoneRole.Plain && z.Admits.Contains(c.Type));
-    static Slot S(string name) { var c = C(name); return new Slot(ZoneFor(c), c, true); }
+    static int nextCell;
+    static Slot S(string name) { var c = C(name); return new Slot(ZoneFor(c), nextCell++ % 5, c, true); }
 
     static MatchState Board(List<Slot> mine, List<Slot> theirs) =>
         new MatchState { P1 = new PState { Field = mine.ToList() }, P2 = new PState { Field = theirs.ToList() } };

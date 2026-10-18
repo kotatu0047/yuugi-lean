@@ -17,6 +17,7 @@ namespace CardGen.App
     /// ターンは C# の Match（Lean の Turn.lean の Match.step? と差分テスト済み）で進める。カードを置く・攻撃するのは
     /// ターンプレイヤーだけ（場のカードの発動はどちらのターンでもできる）、召喚は1ターンにルールの回数まで、攻撃は1ターンに
     /// 1枚1回まで。「ターン終了」で相手のターンになり、新しいターンプレイヤーがルールの枚数を引く。
+    /// マスの位置があるゾーンは、盤面のマス目の並び（相手が上、自分が下）で表示し、空いているマスをクリックして置ける。
     /// </summary>
     public sealed class PlayView : VisualElement
     {
@@ -37,6 +38,8 @@ namespace CardGen.App
         bool selPlayer;
         int selHand = -1;
         int selField = -1;
+        // 手札を置くときに表側で置くか
+        bool placeUp = true;
 
         readonly VisualElement boards;
         readonly VisualElement side;
@@ -47,6 +50,8 @@ namespace CardGen.App
         static readonly Color Bad = new Color(0.95f, 0.45f, 0.4f);
         static readonly Color Warn = new Color(0.95f, 0.75f, 0.35f);
         static readonly Color Quiet = new Color(0.7f, 0.7f, 0.75f);
+        // フィールドのマス1つの高さ（カードの表示と空きのマスで揃える）
+        const float CellHeight = 100;
 
         public PlayView()
         {
@@ -128,9 +133,10 @@ namespace CardGen.App
                 for (int h = 0; h < s.Hand.Count && !placed; h++)
                     for (int zi = 0; zi < game.Rules.Zones.Count && !placed; zi++)
                     {
-                        var next = match.Step(game.Rules, TChoice.Place(h, zi, true));
+                        var cell = state.FreeCell(game.Rules, p, zi);
+                        var next = match.Step(game.Rules, TChoice.Place(h, zi, cell, true));
                         if (next == null) continue;
-                        log.Add($"{Who(p)}：{s.Hand[h].Name} を{game.Rules.Zones[zi].Name}に表側で置く");
+                        log.Add($"{Who(p)}：{s.Hand[h].Name} を{CellName(zi, cell)}に表側で置く");
                         match = next;
                         judge.Sync(state, game.Rules, turn);
                         placed = true;
@@ -145,6 +151,25 @@ namespace CardGen.App
         }
 
         static string Who(bool p) => p ? "自分" : "相手";
+
+        /// <summary>ゾーンの何番目のマスか（表示用。1 から数える）</summary>
+        string CellName(int zi, int cell)
+        {
+            var z = game.Rules.Zones[zi];
+            return z.Capacity == Capacity.One && z.Count > 1 ? $"{z.Name}の{cell + 1}番目のマス" : z.Name;
+        }
+
+        /// <summary>手札のカードを、ゾーン zi の cell 番目のマスに置く動き（選んでいる手札と表裏で）</summary>
+        void PlaceSelected(int zi, int cell)
+        {
+            var c = state.Get(selPlayer).Hand[selHand];
+            Do(TChoice.Place(selHand, zi, cell, placeUp), $"{Who(selPlayer)}：{c.Name} を{CellName(zi, cell)}に{(placeUp ? "表側" : "裏側")}で置く");
+        }
+
+        /// <summary>選んでいる手札を、ゾーン zi の cell 番目のマスに置けるか</summary>
+        bool CanPlaceSelected(bool p, int zi, int cell) =>
+            selHand >= 0 && selPlayer == p && p == turn && selHand < state.Get(p).Hand.Count &&
+            match.Step(game.Rules, TChoice.Place(selHand, zi, cell, placeUp)) != null;
 
         void Do(TChoice ch, string message)
         {
@@ -247,7 +272,7 @@ namespace CardGen.App
         {
             var b = new Button(onClick);
             b.style.width = 120;
-            b.style.minHeight = 64;
+            b.style.minHeight = CellHeight;
             b.style.marginRight = 6;
             b.style.marginBottom = 6;
             b.style.flexDirection = FlexDirection.Column;
@@ -295,44 +320,32 @@ namespace CardGen.App
             box.Add(head);
 
             var zones = new VisualElement();
-            // 相手のフィールドは自分のフィールドを逆さまにした形（共通ルール②）なので、ゾーンの並びも逆にする
+            // 相手のフィールドは自分のフィールドを逆さまにした形（共通ルール②）なので、ゾーンの並びも逆にする。
+            // マスの位置があるゾーンは、真ん中のマス目の表示（GridBoard）に出す
             var order = Enumerable.Range(0, game.Rules.Zones.Count).ToList();
             if (!p) order.Reverse();
             foreach (var zi in order)
             {
                 var z = game.Rules.Zones[zi];
-                if (z.Role != ZoneRole.Plain) continue;
+                if (z.Role != ZoneRole.Plain || z.Cells.Count > 0) continue;
                 var zr = Row();
                 zr.style.alignItems = Align.Center;
                 zr.style.marginTop = 6;
                 var title = Text($"{z.Name}（{z.Count}マス）", 11, NodeView.KindColor(NodeKind.Zone), true);
                 title.style.width = 170;
                 zr.Add(title);
-                var cards = s.Field.Select((sl, i) => (sl, i)).Where(x => x.sl.Zone == zi).ToList();
-                foreach (var (sl, i) in cards)
-                {
-                    neg.TryGetValue((p, i), out var st);
-                    int idx = i;
-                    string stats = null;
-                    if (MatchState.Fights(game.Rules, sl))
-                    {
-                        var atk = state.AtkOf(game.Rules, NegList(neg), (p, i), sl);
-                        stats = $"攻 {atk}" + (atk != sl.Card.Attack ? $"（元 {sl.Card.Attack}）" : "") + $"・守 {sl.Card.Defense}";
-                    }
-                    zr.Add(Chip(sl.Card, sl.FaceUp, st, selPlayer == p && selField == idx, () => { selPlayer = p; selField = idx; selHand = -1; Render(); }, stats));
-                }
                 if (z.Capacity == Capacity.One)
-                    for (int k = cards.Count; k < z.Count; k++)
-                    {
-                        var empty = new VisualElement();
-                        empty.style.width = 120;
-                        empty.style.height = 64;
-                        empty.style.marginRight = 6;
-                        empty.style.marginBottom = 6;
-                        empty.style.borderLeftWidth = empty.style.borderRightWidth = empty.style.borderTopWidth = empty.style.borderBottomWidth = 1;
-                        empty.style.borderLeftColor = empty.style.borderRightColor = empty.style.borderTopColor = empty.style.borderBottomColor = Line;
-                        zr.Add(empty);
-                    }
+                {
+                    var cells = Enumerable.Range(0, z.Count).ToList();
+                    if (!p) cells.Reverse();
+                    foreach (var k in cells) zr.Add(CellView(p, zi, k, neg));
+                }
+                else
+                {
+                    foreach (var (sl, i) in s.Field.Select((sl, i) => (sl, i)).Where(x => x.sl.Zone == zi))
+                        zr.Add(SlotChip(p, i, sl, neg));
+                    if (CanPlaceSelected(p, zi, 0)) zr.Add(PlaceButton(zi, 0));
+                }
                 zones.Add(zr);
             }
 
@@ -350,6 +363,129 @@ namespace CardGen.App
             // 相手のフィールドは自分のフィールドを逆さまにした形（共通ルール②）
             if (p) { box.Add(zones); box.Add(hand); }
             else { box.Add(hand); box.Add(zones); }
+            return box;
+        }
+
+        /// <summary>フィールドのカード1枚の表示（クリックで選ぶ）</summary>
+        VisualElement SlotChip(bool p, int i, Slot sl, Dictionary<(bool, int), string> neg)
+        {
+            neg.TryGetValue((p, i), out var st);
+            string stats = null;
+            if (MatchState.Fights(game.Rules, sl))
+            {
+                var atk = state.AtkOf(game.Rules, NegList(neg), (p, i), sl);
+                stats = $"攻 {atk}" + (atk != sl.Card.Attack ? $"（元 {sl.Card.Attack}）" : "") + $"・守 {sl.Card.Defense}";
+            }
+            return Chip(sl.Card, sl.FaceUp, st, selPlayer == p && selField == i,
+                () => { selPlayer = p; selField = i; selHand = -1; Render(); }, stats);
+        }
+
+        /// <summary>空いているマスに置くボタン</summary>
+        VisualElement PlaceButton(int zi, int cell)
+        {
+            var b = new Button(() => PlaceSelected(zi, cell)) { text = $"ここに{(placeUp ? "表側" : "裏側")}で置く" };
+            b.style.width = 120;
+            b.style.height = CellHeight;
+            b.style.marginLeft = 0;
+            b.style.marginRight = 6;
+            b.style.marginBottom = 6;
+            b.style.fontSize = 11;
+            b.style.backgroundColor = new Color(0.22f, 0.3f, 0.22f);
+            b.style.borderLeftColor = b.style.borderRightColor = b.style.borderTopColor = b.style.borderBottomColor = Good;
+            return b;
+        }
+
+        /// <summary>空きのマス（置けない）</summary>
+        VisualElement EmptyCell(string label)
+        {
+            var empty = new VisualElement();
+            empty.style.width = 120;
+            empty.style.height = CellHeight;
+            empty.style.marginRight = 6;
+            empty.style.marginBottom = 6;
+            empty.style.borderLeftWidth = empty.style.borderRightWidth = empty.style.borderTopWidth = empty.style.borderBottomWidth = 1;
+            empty.style.borderLeftColor = empty.style.borderRightColor = empty.style.borderTopColor = empty.style.borderBottomColor = Line;
+            if (label != null)
+            {
+                var l = Text(label, 9, new Color(0.45f, 0.45f, 0.5f));
+                l.style.paddingLeft = 4;
+                l.style.paddingTop = 2;
+                empty.Add(l);
+            }
+            return empty;
+        }
+
+        /// <summary>p のゾーン zi の k 番目のマス：カードがあれば表示、空いていれば（置けるなら）置くボタン</summary>
+        VisualElement CellView(bool p, int zi, int k, Dictionary<(bool, int), string> neg, string emptyLabel = null)
+        {
+            var f = state.Get(p).Field;
+            var i = f.FindIndex(sl => sl.Zone == zi && sl.Cell == k);
+            if (i >= 0) return SlotChip(p, i, f[i], neg);
+            if (CanPlaceSelected(p, zi, k)) return PlaceButton(zi, k);
+            return EmptyCell(emptyLabel);
+        }
+
+        /// <summary>マスの位置があるゾーンを、盤面のマス目の並びで表示する（行の小さい方が上。見本では相手が上）</summary>
+        VisualElement GridBoard(Dictionary<(bool, int), string> neg)
+        {
+            var at = new Dictionary<Cell, (bool p, int zi, int k)>();
+            foreach (var p in new[] { false, true })
+                for (int zi = 0; zi < game.Rules.Zones.Count; zi++)
+                {
+                    var z = game.Rules.Zones[zi];
+                    if (z.Role != ZoneRole.Plain) continue;
+                    for (int k = 0; k < z.Cells.Count; k++)
+                    {
+                        var c = game.Rules.CellOf(p, zi, k);
+                        if (c.HasValue && !at.ContainsKey(c.Value)) at[c.Value] = (p, zi, k);
+                    }
+                }
+            var box = new VisualElement();
+            if (at.Count == 0) return box;
+            box.style.marginBottom = 12;
+            box.style.paddingLeft = 10;
+            box.style.paddingTop = 8;
+            box.style.paddingBottom = 4;
+            box.style.backgroundColor = new Color(0.13f, 0.14f, 0.16f);
+            box.style.borderTopLeftRadius = box.style.borderTopRightRadius = box.style.borderBottomLeftRadius = box.style.borderBottomRightRadius = 6;
+            int c0 = at.Keys.Min(c => c.Col), c1 = at.Keys.Max(c => c.Col);
+            int r0 = at.Keys.Min(c => c.Row), r1 = at.Keys.Max(c => c.Row);
+            var head = Row();
+            head.Add(Text($"フィールド（盤面のマス目の列 {c0}〜{c1}・行 {r0}〜{r1}。上が相手、下が自分）", 11, Quiet));
+            box.Add(head);
+            for (int r = r0; r <= r1; r++)
+            {
+                if (!at.Keys.Any(c => c.Row == r))
+                {
+                    // マスのない行（見本では盤面の中心の行）は細い区切りにする
+                    var sep = Text($"行 {r}（マスなし）", 9, new Color(0.45f, 0.45f, 0.5f));
+                    sep.style.marginTop = 2;
+                    sep.style.marginBottom = 8;
+                    sep.style.borderBottomWidth = 1;
+                    sep.style.borderBottomColor = Line;
+                    box.Add(sep);
+                    continue;
+                }
+                var line = Row();
+                line.style.flexWrap = Wrap.NoWrap;
+                line.style.alignItems = Align.Center;
+                var rowLabel = Text($"行 {r}", 10, Quiet);
+                rowLabel.style.width = 40;
+                line.Add(rowLabel);
+                for (int c = c0; c <= c1; c++)
+                {
+                    if (!at.TryGetValue(new Cell(c, r), out var x))
+                    {
+                        var gap = new VisualElement();
+                        gap.style.width = 126;
+                        gap.style.height = CellHeight;
+                        line.Add(gap);
+                        continue;
+                    }
+                    line.Add(CellView(x.p, x.zi, x.k, neg, $"{Who(x.p)}の{game.Rules.Zones[x.zi].Name} {x.k + 1}"));
+                }
+                box.Add(line);
+            }
             return box;
         }
 
@@ -374,6 +510,7 @@ namespace CardGen.App
             var neg = NegationStatus(out var negSummary);
             boards.Clear();
             boards.Add(PlayerBoard(false, neg));
+            boards.Add(GridBoard(neg));
             boards.Add(PlayerBoard(true, neg));
 
             side.Clear();
@@ -410,15 +547,28 @@ namespace CardGen.App
                 side.Add(Text($"{Who(selPlayer)}の手札：{c.Name}（{c.Type}）", 12, Color.white));
                 bool any = false;
                 if (selPlayer != turn) { side.Add(Text($"{Who(turn)}のターンなので、{Who(selPlayer)}は手札を置けません", 12, Warn)); any = true; }
-                else for (int zi = 0; zi < game.Rules.Zones.Count; zi++)
+                else
+                {
+                    var upRow = Row();
+                    upRow.style.alignItems = Align.Center;
+                    upRow.Add(Text("置く向き：", 12, Quiet));
                     foreach (var up in new[] { true, false })
                     {
-                        var ch = TChoice.Place(selHand, zi, up);
-                        if (match.Step(game.Rules, ch) == null)
+                        var u = up;
+                        var b = new Button(() => { placeUp = u; Render(); }) { text = (up ? "表側" : "裏側") + (placeUp == up ? "（選択中）" : "") };
+                        upRow.Add(b);
+                    }
+                    side.Add(upRow);
+                    for (int zi = 0; zi < game.Rules.Zones.Count; zi++)
+                    {
+                        var z = game.Rules.Zones[zi];
+                        var free = Enumerable.Range(0, z.Count).Where(k => CanPlaceSelected(selPlayer, zi, k)).ToList();
+                        if (free.Count == 0)
                         {
                             // 置ける場所なのに召喚の上限で置けないときは、そう伝える
-                            if (state.Step(game.Rules, Choice.Place(selPlayer, selHand, zi, up)) != null && !any &&
-                                !match.SummonOK(game.Rules, new Slot(zi, c, up)))
+                            var cell = state.FreeCell(game.Rules, selPlayer, zi);
+                            if (state.Step(game.Rules, Choice.Place(selPlayer, selHand, zi, cell, placeUp)) != null && !any &&
+                                !match.SummonOK(game.Rules, new Slot(zi, cell, c, placeUp)))
                             {
                                 side.Add(Text($"このターンはもう召喚できません（1ターンに {game.Rules.SummonsPerTurn} 回まで）", 12, Warn));
                                 any = true;
@@ -426,10 +576,14 @@ namespace CardGen.App
                             continue;
                         }
                         any = true;
-                        var zname = game.Rules.Zones[zi].Name;
-                        var msg = $"{Who(selPlayer)}：{c.Name} を{zname}に{(up ? "表側" : "裏側")}で置く";
-                        ActionButton($"{zname}に{(up ? "表側" : "裏側")}で置く", () => Do(ch, msg));
+                        int zz = zi;
+                        int first = free[0];
+                        var where = z.Capacity == Capacity.One && z.Count > 1
+                            ? $"（空いているマス：{string.Join("・", free.Select(k => k + 1))}。{first + 1}番目に置く）" : "";
+                        ActionButton($"{z.Name}に{(placeUp ? "表側" : "裏側")}で置く{where}", () => PlaceSelected(zz, first));
                     }
+                    if (any) side.Add(Text("フィールドの「ここに置く」のマスをクリックしても置けます", 11, Quiet));
+                }
                 if (!any) side.Add(Text("置けるゾーンがありません", 12, Warn));
             }
             else if (selField >= 0 && selField < s.Field.Count)
@@ -506,7 +660,7 @@ namespace CardGen.App
 
             Section("盤面の制約");
             var v = state.Violations(game.Rules);
-            if (v.Count == 0) side.Add(Text("すべて成り立っています（枚数・置けるゾーン・マスの数。Lean で証明済み）", 12, Good));
+            if (v.Count == 0) side.Add(Text("すべて成り立っています（枚数・置けるゾーン・1マス1枚。Lean で証明済み）", 12, Good));
             foreach (var m in v) side.Add(Text("・" + m, 12, Bad));
 
             Section("記録");

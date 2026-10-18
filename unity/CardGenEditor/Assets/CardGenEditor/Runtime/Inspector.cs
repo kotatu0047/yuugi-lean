@@ -27,6 +27,22 @@ namespace CardGen.App
 
         static string JoinList(IEnumerable<string> l) => string.Join("、", l);
 
+        /// <summary>「列,行」を空白か「、」で区切って並べたもの（例：22,25 23,25）</summary>
+        public static string CellsText(IEnumerable<Cell> cells) => string.Join(" ", cells.Select(c => $"{c.Col},{c.Row}"));
+
+        /// <summary>CellsText を読む。読めない書き方があれば null</summary>
+        public static List<Cell> ParseCells(string s)
+        {
+            var result = new List<Cell>();
+            foreach (var tok in s.Split(new[] { ' ', '　', '、', '/', '／', ';' }, StringSplitOptions.RemoveEmptyEntries))
+            {
+                var xy = tok.Replace('，', ',').Trim('(', ')', '（', '）').Split(',');
+                if (xy.Length != 2 || !int.TryParse(xy[0], out var c) || !int.TryParse(xy[1], out var r) || c < 0 || r < 0) return null;
+                result.Add(new Cell(c, r));
+            }
+            return result;
+        }
+
         void Changed() => Edited?.Invoke(node);
 
         void Heading(string text)
@@ -127,6 +143,36 @@ namespace CardGen.App
                     Choice("役割", new[] { ("その他", ZoneRole.Plain), ("デッキ", ZoneRole.Deck), ("墓地", ZoneRole.Grave) }, n.Zone.Role, v => n.Zone.Role = v);
                     Toggle("フィールド上に数える", n.Zone.OnField, v => n.Zone.OnField = v);
                     ListField("置ける種類", n.Zone.Admits, v => n.Zone.Admits = v);
+                    var cells = new TextField("マスの位置") { value = CellsText(n.Zone.Cells), isDelayed = true };
+                    cells.RegisterValueChangedCallback(e =>
+                    {
+                        var parsed = ParseCells(e.newValue);
+                        if (parsed == null) { cells.SetValueWithoutNotify(CellsText(n.Zone.Cells)); return; }
+                        n.Zone.Cells = parsed;
+                        Changed();
+                    });
+                    Add(cells);
+                    var row = new VisualElement();
+                    row.style.flexDirection = FlexDirection.Row;
+                    var lineCol = new IntegerField("左端の列") { value = n.Zone.Cells.Count > 0 ? n.Zone.Cells[0].Col : 22 };
+                    var lineRow = new IntegerField("行") { value = n.Zone.Cells.Count > 0 ? n.Zone.Cells[0].Row : 25 };
+                    lineCol.style.flexGrow = 1;
+                    lineRow.style.flexGrow = 1;
+                    row.Add(lineCol);
+                    row.Add(lineRow);
+                    Add(row);
+                    var line = new Button(() =>
+                    {
+                        n.Zone.Cells = Enumerable.Range(0, n.Zone.Count).Select(i => new Cell(lineCol.value + i, lineRow.value)).ToList();
+                        Changed();
+                        Show(n);
+                    }) { text = "マスの数だけ横に並べる" };
+                    Add(line);
+                    var clear = new Button(() => { n.Zone.Cells = new List<Cell>(); Changed(); Show(n); }) { text = "マス目の上に置かない" };
+                    Add(clear);
+                    Hint($"盤面全体（2人分）は {Grid.Size}×{Grid.Size} のマス目です。マスの位置は「列,行」をマスの数だけ並べます（自分の側。" +
+                         $"相手の側は中心のマス（{Grid.Size / 2}, {Grid.Size / 2}）について点対称の位置）。空なら、マス目の上にないゾーンです" +
+                         "（「隣」「同じ縦列」の範囲に入りません）。遊戯王の見本は、モンスターが行 25、魔法・罠が行 26、列 22〜26 です。");
                     break;
                 case NodeKind.Card:
                     Hint("カード。効果のノード（発動・無効・攻撃力の変化）をつなぎます。");
@@ -171,6 +217,10 @@ namespace CardGen.App
                     Choice("陣営", new[] { ("お互い", Side.Both), ("自分", Side.Self), ("相手", Side.Opp) }, n.Selector.Side, v => n.Selector.Side = v);
                     Toggle("表側表示のカードだけ", n.Selector.FaceUpOnly, v => n.Selector.FaceUpOnly = v);
                     Toggle("このカード自身を除く", n.Selector.ExcludeSelf, v => n.Selector.ExcludeSelf = v);
+                    Choice("マスの関係", new[] { ("条件なし", Near.Any), ("隣のマス", Near.Adjacent), ("同じ縦列", Near.SameColumn) },
+                        n.Selector.Near, v => n.Selector.Near = v);
+                    Hint("マスの関係は、効果を持つカードのマスから見ます（発動した魔法・罠は、置かれていたマス）。「隣」は上下左右、" +
+                         "「同じ縦列」は相手の側も含みます。マス目の上にないカードは入りません。無効の範囲にはまだ使えません。");
                     break;
             }
         }

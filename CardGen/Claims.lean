@@ -154,7 +154,7 @@ theorem fieldCount_le_bound {r : Rules} {g : State} (h : Inv r g) (p : PlayerId)
     refine List.filter_eq_nil_iff.2 fun sl hm hzi => hh ?_
     have hzi : sl.zone = i := by simpa using hzi
     have hm' := List.mem_filter.1 hm
-    obtain ⟨z', hz', -, hadm⟩ := h.zones p sl hm'.1
+    obtain ⟨z', hz', -, hadm, -⟩ := h.zones p sl hm'.1
     rw [hzi, hz] at hz'
     cases hz'
     have hP := hm'.2

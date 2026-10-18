@@ -6,8 +6,8 @@ import CardGen.Model
 到達できるどの状態でも、次の3つが成り立つ（`Reachable.inv`）。
 
 - 1人あたりのカードの枚数はデッキの枚数のまま
-- フィールドのカードは、その種類を置けるゾーンにある
-- 「1枚まで」のゾーンのカードは、マスの数を超えない
+- フィールドのカードは、その種類を置けるゾーンのマスにある
+- 「1枚まで」のゾーンの同じマスに、2枚のカードはない（そのため、ゾーンのカードはマスの数を超えない：`Inv.cap`）
 - デッキの枚数は、開始時の枚数（デッキの枚数 − 初期手札）を超えない（デッキに戻す動きはない）
 
 効果の動き（破壊・手札に戻す・ドロー・ダメージ・回復）と戦闘は、どのカードのどんな範囲の指定でも
@@ -22,14 +22,67 @@ theorem length_filter_not_add {α} (p : α → Bool) (l : List α) :
   | nil => rfl
   | cons a t ih => cases h : p a <;> simp [h] <;> omega
 
+theorem length_filter_eq_le_one : ∀ (n : Nat) (l : List Nat), l.Nodup → (l.filter (· == n)).length ≤ 1
+  | _, [], _ => by simp
+  | n, a :: t, hn => by
+    rw [List.nodup_cons] at hn
+    by_cases ha : a = n
+    · subst ha
+      have : t.filter (· == a) = [] := List.filter_eq_nil_iff.2 fun x hx => by
+        simp only [beq_iff_eq]; intro h; subst h; exact hn.1 hx
+      simp [this]
+    · have := length_filter_eq_le_one n t hn.2
+      simp [ha, this]
+
+/-- 鳩の巣原理：`n` 未満の数を重複なく並べると、`n` 個以下 -/
+theorem length_le_of_nodup_lt : ∀ (n : Nat) (l : List Nat), l.Nodup → (∀ x ∈ l, x < n) → l.length ≤ n
+  | 0, [], _, _ => Nat.le_refl _
+  | 0, x :: _, _, h => absurd (h x (List.mem_cons_self ..)) (Nat.not_lt_zero _)
+  | n + 1, l, hn, h => by
+    have ih := length_le_of_nodup_lt n (l.filter (fun x => !(x == n))) (hn.filter _) (by
+      intro x hx
+      simp only [List.mem_filter, Bool.not_eq_true', beq_eq_false_iff_ne] at hx
+      have := h x hx.1; omega)
+    have hc := length_filter_eq_le_one n l hn
+    have hs := length_filter_not_add (· == n) l
+    omega
+
+/-- `i` 番目のゾーンが「1枚まで」のゾーンか -/
+def Rules.capOne (r : Rules) (i : Nat) : Bool :=
+  match r.zones[i]? with
+  | some z => z.capacity == .one
+  | none => false
+
+/-- 2枚のカードが、「1枚まで」のゾーンの同じマスにある -/
+def Rules.clash (r : Rules) (a b : Slot) : Prop := a.zone = b.zone ∧ a.cell = b.cell ∧ r.capOne a.zone = true
+
 /-- 盤面の制約 -/
 structure Inv (r : Rules) (g : State) : Prop where
   size : ∀ p, (g p).size = r.deckSize
   zones : ∀ p, ∀ sl ∈ (g p).field,
-    ∃ z, r.zones[sl.zone]? = some z ∧ z.role = .plain ∧ z.admits.contains sl.card.type
-  cap : ∀ p i z, r.zones[i]? = some z → z.capacity = .one →
-    ((g p).field.filter (·.zone == i)).length ≤ z.count
+    ∃ z, r.zones[sl.zone]? = some z ∧ z.role = .plain ∧ z.admits.contains sl.card.type ∧ sl.cell < z.count
+  apart : ∀ p, (g p).field.Pairwise (fun a b => ¬r.clash a b)
   deck : ∀ p, (g p).deck.length ≤ r.deckSize - r.handSize
+
+/-- 「1枚まで」のゾーンのカードは、マスの数を超えない -/
+theorem Inv.cap {r : Rules} {g : State} (h : Inv r g) (p : PlayerId) (i : Nat) (z : Zone)
+    (hz : r.zones[i]? = some z) (hc : z.capacity = .one) :
+    ((g p).field.filter (·.zone == i)).length ≤ z.count := by
+  have hone : r.capOne i = true := by simp [Rules.capOne, hz, hc]
+  have hnd : (((g p).field.filter (·.zone == i)).map (·.cell)).Nodup := by
+    rw [List.Nodup, List.pairwise_map]
+    refine ((h.apart p).filter _).imp_of_mem fun ha hb hab heq => hab ?_
+    simp only [List.mem_filter, beq_iff_eq] at ha hb
+    exact ⟨ha.2.trans hb.2.symm, heq, ha.2 ▸ hone⟩
+  have := length_le_of_nodup_lt z.count _ hnd (by
+    intro x hx
+    simp only [List.mem_map, List.mem_filter, beq_iff_eq] at hx
+    obtain ⟨sl, ⟨hm, hzi⟩, rfl⟩ := hx
+    obtain ⟨z', hz', -, -, hlt⟩ := h.zones p sl hm
+    rw [hzi, hz] at hz'
+    cases hz'
+    exact hlt)
+  simpa using this
 
 /-! ## カードを取り除くだけの動き -/
 
@@ -45,18 +98,18 @@ theorem Shrinks.trans {a b c : State} (h1 : Shrinks a b) (h2 : Shrinks b c) : Sh
 theorem Inv.shrinks {r : Rules} {g g' : State} (h : Inv r g) (hs : Shrinks g g') : Inv r g' where
   size p := (hs p).1.trans (h.size p)
   zones p sl hm := h.zones p sl ((hs p).2.1.subset hm)
-  cap p i z hz hc := Nat.le_trans ((hs p).2.1.filter _).length_le (h.cap p i z hz hc)
+  apart p := (h.apart p).sublist (hs p).2.1
   deck p := Nat.le_trans (hs p).2.2 (h.deck p)
 
-theorem PState.size_destroy (r : Rules) (sel : Selector) (m : Bool) (s : PState) :
-    (s.destroy r sel m).size = s.size := by
-  have := length_filter_not_add (fun sl : Slot => r.onFieldZone sl.zone && sel.matches (sl.view m)) s.field
+theorem PState.size_destroy (r : Rules) (sel : Selector) (q : PlayerId) (src : Src) (s : PState) :
+    (s.destroy r sel q src).size = s.size := by
+  have := length_filter_not_add (fun sl : Slot => r.onFieldZone sl.zone && sel.matches (sl.view r q src)) s.field
   simp only [PState.destroy, PState.size, List.length_append, List.length_map]
   omega
 
-theorem PState.size_bounce (r : Rules) (sel : Selector) (m : Bool) (s : PState) :
-    (s.bounce r sel m).size = s.size := by
-  have := length_filter_not_add (fun sl : Slot => r.onFieldZone sl.zone && sel.matches (sl.view m)) s.field
+theorem PState.size_bounce (r : Rules) (sel : Selector) (q : PlayerId) (src : Src) (s : PState) :
+    (s.bounce r sel q src).size = s.size := by
+  have := length_filter_not_add (fun sl : Slot => r.onFieldZone sl.zone && sel.matches (sl.view r q src)) s.field
   simp only [PState.bounce, PState.size, List.length_append, List.length_map]
   omega
 
@@ -117,38 +170,38 @@ theorem shrinks_battle (r : Rules) (g : State) (neg : List Pos) (p : PlayerId) (
           · exact Shrinks.set (pshrinks_damage _ _)
           · exact Shrinks.refl g
 
-theorem shrinks_applyAction (r : Rules) (p : PlayerId) (g : State) (a : Action) :
-    Shrinks g (g.applyAction r p a) := by
+theorem shrinks_applyAction (r : Rules) (src : Src) (g : State) (a : Action) :
+    Shrinks g (g.applyAction r src a) := by
   cases a with
   | destroy sel => exact fun q => ⟨PState.size_destroy .., List.filter_sublist, Nat.le_refl _⟩
   | bounce sel => exact fun q => ⟨PState.size_bounce .., List.filter_sublist, Nat.le_refl _⟩
   | draw n =>
     intro q
-    by_cases hq : q = p
+    by_cases hq : q = src.p
     · subst hq
       simp only [State.applyAction, State.set_same]
       exact ⟨PState.size_drawN .., List.Sublist.refl _, by simp [PState.drawN]⟩
-    · have h := State.set_other g ((g p).drawN n) hq
+    · have h := State.set_other g ((g src.p).drawN n) hq
       simp only [State.applyAction]
       rw [h]
       exact Shrinks.refl g q
   | damage n => exact Shrinks.set (pshrinks_damage _ _)
   | heal n => exact Shrinks.set (PShrinks.refl _)
 
-theorem shrinks_foldl (r : Rules) (p : PlayerId) (as : List Action) (g : State) :
-    Shrinks g (as.foldl (State.applyAction r p) g) := by
+theorem shrinks_foldl (r : Rules) (src : Src) (as : List Action) (g : State) :
+    Shrinks g (as.foldl (State.applyAction r src) g) := by
   induction as generalizing g with
   | nil => exact Shrinks.refl g
-  | cons a t ih => exact (shrinks_applyAction r p g a).trans (ih _)
+  | cons a t ih => exact (shrinks_applyAction r src g a).trans (ih _)
 
 theorem shrinks_resolve (r : Rules) (p : PlayerId) (g : State) {k : Nat} {sl : Slot} (as : List Action)
     (apply : Bool) (hk : (g p).field[k]? = some sl) : Shrinks g (g.resolve r p k sl as apply) := by
   have hlt : k < (g p).field.length := (List.getElem?_eq_some_iff.1 hk).1
   let g1 := g.set p { g p with field := (g p).field.eraseIdx k }
-  let g2 := if apply then as.foldl (State.applyAction r p) g1 else g1
+  let g2 := if apply then as.foldl (State.applyAction r ⟨p, r.cellOf p sl⟩) g1 else g1
   have h12 : Shrinks g1 g2 := by
     by_cases ha : apply
-    · simp only [g2, ha, ite_true]; exact shrinks_foldl r p as g1
+    · simp only [g2, ha, ite_true]; exact shrinks_foldl r _ as g1
     · simp only [g2, ha]; exact Shrinks.refl g1
   have hr : g.resolve r p k sl as apply = g2.set p { g2 p with grave := (g2 p).grave ++ [sl.card] } := rfl
   rw [hr]
@@ -178,10 +231,10 @@ theorem Inv.step {r : Rules} {g g' : State} (h : Inv r g) : Step r g g' → Inv 
         simp [PState.size, hd]
         omega
       · rw [State.set_other _ _ hq]; exact Shrinks.refl g q
-  | .place _ p c i z up hc hz hrole hadm hcap => by
+  | .place _ p c i j z up hc hz hrole hadm hj hfree => by
       have hlen := List.length_erase_of_mem hc
       have hpos := List.length_pos_of_mem hc
-      refine ⟨fun q => ?_, fun q sl hm => ?_, fun q j z' hz' hc' => ?_, fun q => ?_⟩
+      refine ⟨fun q => ?_, fun q sl hm => ?_, fun q => ?_, fun q => ?_⟩
       · by_cases hq : q = p
         · subst hq
           have := h.size q
@@ -194,22 +247,20 @@ theorem Inv.step {r : Rules} {g g' : State} (h : Inv r g) : Step r g g' → Inv 
           simp only [State.set_same, List.mem_append, List.mem_singleton] at hm
           rcases hm with hm | rfl
           · exact h.zones q sl hm
-          · exact ⟨z, hz, hrole, hadm⟩
+          · exact ⟨z, hz, hrole, hadm, hj⟩
         · simp only [State.set_other _ _ hq] at hm; exact h.zones q sl hm
       · by_cases hq : q = p
         · subst hq
-          simp only [State.set_same, List.filter_append, List.length_append]
-          by_cases hij : i = j
-          · subst hij
-            have : z' = z := Option.some.inj (hz'.symm.trans hz)
-            subst this
-            have := hcap hc'
-            simp
-            omega
-          · have : ((⟨i, c, up⟩ : Slot).zone == j) = false := by simp [hij]
-            simp only [List.filter_cons, this, List.filter_nil]
-            exact h.cap q j z' hz' hc'
-        · simp only [State.set_other _ _ hq]; exact h.cap q j z' hz' hc'
+          simp only [State.set_same]
+          refine List.pairwise_append.2 ⟨h.apart q, List.pairwise_singleton _ _, fun a ha b hb => ?_⟩
+          rw [List.mem_singleton] at hb
+          subst hb
+          rintro ⟨hzi, hcj, hone⟩
+          simp only at hzi hcj
+          rw [hzi] at hone
+          simp only [Rules.capOne, hz, beq_iff_eq] at hone
+          exact hfree hone a ha ⟨hzi, hcj⟩
+        · simp only [State.set_other _ _ hq]; exact h.apart q
       · by_cases hq : q = p
         · subst hq; simpa using h.deck q
         · simp only [State.set_other _ _ hq]; exact h.deck q
@@ -222,7 +273,7 @@ theorem inv_start (r : Rules) (decks : PlayerId → List Card) (hd : ∀ p, (dec
     simp only [start, PState.size, List.length_drop, List.length_take, List.length_nil, hd p]
     omega
   zones _ _ hm := by simp [start] at hm
-  cap _ _ _ _ _ := by simp [start]
+  apart _ := by simp [start]
   deck p := by simp [start, hd p]
 
 /-- **到達できるどの状態でも、盤面の制約が成り立つ** -/
