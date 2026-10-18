@@ -225,7 +225,7 @@ namespace CardGen.App
         void LoadSample()
         {
             var asset = Resources.Load<UnityEngine.TextAsset>("sample");
-            SetDoc(GraphDoc.FromGame(IrJson.ParseGame(asset.text)), "見本（入力例のルールとカード8枚）を読み込みました");
+            SetDoc(GraphDoc.FromGame(IrJson.ParseGame(asset.text)), "見本（入力例のルールとカード13枚）を読み込みました");
         }
 
         void Open()

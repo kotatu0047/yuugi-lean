@@ -66,6 +66,13 @@ namespace CardGen.App
             Add(f);
         }
 
+        void SignedInt(string label, int value, Action<int> set)
+        {
+            var f = new IntegerField(label) { value = value, isDelayed = true };
+            f.RegisterValueChangedCallback(e => { set(e.newValue); Changed(); });
+            Add(f);
+        }
+
         void Toggle(string label, bool value, Action<bool> set)
         {
             var f = new Toggle(label) { value = value };
@@ -103,6 +110,9 @@ namespace CardGen.App
                     ListField("カードの種類", n.Rules.CardTypes, v => n.Rules.CardTypes = v);
                     Int("デッキの枚数", n.Rules.DeckSize, v => n.Rules.DeckSize = v);
                     Int("初期手札", n.Rules.HandSize, v => n.Rules.HandSize = v);
+                    Int("初期ライフ", n.Rules.Life, v => n.Rules.Life = v);
+                    ListField("戦闘できる種類", n.Rules.Fighters, v => n.Rules.Fighters = v);
+                    Hint("戦闘できる種類のカードは、表側表示で相手の戦闘できるカードを攻撃できます（相手にいなければ直接攻撃）。");
                     break;
                 case NodeKind.Zone:
                     Hint("1人分のゾーン。相手のフィールドは同じ形になります（共通ルール②）。");
@@ -114,13 +124,15 @@ namespace CardGen.App
                     ListField("置ける種類", n.Zone.Admits, v => n.Zone.Admits = v);
                     break;
                 case NodeKind.Card:
-                    Hint("カード。効果のノード（発動・無効）をつなぎます。");
+                    Hint("カード。効果のノード（発動・無効・攻撃力の変化）をつなぎます。");
                     Text("名前", n.Card.Name, v => n.Card.Name = v);
                     Text("種類", n.Card.Type, v => n.Card.Type = v.Trim());
                     ListField("タグ", n.Card.Tags, v => n.Card.Tags = v);
+                    Int("攻撃力", n.Card.Attack, v => n.Card.Attack = v);
+                    Int("守備力", n.Card.Defense, v => n.Card.Defense = v);
                     break;
                 case NodeKind.Activate:
-                    Hint("発動し、解決したときに、つないだ動き（破壊・手札に戻す・ドロー）を上から順に行います。無効にされていれば何も起きません。");
+                    Hint("発動し、解決したときに、つないだ動き（破壊・手札に戻す・ドロー・ダメージ・回復）を上から順に行います。無効にされていれば何も起きません。");
                     break;
                 case NodeKind.Destroy:
                     Hint("つないだ範囲のカードをすべて破壊し、持ち主の墓地へ送ります。範囲のノードを1つつなぎます。");
@@ -134,6 +146,18 @@ namespace CardGen.App
                     break;
                 case NodeKind.Negate:
                     Hint("このカードが表側表示でフィールド上に存在する限り、つないだ範囲のカードの効果を無効にします。範囲のノードを1つつなぎます。");
+                    break;
+                case NodeKind.Boost:
+                    Hint("このカードが表側表示でフィールド上に存在し、効果が無効にされていない限り、つないだ範囲のカードの攻撃力を変えます（負の数なら下げる。0 未満にはならない）。範囲のノードを1つつなぎます。");
+                    SignedInt("変える量", n.Amount, v => n.Amount = v);
+                    break;
+                case NodeKind.Damage:
+                    Hint("相手のライフを減らします（0 より下がらない）。");
+                    Int("ダメージ", n.Amount, v => n.Amount = Math.Max(1, v));
+                    break;
+                case NodeKind.Heal:
+                    Hint("発動したプレイヤーのライフを増やします。");
+                    Int("回復する量", n.Amount, v => n.Amount = Math.Max(1, v));
                     break;
                 case NodeKind.Selector:
                     Hint("フィールド上のカードのうち、すべての条件に合うものを選びます。");

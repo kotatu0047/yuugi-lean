@@ -27,6 +27,9 @@ namespace CardGen.App
             NodeKind.Bounce => new Color(0.30f, 0.55f, 0.70f),
             NodeKind.Draw => new Color(0.55f, 0.50f, 0.25f),
             NodeKind.Negate => new Color(0.30f, 0.60f, 0.40f),
+            NodeKind.Boost => new Color(0.25f, 0.55f, 0.55f),
+            NodeKind.Damage => new Color(0.80f, 0.35f, 0.50f),
+            NodeKind.Heal => new Color(0.35f, 0.65f, 0.35f),
             _ => new Color(0.45f, 0.45f, 0.50f),
         };
 
@@ -124,18 +127,23 @@ namespace CardGen.App
         static string Summary(Node n) => n.Kind switch
         {
             NodeKind.Rules =>
-                $"カードの種類：{List(n.Rules.CardTypes)}\nデッキ {n.Rules.DeckSize}枚・初期手札 {n.Rules.HandSize}枚",
+                $"カードの種類：{List(n.Rules.CardTypes)}\nデッキ {n.Rules.DeckSize}枚・初期手札 {n.Rules.HandSize}枚\n" +
+                $"ライフ {n.Rules.Life}・戦闘できる種類：{List(n.Rules.Fighters)}",
             NodeKind.Zone =>
                 $"{n.Zone.Count}マス・{(n.Zone.Capacity == Capacity.One ? "1枚まで" : "何枚でも")}・" +
                 $"{(n.Zone.Role == ZoneRole.Deck ? "デッキ" : n.Zone.Role == ZoneRole.Grave ? "墓地" : n.Zone.OnField ? "フィールド上" : "フィールド外")}\n" +
                 $"置ける種類：{List(n.Zone.Admits)}",
             NodeKind.Card =>
-                $"種類：{(n.Card.Type.Length == 0 ? "（未設定）" : n.Card.Type)}" + (n.Card.Tags.Count > 0 ? $"\nタグ：{List(n.Card.Tags)}" : ""),
+                $"種類：{(n.Card.Type.Length == 0 ? "（未設定）" : n.Card.Type)}" + (n.Card.Tags.Count > 0 ? $"\nタグ：{List(n.Card.Tags)}" : "") +
+                (n.Card.Attack > 0 || n.Card.Defense > 0 ? $"\n攻撃力 {n.Card.Attack}・守備力 {n.Card.Defense}" : ""),
             NodeKind.Activate => "発動し、つないだ動きを上から順に行う",
             NodeKind.Destroy => "つないだ範囲のカードをすべて破壊し、持ち主の墓地へ送る",
             NodeKind.Bounce => "つないだ範囲のカードをすべて持ち主の手札に戻す",
             NodeKind.Draw => $"発動したプレイヤーがカードを {n.DrawCount} 枚引く",
             NodeKind.Negate => "表側表示で存在する限り、つないだ範囲のカードの効果を無効にする",
+            NodeKind.Boost => $"表側表示で存在する限り、つないだ範囲のカードの攻撃力を {(n.Amount >= 0 ? "+" : "")}{n.Amount}",
+            NodeKind.Damage => $"相手に {n.Amount} のダメージを与える",
+            NodeKind.Heal => $"発動したプレイヤーのライフを {n.Amount} 回復する",
             _ => SelectorSummary(n.Selector),
         };
 
