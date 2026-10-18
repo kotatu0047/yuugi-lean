@@ -75,4 +75,26 @@ public class JudgeTests
         Assert.True(j.IsOn(a));
         Assert.False(j.IsOn(b));
     }
+
+    /// <summary>スキルドレインが場を離れ、2体の Bloo－D が同時に適用を始めるときは、ターンプレイヤーの方が先に適用されて勝つ</summary>
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void Turn_player_wins_when_applied_together(bool tp)
+    {
+        var j = new Judge();
+        var mine = S(BlooD);
+        var sd = S("スキルドレイン");
+        var theirs = S(BlooD);
+        j.Sync(Board(new List<Slot> { mine }, new List<Slot>()), G.Rules, true);
+        j.Sync(Board(new List<Slot> { mine }, new List<Slot> { sd }), G.Rules, false);
+        j.Sync(Board(new List<Slot> { mine }, new List<Slot> { sd, theirs }), G.Rules, false);
+        Assert.False(j.IsOn(mine));
+        Assert.False(j.IsOn(theirs));
+        // スキルドレインが場を離れる（tp のターン）
+        j.Sync(Board(new List<Slot> { mine }, new List<Slot> { theirs }), G.Rules, tp);
+        Assert.Equal(Judge.Outcome.Unique, j.Result);
+        Assert.Equal(tp, j.IsOn(mine));
+        Assert.Equal(!tp, j.IsOn(theirs));
+    }
 }
