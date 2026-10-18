@@ -93,6 +93,19 @@ public class DifferentialTests
         }
     }
 
+    [Fact]
+    public void Timed_step_like_Lean()
+    {
+        static TState Parse(JToken t) => new TState(t["on"].Select(x => (bool)x).ToArray(), t["order"].Select(x => (int)x).ToArray());
+        static JObject Json(TState t) => new JObject { ["on"] = new JArray(t.On), ["order"] = new JArray(t.Order) };
+        foreach (var c in V["timed"])
+        {
+            var insts = c["insts"].Select(x => new Inst(Cards[(string)x["card"]], (bool)x["controller"], (bool)x["faceUp"])).ToList();
+            var next = new TSys(insts).Succ((bool)c["turn"], Parse(c["state"]));
+            Assert.True(JToken.DeepEquals(c["expected"], new JArray(next.Select(Json))), $"不一致：{c}");
+        }
+    }
+
     static Choice ParseChoice(JToken c) => (string)c["kind"] switch
     {
         "draw" => Choice.Draw((bool)c["player"]),

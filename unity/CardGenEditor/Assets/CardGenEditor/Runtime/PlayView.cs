@@ -10,7 +10,10 @@ namespace CardGen.App
     /// テストプレイ：作ったルールとカードで、両プレイヤーを1人で動かす。
     /// 動きは C# の対戦エンジン（Lean の State.step? と差分テスト済み）で進め、
     /// フィールドの無効の状態と、盤面の制約（Lean で証明済み）をその都度表示する。
-    /// 攻撃力は、無効の状態が1通りに決まるときはそれを使い、決まらないカードは有効として計算する。
+    /// 無効の状態は、カードが適用された順番を覚えておき、動きのたびに OCG の手順（Lean の Timed.lean の
+    /// TSys.succ。C# 版は差分テスト済み）で判定を進めて決める。先に適用された効果が勝つので、
+    /// 例えば相手の Bloo－D がいるところに自分の Bloo－D を出すと、自分の Bloo－D が無効になる。
+    /// 手順の途中でプレイヤーが選ぶ場面（同じプレイヤーのカードを複数、有効に戻せるときなど）だけ選択肢を出す。
     /// </summary>
     public sealed class PlayView : VisualElement
     {
@@ -18,6 +21,9 @@ namespace CardGen.App
         MatchState state;
         int seed = 1;
         readonly List<string> log = new List<string>();
+
+        // 無効の判定（適用された順番を覚えておく。C# のコアの Judge）
+        Judge judge = new Judge();
 
         // 選んでいるカード
         bool selPlayer;
@@ -77,6 +83,8 @@ namespace CardGen.App
             var rng = new System.Random(seed);
             state = MatchState.Start(g.Rules, MakeDeck(rng), MakeDeck(rng));
             log.Clear();
+            judge = new Judge();
+            judge.Sync(state, g.Rules, true);
             log.Add($"開始（混ぜ方 {seed}）：お互いに {g.Rules.HandSize} 枚引きました");
             ClearSelection();
             Render();
@@ -99,6 +107,7 @@ namespace CardGen.App
                         if (next == null) continue;
                         log.Add($"{Who(p)}：{s.Hand[h].Name} を{game.Rules.Zones[zi].Name}に表側で置く");
                         state = next;
+                        judge.Sync(state, game.Rules, p);
                         placed = true;
                     }
                 if (!placed)
@@ -123,31 +132,47 @@ namespace CardGen.App
             if (next == null) { log.Add($"（できません）{message}"); Render(); return; }
             state = next;
             log.Add(message);
+            judge.Sync(state, game.Rules, ch.Player);
             ClearSelection();
             Render();
         }
 
         // ---- 無効の状態 ----
 
-        /// <summary>フィールドのカードごとの状態（有効・無効・順番次第）</summary>
+        /// <summary>判定の途中の選択肢を選ぶ</summary>
+        void Choose(int k, string text)
+        {
+            log.Add($"無効の判定：{text}");
+            judge.Choose(k);
+            Render();
+        }
+
+        string ChoiceText((bool player, int index, Slot slot) c) =>
+            $"{Who(c.player)}の{c.slot.Card.Name}を{(judge.ChoosingKill ? "無効にする" : "有効に戻す（効果の適用を始める）")}";
+
+        string JudgeNote() => judge.Result switch
+        {
+            Judge.Outcome.Unique => "無効の状態は、カードが適用された順番から1通りに決まります（先に適用された効果が勝つ）",
+            Judge.Outcome.Done => "判定が終わりました",
+            Judge.Outcome.Loop => "判定が止まりません（同じ状態に戻りました）。この盤面では無効の状態が決まりません",
+            _ => judge.Outlook.MayLoop ? "判定の途中です。選び方によっては判定が止まりません" :
+                 judge.Outlook.TooMany ? "判定の途中です" : $"判定の途中です。選び方によって結果が {judge.Outlook.Ends.Count} 通りに分かれます",
+        };
+
+        string ChooserText()
+        {
+            if (judge.ChoosingKill) return "無効にするカードが複数あり、どれからにするかで結果が変わります。順番を選んでください";
+            var who = Who(judge.Choices[0].card.player);
+            return $"有効に戻せる{who}のカードが複数あります。{who}が、どれから適用するかを選びます（OCG の手順）";
+        }
+
+        /// <summary>フィールドのカードごとの状態（有効・無効）</summary>
         Dictionary<(bool, int), string> NegationStatus(out string summary)
         {
-            var insts = state.FieldInsts(game.Rules);
-            var stables = Negation.StableStates(insts.Select(x => x.inst).ToList());
             var result = new Dictionary<(bool, int), string>();
-            if (stables == null) { summary = "フィールドのカードが多すぎるため、無効の状態は計算していません"; return result; }
-            if (stables.Count == 0)
-            {
-                summary = "どの状態も安定しません（判定が止まらない盤面です）";
-                foreach (var x in insts) result[(x.player, x.index)] = "？";
-                return result;
-            }
-            for (int i = 0; i < insts.Count; i++)
-            {
-                var on = stables.Select(s => s[i]).Distinct().ToList();
-                result[(insts[i].player, insts[i].index)] = on.Count > 1 ? "順番次第" : on[0] ? "有効" : "無効";
-            }
-            summary = stables.Count == 1 ? "無効の状態は1通りに決まります" : $"安定な状態が {stables.Count} 通りあり、適用の順番で変わります";
+            foreach (var (p, i, _) in state.FieldInsts(game.Rules))
+                result[(p, i)] = judge.IsOn(state.Get(p).Field[i]) ? "有効" : "無効";
+            summary = JudgeNote();
             return result;
         }
 
@@ -336,6 +361,8 @@ namespace CardGen.App
             top.Add(restart);
             side.Add(top);
             side.Add(Text("両方のプレイヤーを動かせます。カードを選ぶと、できる動きが出ます。", 11, Quiet));
+            if (judge.Choices != null)
+                side.Add(Text("無効の判定で、プレイヤーが選ぶ場面です（下の「無効の状態」から選んでください）", 12, Warn, true));
 
             Section("選んでいるカード");
             var s = state.Get(selPlayer);
@@ -408,7 +435,19 @@ namespace CardGen.App
             }
 
             Section("無効の状態");
-            side.Add(Text(negSummary, 12, negSummary.Contains("1通り") ? Good : Warn));
+            var ok = judge.Result == Judge.Outcome.Unique || judge.Result == Judge.Outcome.Done;
+            side.Add(Text(negSummary, 12, ok ? Good : Warn));
+            if (judge.Choices != null)
+            {
+                side.Add(Text(ChooserText(), 12, Warn));
+                for (int k = 0; k < judge.Choices.Count; k++)
+                {
+                    int kk = k;
+                    var t = ChoiceText(judge.Choices[k].card);
+                    ActionButton(t, () => Choose(kk, t));
+                }
+            }
+            side.Add(Text($"ターンプレイヤー（最後に動いたプレイヤー）：{Who(judge.Turn)}", 11, Quiet));
 
             Section("盤面の制約");
             var v = state.Violations(game.Rules);

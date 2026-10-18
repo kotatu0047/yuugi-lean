@@ -1,5 +1,6 @@
 import CardGen.Sample
 import CardGen.Play
+import CardGen.Timed
 
 /-!
 # 差分テスト用のテストベクトル
@@ -11,6 +12,7 @@ C# のゲームエンジンが Lean の定義と同じ結果を出すかを確�
 - `check`：形式の検査（`Game.check`）。誤りの文章も一致させる
 - `destroy`：破壊の動き（`PState.destroy`）
 - `boards`：盤面の無効の関係（`instRel`）と判定の手続きの分類（`analyzeBoard`）
+- `timed`：適用の時刻つきの判定の1歩（`TSys.succ`）。有効・無効と適用の順番、ターンプレイヤーをいろいろに選ぶ
 - `attack`：攻撃力（`State.atkOf`）。無効になっているカードの位置もいろいろに選ぶ
 - `play`：小さなルール（`playRules`）での対戦。開始時の状態から、選んだ動きを `State.step?` で進める
   （できない動きは `null`）
@@ -168,6 +170,15 @@ def vectors : Json := Id.run do
         return (⟨← Rand.pick vecCards, ← Rand.bool, ← Rand.bool⟩ : Inst)
       let rel := (List.range n).map fun y => (List.range n).map fun x => instRel insts y x
       return json% {insts: $(insts.map instJson), rel: $(rel), verdict: $(verdictName (analyzeBoard insts))}
+    let timed ← Rand.list 200 do
+      let n := (← Rand.next 5) + 1
+      let insts ← Rand.list n do
+        return (⟨← Rand.pick vecCards, ← Rand.bool, ← Rand.bool⟩ : Inst)
+      let s : TState := ⟨← Rand.list n Rand.bool, ← Rand.pick (perms (List.range n))⟩
+      let tp ← Rand.bool
+      let tjson (t : TState) : Json := json% {on: $(t.on), order: $(t.order)}
+      return json% {insts: $(insts.map instJson), state: $(tjson s), turn: $(tp),
+                    expected: $((TSys.ofInsts insts).succ tp s |>.map tjson)}
     let attack ← Rand.list 100 do
       let slot : Rand Slot := do
         return ⟨← Rand.next 3, ← Rand.pick vecCards, ← Rand.bool⟩
@@ -193,7 +204,7 @@ def vectors : Json := Id.run do
         g := next.getD g
       return json% {decks: [$(d1.map (·.name)), $(d2.map (·.name))], start: $(stateJson g0), steps: $(steps)}
     return json% {version: 1, rules: $(toJson Sample.rules), cards: $(toJson vecCards),
-                  selector: $(selector), check: $(check), destroy: $(destroy), boards: $(boards), attack: $(attack),
+                  selector: $(selector), check: $(check), destroy: $(destroy), boards: $(boards), timed: $(timed), attack: $(attack),
                   playRules: $(toJson playRules), play: $(play)}
     : Rand Json).run 20261018
   return j
