@@ -17,7 +17,10 @@
 - `CardGen/Play.lean`：実行できる対戦の1歩と、それが証明に使う動きの関係と一致すること（`step?_sound`）
 - `CardGen/Claims.lean`：ルールから導く性質（★）と、それがすべての対戦で成り立つことの証明（`derived_valid`）
 - `CardGen/Negation.lean`：無効の関係に循環がなければ判定が必ず止まり結果が1通りであることの証明（`negation_settles`）
+- `CardGen/Pool.lean`：盤面のカードはカードの一覧から来ること、回復のカードがなければライフは増えないこと（★の型 F、`gameClaims_valid`）
 - `CardGen/Explore.lean`：循環があるときの総当たりの検査
+- `CardGen/Timed.lean`：OCG の適用の時刻つきの判定と、証明書つきの総当たり（メタ定理2、`TSys.allEnd_of_certOK`）。テストプレイの無効の判定もこの手順
+- `CardGen/Custom.lean`：ユーザーが追加する命題（フィールド上・手札・墓地・デッキの枚数）と反例探し
 - `CardGen/Cli.lean`：検査ツール
 - `CardGen/Vectors.lean`：C# との差分テスト用のテストベクトル
 
