@@ -32,7 +32,9 @@ namespace CardGen.App.EditorTools
                 settings.match = 0.5f;
                 AssetDatabase.CreateAsset(settings, PanelPath);
             }
-            // シーンは毎回作り直す（PanelSettings の参照を確実に保存する）
+            // シーンがなければ作る（毎回作り直すと ID が変わり、git の上で変更になるため）。
+            // 作り直したいときはシーンのファイルを消してから実行する
+            if (!File.Exists(ScenePath))
             {
                 var scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
                 var cam = new GameObject("Camera").AddComponent<Camera>();

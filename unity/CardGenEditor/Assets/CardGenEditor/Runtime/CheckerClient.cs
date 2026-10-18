@@ -8,8 +8,15 @@ namespace CardGen.App
     /// <summary>Lean の検査ツール（cardgen）を別のプロセスで動かし、報告を受け取る</summary>
     public static class CheckerClient
     {
-        /// <summary>WSL の中の cardgen を呼ぶ既定のコマンド（最後の「-」で標準入力から読む）</summary>
-        public const string DefaultCommand = "wsl.exe -e /home/yamam/repo/yuugi-lean/.lake/build/bin/cardgen -";
+        /// <summary>
+        /// WSL の中の cardgen を呼ぶ既定のコマンド（最後の「-」で標準入力から読む）。
+        /// WSL のホームの repo/yuugi-lean にあるリポジトリの検査ツールを使う。
+        /// 別の場所に置いたときは、エディタの欄か、環境変数 CARDGEN_COMMAND で変える
+        /// </summary>
+        public static string DefaultCommand =>
+            Environment.GetEnvironmentVariable("CARDGEN_COMMAND") is string c && c.Trim().Length > 0
+                ? c.Trim()
+                : "wsl.exe --cd ~ -e repo/yuugi-lean/.lake/build/bin/cardgen -";
 
         /// <summary>検査のコマンド（最後が「 -」）を、別の引数で動かすコマンドにする</summary>
         public static string WithArgs(string command, string args)

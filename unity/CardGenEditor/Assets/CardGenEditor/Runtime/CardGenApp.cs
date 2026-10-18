@@ -79,6 +79,8 @@ namespace CardGen.App
             toolbar.style.paddingBottom = 6;
             toolbar.style.backgroundColor = new Color(0.18f, 0.18f, 0.2f);
             toolbar.style.flexWrap = Wrap.Wrap;
+            // 折り返したときに下の領域に押しつぶされないようにする
+            toolbar.style.flexShrink = 0;
             toolbar.Add(MakeButton("新規", NewDoc));
             toolbar.Add(MakeButton("見本", LoadSample));
             pathField = new TextField { value = PlayerPrefs.GetString(PathKey, DefaultPath()) };

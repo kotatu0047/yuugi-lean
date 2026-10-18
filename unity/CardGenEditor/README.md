@@ -7,10 +7,24 @@
 Unity は WSL のファイルシステム上のプロジェクトを開けない（大文字小文字を区別するため）。
 Windows 側のクローン（例：`C:\Users\yamam\repo\yuugi-lean`）の `unity/CardGenEditor` を Unity Hub で開く（Unity 6000.6.6f1）。
 
-- メニュー「CardGen ＞ プロジェクトを準備」：PanelSettings とシーン（`Assets/CardGenEditor/Main.unity`）を作る
+- メニュー「CardGen ＞ プロジェクトを準備」：PanelSettings とシーン（`Assets/CardGenEditor/Main.unity`）がなければ作る
+  （シーンを作り直したいときは、ファイルを消してから実行する）
 - メニュー「CardGen ＞ Windows 用にビルド」：`Build/CardGenEditor.exe` を作る
 
 C# の中核（中間表現・形式の検査・盤面の計算）は `csharp/CardGen.Core` をローカルのパッケージとして使う。
+
+### WSL で編集して、Windows 側でビルドする
+
+Windows 側のクローンは「ビルド用の写し」として扱い、編集は WSL 側で行う。WSL から次のスクリプトで写してビルドする。
+
+```
+tools/unity-build.sh                         # 作業中のファイルを Windows 側に写し、バッチモードでビルドする
+tools/unity-build.sh --reset                 # 先に Windows 側のクローンの変更を捨てて git pull する
+tools/unity-build.sh --shot 画面.png -cardgen-play 7   # ビルドしたアプリを動かし、画面を保存する
+```
+
+Windows 側のクローンの場所は `CARDGEN_WIN_REPO`、Unity.exe は `CARDGEN_UNITY` で変えられる
+（既定は Windows のユーザーフォルダの `repo/yuugi-lean` と、`ProjectVersion.txt` の版の Unity Hub のエディタ）。
 
 ## 使い方
 
@@ -45,10 +59,12 @@ C# の中核（中間表現・形式の検査・盤面の計算）は `csharp/Ca
 「Lean で検査」は、右の欄のコマンドで検査ツールを動かす。既定は WSL の中のビルド済みの検査ツール：
 
 ```
-wsl.exe -e /home/yamam/repo/yuugi-lean/.lake/build/bin/cardgen -
+wsl.exe --cd ~ -e repo/yuugi-lean/.lake/build/bin/cardgen -
 ```
 
-（WSL 側で `lake build` しておく。別の場所に置いたときは欄を書き換える）
+（WSL のホームの `repo/yuugi-lean` にあるリポジトリの検査ツール。WSL 側で `lake build` しておく。
+別の場所に置いたときは欄を書き換えるか、環境変数 `CARDGEN_COMMAND` にコマンドを入れる。欄の値は次回も使われる。
+アプリは Lean のコンパイラを動かさず、ビルド済みの検査ツールを呼ぶだけ）
 
 ## 命題とジョブ
 
