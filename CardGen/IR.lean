@@ -14,6 +14,10 @@ JSON との相互変換は Lean の自動導出による（`Option` 以外のフ
 - 発動して、条件に合うカードをすべて破壊する（サンダーボルト、ハーピィの羽根帚）・手札に戻す・
   決まった枚数ドローする
 - 表側表示で存在する限り、条件に合うカードの効果を無効にする（スキルドレイン、王宮のお触れ など）
+- 発動して、相手にダメージを与える・自分のライフを回復する
+- 表側表示で存在する限り、条件に合うカードの攻撃力を上げる・下げる（無効にされていれば効かない）
+
+版 2 で、ライフと戦闘（ルールの `life`・`fighters`、カードの `attack`・`defense`）を加えた。
 
 ルールの数値を変える効果や、カードの種類を変える効果（「〜扱い」）は、表す手段を用意しない。
 -/
@@ -58,6 +62,10 @@ structure Rules where
   /-- 初期手札の枚数 -/
   handSize : Nat
   zones : List Zone
+  /-- 初期ライフ -/
+  life : Nat := 0
+  /-- 戦闘できる（攻撃する・攻撃される）カードの種類。空なら戦闘はない -/
+  fighters : List TypeName := []
 deriving Repr, DecidableEq, FromJson, ToJson
 
 /-- 効果の持ち主から見た陣営 -/
@@ -88,6 +96,10 @@ inductive Action
   | bounce (target : Selector)
   /-- 発動したプレイヤーがデッキからカードを `count` 枚引く（デッキが足りなければある分だけ） -/
   | draw (count : Nat)
+  /-- 相手に `amount` のダメージを与える -/
+  | damage (amount : Nat)
+  /-- 発動したプレイヤーのライフを `amount` 回復する -/
+  | heal (amount : Nat)
 deriving Repr, DecidableEq, FromJson, ToJson
 
 /-- カードの効果 -/
@@ -96,6 +108,8 @@ inductive Effect
   | activated (actions : List Action)
   /-- 表側表示でフィールド上に存在する限り、範囲に合うカードの効果を無効にする -/
   | negate (target : Selector)
+  /-- 表側表示でフィールド上に存在する限り、範囲に合うカードの攻撃力を `amount` 変える（負なら下げる） -/
+  | boost (target : Selector) (amount : Int)
 deriving Repr, DecidableEq, FromJson, ToJson
 
 /-- カードの定義 -/
@@ -104,9 +118,13 @@ structure Card where
   type : TypeName
   tags : List String
   effects : List Effect
+  /-- 攻撃力（戦闘できる種類のカードだけが使う） -/
+  attack : Nat := 0
+  /-- 守備力（裏側表示で攻撃されたときに使う） -/
+  defense : Nat := 0
 deriving Repr, DecidableEq, FromJson, ToJson
 
-instance : Inhabited Card := ⟨⟨"", "", [], []⟩⟩
+instance : Inhabited Card := ⟨{ name := "", type := "", tags := [], effects := [] }⟩
 
 /-- エディタが出力する中間表現の全体 -/
 structure Game where
@@ -117,7 +135,7 @@ structure Game where
 deriving Repr, DecidableEq, FromJson, ToJson
 
 /-- 現在の形式の版 -/
-def currentVersion : Nat := 1
+def currentVersion : Nat := 2
 
 /-! ## 範囲の指定の意味
 
@@ -163,11 +181,17 @@ def Action.check (r : Rules) (where_ : String) : Action → List String
   | .destroy s => s.check r s!"{where_}の破壊"
   | .bounce s => s.check r s!"{where_}の手札に戻す動き"
   | .draw n => if n = 0 then [s!"{where_}：ドローの枚数が0です"] else []
+  | .damage n => if n = 0 then [s!"{where_}：ダメージが0です"] else []
+  | .heal n => if n = 0 then [s!"{where_}：回復する量が0です"] else []
 
 def Effect.check (r : Rules) (where_ : String) : Effect → List String
   | .activated as => (if as.isEmpty then [s!"{where_}：発動する効果に動きがありません"] else []) ++
       as.flatMap (·.check r where_)
   | .negate s => s.check r s!"{where_}の無効"
+  | .boost s n => s.check r s!"{where_}の攻撃力の変化" ++
+      (if n = 0 then [s!"{where_}：攻撃力の変化が0です"] else []) ++
+      (if s.types.any r.fighters.contains then [] else
+        [s!"{where_}：攻撃力を変える範囲に、戦闘できる種類のカードがありません"])
 
 def Card.check (r : Rules) (c : Card) : List String :=
   (if r.cardTypes.contains c.type then [] else
@@ -198,7 +222,9 @@ def Rules.check (r : Rules) : List String :=
     | 1 => [] | n => [s!"ルール：デッキの役割のゾーンがちょうど1つ必要です（{n}個あります）"]) ++
   (match (r.zones.filter (·.role == .grave)).length with
     | 1 => [] | n => [s!"ルール：墓地の役割のゾーンがちょうど1つ必要です（{n}個あります）"]) ++
-  r.zones.flatMap (·.check r)
+  r.zones.flatMap (·.check r) ++
+  (r.fighters.filter (!r.cardTypes.contains ·)).map (s!"ルール：戦闘できる種類「{·}」はカードの種類にありません") ++
+  (if !r.fighters.isEmpty && r.life = 0 then ["ルール：戦闘できる種類があるのに、初期ライフが0です"] else [])
 
 def Game.check (g : Game) : List String :=
   (if g.version = currentVersion then [] else

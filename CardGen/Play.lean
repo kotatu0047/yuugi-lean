@@ -19,7 +19,15 @@ inductive Choice
   | place (p : PlayerId) (hand : Nat) (zone : Nat) (up : Bool)
   /-- `p` がフィールドの `k` 番目のカードの `eff` 番目の効果を発動して解決する（`apply`：無効にされていないか） -/
   | resolve (p : PlayerId) (k : Nat) (eff : Nat) (apply : Bool)
+  /-- `p` がフィールドの `k` 番目のカードで、相手のフィールドの `target` 番目のカード（`none` なら直接）を攻撃する。
+  `neg`：効果が無効になっているカードの位置（攻撃力の計算に使う） -/
+  | attack (p : PlayerId) (k : Nat) (target : Option Nat) (neg : List Pos)
 deriving Repr, DecidableEq
+
+/-- 攻撃の対象として選べるか（`none` は直接攻撃：相手に戦闘できるカードがないとき） -/
+def State.targetOK (r : Rules) (g : State) (p : PlayerId) : Option Nat → Bool
+  | none => (g (!p)).field.all (!r.fights ·)
+  | some j => ((g (!p)).field[j]?.map r.fights).getD false
 
 /-- 選んだ動きをしたあとの状態（できない動きなら `none`） -/
 def State.step? (r : Rules) (g : State) : Choice → Option State
@@ -38,6 +46,10 @@ def State.step? (r : Rules) (g : State) : Choice → Option State
     match sl.card.effects[e]? with
     | some (.activated as) => some (g.resolve r p k sl as apply)
     | _ => none
+  | .attack p k t neg => do
+    let sl ← (g p).field[k]?
+    guard (sl.faceUp && r.fights sl && g.targetOK r p t)
+    return g.battle r neg p k sl t
 
 /-- **`step?` で進めた状態は、`Step` で進めた状態** -/
 theorem step?_sound {r : Rules} {g g' : State} {ch : Choice} (h : g.step? r ch = some g') : Step r g g' := by
@@ -80,6 +92,28 @@ theorem step?_sound {r : Rules} {g g' : State} {ch : Choice} (h : g.step? r ch =
         cases h
         exact .resolve g p k sl as apply hk (List.mem_of_getElem? he)
       · cases h
+  | attack p k t neg =>
+    simp only [State.step?, Option.bind_eq_bind] at h
+    cases hk : (g p).field[k]? with
+    | none => simp [hk] at h
+    | some sl =>
+      simp only [hk, Option.bind_some] at h
+      by_cases hg : (sl.faceUp && r.fights sl && g.targetOK r p t) = true
+      · simp only [hg, guard, ite_true, Option.pure_def, Option.bind_some] at h
+        cases h
+        simp only [Bool.and_eq_true] at hg
+        refine .attack g p k sl t neg hk hg.1.1 hg.1.2 ?_
+        cases t with
+        | none => exact hg.2
+        | some j =>
+          have h2 := hg.2
+          simp only [State.targetOK] at h2
+          cases hj : (g (!p)).field[j]? with
+          | none => simp [hj] at h2
+          | some tl => simp only [hj, Option.map_some, Option.getD_some] at h2; exact ⟨tl, hj, h2⟩
+      · rw [Bool.not_eq_true] at hg
+        simp only [hg, guard] at h
+        cases h
 
 /-- `step?` で動きを続けて到達した状態も `Reachable` -/
 theorem Reachable.steps? {r : Rules} {decks : PlayerId → List Card} {g : State} (h : Reachable r decks g) :

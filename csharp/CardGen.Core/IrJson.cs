@@ -70,6 +70,8 @@ namespace CardGen
                 "destroy" => new Destroy(ParseSelector(Field(o, "target"))),
                 "bounce" => new Bounce(ParseSelector(Field(o, "target"))),
                 "draw" => new DrawCards(Int(o, "count")),
+                "damage" => new Damage(Int(o, "amount")),
+                "heal" => new Heal(Int(o, "amount")),
                 _ => throw new FormatException($"動き「{k}」は使えません"),
             };
         }
@@ -81,6 +83,7 @@ namespace CardGen
             {
                 "activated" => new Activated(Arr(o, "actions", ParseAction)),
                 "negate" => new Negate(ParseSelector(Field(o, "target"))),
+                "boost" => new Boost(ParseSelector(Field(o, "target")), Int(o, "amount")),
                 _ => throw new FormatException($"効果「{k}」は使えません"),
             };
         }
@@ -94,6 +97,8 @@ namespace CardGen
                 Type = Str(o, "type"),
                 Tags = Strs(o, "tags"),
                 Effects = Arr(o, "effects", ParseEffect),
+                Attack = Int(o, "attack"),
+                Defense = Int(o, "defense"),
             };
         }
 
@@ -120,6 +125,8 @@ namespace CardGen
                 DeckSize = Int(o, "deckSize"),
                 HandSize = Int(o, "handSize"),
                 Zones = Arr(o, "zones", ParseZone),
+                Life = Int(o, "life"),
+                Fighters = Strs(o, "fighters"),
             };
         }
 
@@ -152,6 +159,8 @@ namespace CardGen
             Destroy d => new JObject { ["destroy"] = new JObject { ["target"] = ToJson(d.Target) } },
             Bounce b => new JObject { ["bounce"] = new JObject { ["target"] = ToJson(b.Target) } },
             DrawCards d => new JObject { ["draw"] = new JObject { ["count"] = d.Count } },
+            Damage d => new JObject { ["damage"] = new JObject { ["amount"] = d.Amount } },
+            Heal h => new JObject { ["heal"] = new JObject { ["amount"] = h.Amount } },
             _ => throw new ArgumentException("未知の動き"),
         };
 
@@ -159,6 +168,7 @@ namespace CardGen
         {
             Activated a => new JObject { ["activated"] = new JObject { ["actions"] = new JArray(a.Actions.Select(ToJson)) } },
             Negate n => new JObject { ["negate"] = new JObject { ["target"] = ToJson(n.Target) } },
+            Boost b => new JObject { ["boost"] = new JObject { ["target"] = ToJson(b.Target), ["amount"] = b.Amount } },
             _ => throw new ArgumentException("未知の効果"),
         };
 
@@ -168,6 +178,8 @@ namespace CardGen
             ["type"] = c.Type,
             ["tags"] = new JArray(c.Tags),
             ["effects"] = new JArray(c.Effects.Select(ToJson)),
+            ["attack"] = c.Attack,
+            ["defense"] = c.Defense,
         };
 
         static JObject ToJson(Zone z) => new JObject
@@ -186,6 +198,8 @@ namespace CardGen
             ["deckSize"] = r.DeckSize,
             ["handSize"] = r.HandSize,
             ["zones"] = new JArray(r.Zones.Select(ToJson)),
+            ["life"] = r.Life,
+            ["fighters"] = new JArray(r.Fighters),
         };
 
         public static JObject ToJson(Game g) => new JObject

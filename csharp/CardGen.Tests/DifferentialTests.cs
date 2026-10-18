@@ -23,6 +23,7 @@ public class DifferentialTests
         Hand = t["hand"].Select(x => Cards[(string)x]).ToList(),
         Grave = t["grave"].Select(x => Cards[(string)x]).ToList(),
         Field = t["field"].Select(x => new Slot((int)x["zone"], Cards[(string)x["card"]], (bool)x["faceUp"])).ToList(),
+        Life = (int)t["life"],
     };
 
     static JObject StateJson(PState s) => new JObject
@@ -32,6 +33,7 @@ public class DifferentialTests
         ["grave"] = new JArray(s.Grave.Select(c => c.Name)),
         ["field"] = new JArray(s.Field.Select(sl => new JObject
             { ["zone"] = sl.Zone, ["card"] = sl.Card.Name, ["faceUp"] = sl.FaceUp })),
+        ["life"] = s.Life,
     };
 
     static string VerdictName(Verdict v) => v switch
@@ -95,8 +97,30 @@ public class DifferentialTests
     {
         "draw" => Choice.Draw((bool)c["player"]),
         "place" => Choice.Place((bool)c["player"], (int)c["hand"], (int)c["zone"], (bool)c["faceUp"]),
+        "attack" => Choice.Attack((bool)c["player"], (int)c["field"],
+            c["target"].Type == JTokenType.Null ? (int?)null : (int)c["target"], ParseNeg(c["neg"])),
         _ => Choice.Resolve((bool)c["player"], (int)c["field"], (int)c["effect"], (bool)c["apply"]),
     };
+
+    static List<(bool, int)> ParseNeg(JToken t) => t.Select(x => ((bool)x[0], (int)x[1])).ToList();
+
+    [Fact]
+    public void Attack_values_like_Lean()
+    {
+        foreach (var c in V["attack"])
+        {
+            var st = (JArray)c["state"];
+            var g = new MatchState { P1 = ParseState(st[0]), P2 = ParseState(st[1]) };
+            var neg = ParseNeg(c["neg"]);
+            var expected = (JArray)c["expected"];
+            foreach (var (q, qi) in new[] { (true, 0), (false, 1) })
+            {
+                var f = g.Get(q).Field;
+                for (int j = 0; j < f.Count; j++)
+                    Assert.Equal((int)expected[qi][j], g.AtkOf(R, neg, (q, j), f[j]));
+            }
+        }
+    }
 
     static JArray MatchJson(MatchState g) => new JArray(StateJson(g.P1), StateJson(g.P2));
 
@@ -126,8 +150,8 @@ public class DifferentialTests
             }
             games++;
         }
-        Assert.Equal(40, games);
-        Assert.Equal(1600, steps);
+        Assert.Equal(80, games);
+        Assert.Equal(4000, steps);
     }
 
     [Fact]

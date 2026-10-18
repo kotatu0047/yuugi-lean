@@ -32,6 +32,10 @@ namespace CardGen
         public int DeckSize;
         public int HandSize;
         public List<Zone> Zones = new List<Zone>();
+        /// <summary>初期ライフ</summary>
+        public int Life;
+        /// <summary>戦闘できる（攻撃する・攻撃される）カードの種類。空なら戦闘はない</summary>
+        public List<string> Fighters = new List<string>();
 
         /// <summary>i 番目のゾーンが「フィールド上」に数えるゾーンか（Rules.onFieldZone）</summary>
         public bool OnFieldZone(int i) =>
@@ -95,6 +99,20 @@ namespace CardGen
         public DrawCards(int count) { Count = count; }
     }
 
+    /// <summary>相手に Amount のダメージを与える</summary>
+    public sealed class Damage : Action
+    {
+        public int Amount;
+        public Damage(int amount) { Amount = amount; }
+    }
+
+    /// <summary>発動したプレイヤーのライフを Amount 回復する</summary>
+    public sealed class Heal : Action
+    {
+        public int Amount;
+        public Heal(int amount) { Amount = amount; }
+    }
+
     /// <summary>カードの効果</summary>
     public abstract class Effect { }
 
@@ -112,6 +130,14 @@ namespace CardGen
         public Negate(Selector target) { Target = target; }
     }
 
+    /// <summary>表側表示でフィールド上に存在する限り、範囲に合うカードの攻撃力を Amount 変える（負なら下げる）</summary>
+    public sealed class Boost : Effect
+    {
+        public Selector Target;
+        public int Amount;
+        public Boost(Selector target, int amount) { Target = target; Amount = amount; }
+    }
+
     /// <summary>カードの定義</summary>
     public sealed class Card
     {
@@ -119,12 +145,14 @@ namespace CardGen
         public string Type = "";
         public List<string> Tags = new List<string>();
         public List<Effect> Effects = new List<Effect>();
+        public int Attack;
+        public int Defense;
     }
 
     /// <summary>エディタが出力する中間表現の全体</summary>
     public sealed class Game
     {
-        public const int CurrentVersion = 1;
+        public const int CurrentVersion = 2;
         public int Version = CurrentVersion;
         public Rules Rules = new Rules();
         public List<Card> Cards = new List<Card>();

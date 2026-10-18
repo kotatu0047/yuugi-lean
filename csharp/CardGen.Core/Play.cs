@@ -4,7 +4,7 @@ using System.Linq;
 
 namespace CardGen
 {
-    public enum ChoiceKind { Draw, Place, Resolve }
+    public enum ChoiceKind { Draw, Place, Resolve, Attack }
 
     /// <summary>プレイヤーが選ぶ動き（Choice）</summary>
     public sealed class Choice
@@ -14,12 +14,18 @@ namespace CardGen
         public bool Player;
         public int Hand, Zone, Field, Effect;
         public bool FaceUp, Apply;
+        /// <summary>攻撃の対象（相手のフィールドの何番目か。null なら直接攻撃）</summary>
+        public int? Target;
+        /// <summary>効果が無効になっているカードの位置（攻撃力の計算に使う）</summary>
+        public List<(bool player, int index)> Neg = new List<(bool, int)>();
 
         public static Choice Draw(bool p) => new Choice { Kind = ChoiceKind.Draw, Player = p };
         public static Choice Place(bool p, int hand, int zone, bool faceUp) =>
             new Choice { Kind = ChoiceKind.Place, Player = p, Hand = hand, Zone = zone, FaceUp = faceUp };
         public static Choice Resolve(bool p, int field, int effect, bool apply) =>
             new Choice { Kind = ChoiceKind.Resolve, Player = p, Field = field, Effect = effect, Apply = apply };
+        public static Choice Attack(bool p, int field, int? target, List<(bool, int)> neg) =>
+            new Choice { Kind = ChoiceKind.Attack, Player = p, Field = field, Target = target, Neg = neg };
     }
 
     /// <summary>対戦の状態（2人分）</summary>
@@ -31,15 +37,12 @@ namespace CardGen
         public PState Get(bool p) => p ? P1 : P2;
         public MatchState With(bool p, PState s) => p ? new MatchState { P1 = s, P2 = P2 } : new MatchState { P1 = P1, P2 = s };
 
-        static PState Copy(PState s) => new PState
-        {
-            Deck = s.Deck.ToList(), Hand = s.Hand.ToList(), Grave = s.Grave.ToList(), Field = s.Field.ToList(),
-        };
+        static PState Copy(PState s) => s.With();
 
         /// <summary>start：それぞれのデッキから初期手札を引いた状態</summary>
         public static MatchState Start(Rules r, List<Card> deck1, List<Card> deck2)
         {
-            PState Of(List<Card> d) => new PState { Deck = d.Skip(r.HandSize).ToList(), Hand = d.Take(r.HandSize).ToList() };
+            PState Of(List<Card> d) => new PState { Deck = d.Skip(r.HandSize).ToList(), Hand = d.Take(r.HandSize).ToList(), Life = r.Life };
             return new MatchState { P1 = Of(deck1), P2 = Of(deck2) };
         }
 
@@ -82,6 +85,61 @@ namespace CardGen
             return v;
         }
 
+        /// <summary>Rules.fights：戦闘できる「フィールド上」のカードか</summary>
+        public static bool Fights(Rules r, Slot sl) => r.OnFieldZone(sl.Zone) && r.Fighters.Contains(sl.Card.Type);
+
+        /// <summary>State.targetOK：攻撃の対象として選べるか（null は直接攻撃：相手に戦闘できるカードがないとき）</summary>
+        public bool TargetOK(Rules r, bool p, int? target)
+        {
+            var o = Get(!p).Field;
+            if (target == null) return o.All(t => !Fights(r, t));
+            var j = target.Value;
+            return j >= 0 && j < o.Count && Fights(r, o[j]);
+        }
+
+        /// <summary>boostFrom：q のフィールドの j 番目のカード src の効果で、位置 t のカード tsl の攻撃力が変わる量</summary>
+        static long BoostFrom(Rules r, List<(bool, int)> neg, (bool p, int i) t, Slot tsl, bool q, int j, Slot src)
+        {
+            if (!src.FaceUp || !r.OnFieldZone(src.Zone) || neg.Contains((q, j))) return 0;
+            var v = new View(tsl.Card.Type, tsl.Card.Tags, q == t.p, tsl.FaceUp, q == t.p && j == t.i);
+            return src.Card.Effects.OfType<Boost>().Where(b => b.Target.Matches(v)).Sum(b => (long)b.Amount);
+        }
+
+        /// <summary>State.atkOf：位置 t のカード tsl の攻撃力（元の攻撃力に、無効でない「攻撃力を変える」効果を足す。0 未満は 0）</summary>
+        public int AtkOf(Rules r, List<(bool, int)> neg, (bool p, int i) t, Slot tsl)
+        {
+            long sum = tsl.Card.Attack;
+            foreach (var q in new[] { true, false })
+            {
+                var f = Get(q).Field;
+                for (int j = 0; j < f.Count; j++) sum += BoostFrom(r, neg, t, tsl, q, j, f[j]);
+            }
+            return (int)System.Math.Max(0, sum);
+        }
+
+        /// <summary>State.battle：p のフィールドの k 番目のカード sl で、相手の target 番目のカード（null なら直接）を攻撃したあとの状態</summary>
+        public MatchState Battle(Rules r, List<(bool, int)> neg, bool p, int k, Slot sl, int? target)
+        {
+            var o = !p;
+            var a = AtkOf(r, neg, (p, k), sl);
+            if (target == null) return With(o, Get(o).Damage(a));
+            var j = target.Value;
+            if (j < 0 || j >= Get(o).Field.Count) return this;
+            var tl = Get(o).Field[j];
+            if (tl.FaceUp)
+            {
+                var t = AtkOf(r, neg, (o, j), tl);
+                if (t < a) return With(o, Get(o).DestroyAt(j).Damage(a - t));
+                if (a < t) return With(p, Get(p).DestroyAt(k).Damage(t - a));
+                if (a == 0) return this;
+                return With(p, Get(p).DestroyAt(k)).With(o, Get(o).DestroyAt(j));
+            }
+            var d = tl.Card.Defense;
+            if (d < a) return With(o, Get(o).DestroyAt(j));
+            if (a < d) return With(p, Get(p).Damage(d - a));
+            return this;
+        }
+
         /// <summary>State.step?：選んだ動きをしたあとの状態（できない動きなら null）</summary>
         public MatchState Step(Rules r, Choice ch)
         {
@@ -111,6 +169,13 @@ namespace CardGen
                     n.Field.Add(new Slot(ch.Zone, c, ch.FaceUp));
                     return With(p, n);
                 }
+                case ChoiceKind.Attack:
+                {
+                    if (ch.Field < 0 || ch.Field >= s.Field.Count) return null;
+                    var sl = s.Field[ch.Field];
+                    if (!sl.FaceUp || !Fights(r, sl) || !TargetOK(r, p, ch.Target)) return null;
+                    return Battle(r, ch.Neg, p, ch.Field, sl, ch.Target);
+                }
                 default:
                 {
                     if (ch.Field < 0 || ch.Field >= s.Field.Count) return null;
@@ -126,6 +191,8 @@ namespace CardGen
                                 Destroy d => new MatchState { P1 = g.P1.Destroy(r, d.Target, p), P2 = g.P2.Destroy(r, d.Target, !p) },
                                 Bounce b => new MatchState { P1 = g.P1.Bounce(r, b.Target, p), P2 = g.P2.Bounce(r, b.Target, !p) },
                                 DrawCards dc => g.With(p, g.Get(p).DrawN(dc.Count)),
+                                Damage dm => g.With(!p, g.Get(!p).Damage(dm.Amount)),
+                                Heal h => g.With(p, g.Get(p).With(life: g.Get(p).Life + h.Amount)),
                                 _ => g,
                             };
                     var last = Copy(g.Get(p));

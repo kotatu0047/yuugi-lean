@@ -1,10 +1,11 @@
 import CardGen.Report
+import CardGen.Play
 
 /-!
 # 中間表現の見本
 
-ユーザーの入力例のルール（初期手札5枚、デッキ40枚、モンスター・魔法・罠、ゾーン12マス）と、
-プロトタイプで表せるカード8枚。同じ内容の JSON が `CardGen/sample.json` にある。
+ユーザーの入力例のルール（初期手札5枚、デッキ40枚、モンスター・魔法・罠、ゾーン12マス、
+ライフ8000、モンスターが戦闘する）と、プロトタイプで表せるカード13枚。同じ内容の JSON が `CardGen/sample.json` にある。
 -/
 
 namespace CardGen.Sample
@@ -27,6 +28,8 @@ def rules : Rules where
       onField := false, admits := [monster, spell, trap] },
     { name := "墓地ゾーン", count := 1, capacity := .many, role := .grave,
       onField := false, admits := [monster, spell, trap] }]
+  life := 8000
+  fighters := [monster]
 
 /-- 範囲の指定を短く書く -/
 def sel (types : List TypeName) (side : Side) (faceUpOnly := false) (excludeSelf := false) :
@@ -51,12 +54,12 @@ def royalDecree : Card :=
 
 def jinzo : Card :=
   { name := "人造人間－サイコ・ショッカー", type := monster, tags := ["闇属性", "機械族"],
-    effects := [.negate (sel [trap] .both (faceUpOnly := true))] }
+    effects := [.negate (sel [trap] .both (faceUpOnly := true))], attack := 2400, defense := 1500 }
 
 /-- 装備の効果と特殊召喚の条件は、プロトタイプでは表せないので無効の効果だけ -/
 def blooD : Card :=
   { name := "D－HERO Bloo－D", type := monster, tags := ["闇属性", "戦士族"],
-    effects := [.negate (sel [monster] .opp (faceUpOnly := true))] }
+    effects := [.negate (sel [monster] .opp (faceUpOnly := true))], attack := 1900, defense := 600 }
 
 /-- 相手のモンスターをすべて手札に戻す魔法 -/
 def returnSpell : Card :=
@@ -68,10 +71,37 @@ def drawSpell : Card :=
   { name := "二枚引き", type := spell, tags := [],
     effects := [.activated [.draw 2]] }
 
+/-- 効果を持たないモンスター -/
+def blackMagician : Card :=
+  { name := "ブラック・マジシャン", type := monster, tags := ["闇属性", "魔法使い族"], effects := [],
+    attack := 2500, defense := 2100 }
+
+/-- 自分のほかの闇属性モンスターの攻撃力を上げるモンスター（スキルドレインで無効になる） -/
+def darkCommander : Card :=
+  { name := "闇の指揮官", type := monster, tags := ["闇属性", "戦士族"],
+    effects := [.boost { types := [monster], tags := ["闇属性"], side := .self, faceUpOnly := true,
+                         excludeSelf := true } 300],
+    attack := 1600, defense := 1000 }
+
+/-- 自分の闇属性モンスターの攻撃力を上げる永続魔法（スキルドレインでは無効にならない） -/
+def darkBlessing : Card :=
+  { name := "闇の加護", type := spell, tags := [],
+    effects := [.boost { types := [monster], tags := ["闇属性"], side := .self, faceUpOnly := true,
+                         excludeSelf := false } 500] }
+
+/-- 相手に500ダメージを与える魔法 -/
+def fireball : Card :=
+  { name := "ファイヤー・ボール", type := spell, tags := [], effects := [.activated [.damage 500]] }
+
+/-- ライフを500回復する魔法 -/
+def potion : Card :=
+  { name := "レッド・ポーション", type := spell, tags := [], effects := [.activated [.heal 500]] }
+
 def game : Game where
   version := currentVersion
   rules := rules
-  cards := [thunderbolt, featherDuster, skillDrain, royalDecree, jinzo, blooD, returnSpell, drawSpell]
+  cards := [thunderbolt, featherDuster, skillDrain, royalDecree, jinzo, blooD, returnSpell, drawSpell,
+    blackMagician, darkCommander, darkBlessing, fireball, potion]
 
 /-! ## 検査 -/
 
@@ -247,5 +277,50 @@ def quadBoard : List Inst :=
 -- 容量：モンスターカードゾーンは5マスなので、モンスター6枚は置けない
 #guard fitsZones game.rules (List.replicate 5 jinzo)
 #guard !fitsZones game.rules (List.replicate 6 jinzo)
+
+end CardGen.Sample
+
+namespace CardGen.Sample
+
+/-! ## 戦闘とライフ -/
+
+/-- 自分：闇の指揮官・ブラック・マジシャン・闇の加護、相手：サイコ・ショッカー・裏側表示の Bloo－D -/
+def battleState : State := fun p =>
+  if p then { deck := [], hand := [], grave := [], life := 8000,
+              field := [⟨0, darkCommander, true⟩, ⟨0, blackMagician, true⟩, ⟨1, darkBlessing, true⟩] }
+  else { deck := [], hand := [], grave := [], life := 8000,
+         field := [⟨0, jinzo, true⟩, ⟨0, blooD, false⟩] }
+
+-- ブラック・マジシャンの攻撃力：2500 ＋ 指揮官 300 ＋ 加護 500
+#guard battleState.atkOf rules [] (true, 1) ⟨0, blackMagician, true⟩ == 3300
+-- 指揮官自身には指揮官の効果は及ばない：1600 ＋ 加護 500
+#guard battleState.atkOf rules [] (true, 0) ⟨0, darkCommander, true⟩ == 2100
+-- 指揮官の効果が無効（スキルドレインなど）なら 2500 ＋ 500
+#guard battleState.atkOf rules [(true, 0)] (true, 1) ⟨0, blackMagician, true⟩ == 3000
+-- サイコ・ショッカーは相手の加護の範囲外（「自分の」闇属性モンスター）：2400 のまま
+#guard battleState.atkOf rules [] (false, 0) ⟨0, jinzo, true⟩ == 2400
+
+-- ブラック・マジシャン（3300）でサイコ・ショッカー（2400）を攻撃：ショッカーは破壊され、相手は 900 のダメージ
+#guard match battleState.step? rules (.attack true 1 (some 0) []) with
+  | some g => (g false).life == 7100 && (g false).field.length == 1 && (g false).grave == [jinzo]
+  | none => false
+-- 指揮官（2100）でショッカー（2400）を攻撃：指揮官が破壊され、自分が 300 のダメージ
+#guard match battleState.step? rules (.attack true 0 (some 0) []) with
+  | some g => (g true).life == 7700 && (g true).grave == [darkCommander]
+  | none => false
+-- 裏側表示の Bloo－D（守備力 600）は守備力で受ける：破壊されるがダメージはない
+#guard match battleState.step? rules (.attack true 0 (some 1) []) with
+  | some g => (g false).life == 8000 && (g false).grave == [blooD]
+  | none => false
+-- 相手に戦闘できるカードがあるので直接攻撃はできない。魔法（加護）では攻撃できない
+#guard (battleState.step? rules (.attack true 1 none [])).isNone
+#guard (battleState.step? rules (.attack true 2 (some 0) [])).isNone
+
+-- ファイヤー・ボールのダメージはライフ 0 で止まる
+#guard ((battleState.set false { battleState false with life := 300 }).applyAction rules true (.damage 500) false).life == 0
+
+-- 見本には回復の魔法があるので、ライフの上限の★はない。回復の魔法を除けば★「ライフは最大8000」が出る
+#guard (gameClaims game).isEmpty
+#guard (gameClaims { game with cards := game.cards.filter (· != potion) }).map (·.prop) == [.lifeMax 8000]
 
 end CardGen.Sample

@@ -1,4 +1,5 @@
 import CardGen.Timed
+import CardGen.Pool
 
 /-!
 # 検査ツールの報告
@@ -124,8 +125,9 @@ def report (input : String) : Report :=
     | .ok g =>
       match g.check with
       | [] =>
-        let claims := (derived g.rules).map fun c =>
-          (⟨c.text, c.grounds, "proved", "CardGen.derived_valid"⟩ : ClaimOut)
+        let claims := (derived g.rules).map (fun c =>
+          (⟨c.text, c.grounds, "proved", "CardGen.derived_valid"⟩ : ClaimOut)) ++
+          (gameClaims g).map fun c => (⟨c.text, c.grounds, "proved", "CardGen.gameClaims_valid"⟩ : ClaimOut)
         ⟨1, true, [], claims, some (negOut g.rules g.cards)⟩
       | es => fail es
 

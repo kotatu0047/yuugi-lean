@@ -22,6 +22,8 @@ namespace CardGen
             Destroy d => Selector(r, $"{where}の破壊", d.Target),
             Bounce b => Selector(r, $"{where}の手札に戻す動き", b.Target),
             DrawCards d => d.Count == 0 ? new[] { $"{where}：ドローの枚数が0です" } : Enumerable.Empty<string>(),
+            Damage d => d.Amount == 0 ? new[] { $"{where}：ダメージが0です" } : Enumerable.Empty<string>(),
+            Heal h => h.Amount == 0 ? new[] { $"{where}：回復する量が0です" } : Enumerable.Empty<string>(),
             _ => Enumerable.Empty<string>(),
         };
 
@@ -35,6 +37,12 @@ namespace CardGen
                     break;
                 case Negate n:
                     foreach (var m in Selector(r, $"{where}の無効", n.Target)) yield return m;
+                    break;
+                case Boost b:
+                    foreach (var m in Selector(r, $"{where}の攻撃力の変化", b.Target)) yield return m;
+                    if (b.Amount == 0) yield return $"{where}：攻撃力の変化が0です";
+                    if (!b.Target.Types.Any(t => r.Fighters.Contains(t)))
+                        yield return $"{where}：攻撃力を変える範囲に、戦闘できる種類のカードがありません";
                     break;
             }
         }
@@ -72,6 +80,9 @@ namespace CardGen
             var graves = r.Zones.Count(z => z.Role == ZoneRole.Grave);
             if (graves != 1) yield return $"ルール：墓地の役割のゾーンがちょうど1つ必要です（{graves}個あります）";
             foreach (var m in r.Zones.SelectMany(z => Zone(r, z))) yield return m;
+            foreach (var t in r.Fighters.Where(t => !r.CardTypes.Contains(t)))
+                yield return $"ルール：戦闘できる種類「{t}」はカードの種類にありません";
+            if (r.Fighters.Count > 0 && r.Life == 0) yield return "ルール：戦闘できる種類があるのに、初期ライフが0です";
         }
 
         /// <summary>Game.check：問題をすべて返す。空なら中間表現として意味が通る</summary>

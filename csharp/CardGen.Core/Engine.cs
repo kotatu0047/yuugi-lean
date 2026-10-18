@@ -22,6 +22,7 @@ namespace CardGen
         public List<Card> Hand = new List<Card>();
         public List<Card> Grave = new List<Card>();
         public List<Slot> Field = new List<Slot>();
+        public int Life;
 
         /// <summary>PState.destroy：フィールド上の、範囲に合うカードをすべて破壊して墓地へ送る</summary>
         public PState Destroy(Rules r, Selector sel, bool mine)
@@ -33,6 +34,7 @@ namespace CardGen
                 Hand = Hand.ToList(),
                 Field = Field.Where(sl => !Hit(sl)).ToList(),
                 Grave = Grave.Concat(Field.Where(Hit).Select(sl => sl.Card)).ToList(),
+                Life = Life,
             };
         }
     }
@@ -49,6 +51,7 @@ namespace CardGen
                 Hand = s.Hand.Concat(s.Field.Where(Hit).Select(sl => sl.Card)).ToList(),
                 Grave = s.Grave.ToList(),
                 Field = s.Field.Where(sl => !Hit(sl)).ToList(),
+                Life = s.Life,
             };
         }
 
@@ -59,6 +62,27 @@ namespace CardGen
             Hand = s.Hand.Concat(s.Deck.Take(n)).ToList(),
             Grave = s.Grave.ToList(),
             Field = s.Field.ToList(),
+            Life = s.Life,
+        };
+
+        /// <summary>PState.damage：ダメージを受ける（ライフは 0 より下がらない）</summary>
+        public static PState Damage(this PState s, int n) => s.With(life: System.Math.Max(0, s.Life - n));
+
+        /// <summary>PState.destroyAt：フィールドの k 番目のカードを破壊して墓地へ送る</summary>
+        public static PState DestroyAt(this PState s, int k)
+        {
+            if (k < 0 || k >= s.Field.Count) return s;
+            var n = s.With();
+            n.Grave.Add(s.Field[k].Card);
+            n.Field.RemoveAt(k);
+            return n;
+        }
+
+        /// <summary>写し（ライフだけ変えることもできる）</summary>
+        public static PState With(this PState s, int? life = null) => new PState
+        {
+            Deck = s.Deck.ToList(), Hand = s.Hand.ToList(), Grave = s.Grave.ToList(), Field = s.Field.ToList(),
+            Life = life ?? s.Life,
         };
     }
 

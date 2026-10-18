@@ -10,8 +10,13 @@ import CardGen.IR
 - ドロー：デッキの一番上を手札に加える
 - 置く：手札のカードを、その種類を置けるゾーンに置く（「1枚まで」のゾーンは空きがあるときだけ）
 - 発動して解決する：フィールドの、発動する効果を持つカードを取り除き、効果の動き（破壊・手札に戻す・
-  ドロー）を順に行い
-  （無効にされていれば何もしない）、そのカードを墓地へ送る
+  ドロー・ダメージ・回復）を順に行い（無効にされていれば何もしない）、そのカードを墓地へ送る
+- 攻撃する：表側表示の戦闘できるカードで、相手の戦闘できるカードを攻撃する（相手に戦闘できるカードが
+  なければ直接攻撃する）。攻撃力は、元の攻撃力に、無効にされていない「攻撃力を変える」効果を足したもの。
+  どのカードが無効かは動きの引数で受け取り、どんな組み合わせも許す（無効の判定は `Negation.lean`）
+  - 表側表示のカードどうしは攻撃力を比べ、低い方を破壊し、差をそのコントローラーへのダメージにする
+    （同じなら両方を破壊する。ともに 0 なら何も起きない）
+  - 裏側表示のカードは守備力で受け、攻撃力が高ければ破壊し、低ければ差を攻撃した側へのダメージにする
 
 カードの持ち主とコントロールするプレイヤーは同じで、カードは持ち主の側から出ない。
 -/
@@ -33,6 +38,7 @@ structure PState where
   hand : List Card
   grave : List Card
   field : List Slot
+  life : Nat
 deriving Repr, DecidableEq
 
 /-- プレイヤー（`true` と `false` の2人） -/
@@ -76,11 +82,16 @@ def PState.bounce (r : Rules) (sel : Selector) (mine : Bool) (s : PState) : PSta
 def PState.drawN (n : Nat) (s : PState) : PState :=
   { s with deck := s.deck.drop n, hand := s.hand ++ s.deck.take n }
 
+/-- ダメージを受ける（ライフは 0 より下がらない） -/
+def PState.damage (n : Nat) (s : PState) : PState := { s with life := s.life - n }
+
 /-- プレイヤー `p` の効果の動きを1つ行う -/
 def State.applyAction (r : Rules) (p : PlayerId) (g : State) : Action → State
   | .destroy sel => fun q => (g q).destroy r sel (q == p)
   | .bounce sel => fun q => (g q).bounce r sel (q == p)
   | .draw n => g.set p ((g p).drawN n)
+  | .damage n => g.set (!p) ((g (!p)).damage n)
+  | .heal n => g.set p { g p with life := (g p).life + n }
 
 /-- プレイヤー `p` が、フィールドの `k` 番目のカード `sl` の効果（動き `as`）を発動して解決したあとの状態 -/
 def State.resolve (r : Rules) (p : PlayerId) (g : State) (k : Nat) (sl : Slot) (as : List Action)
@@ -88,6 +99,62 @@ def State.resolve (r : Rules) (p : PlayerId) (g : State) (k : Nat) (sl : Slot) (
   let g1 := g.set p { g p with field := (g p).field.eraseIdx k }
   let g2 := if apply then as.foldl (State.applyAction r p) g1 else g1
   g2.set p { g2 p with grave := (g2 p).grave ++ [sl.card] }
+
+/-! ## 戦闘 -/
+
+/-- フィールドのカードの位置（プレイヤーと、`field` の何番目か） -/
+abbrev Pos := PlayerId × Nat
+
+/-- `q` のフィールドの `j` 番目のカード `src` の効果で、位置 `t` のカード `tsl` の攻撃力が変わる量。
+`neg` は効果が無効になっているカードの位置 -/
+def boostFrom (r : Rules) (neg : List Pos) (t : Pos) (tsl : Slot) (q : PlayerId) (j : Nat) (src : Slot) : Int :=
+  if src.faceUp && r.onFieldZone src.zone && !neg.contains (q, j) then
+    (src.card.effects.map fun
+      | .boost sel n => if sel.matches { tsl.view (q == t.1) with isSelf := (q, j) == t } then n else 0
+      | _ => 0).sum
+  else 0
+
+/-- `q` のフィールドのカード全体から、位置 `t` のカードの攻撃力が変わる量 -/
+def State.boostSide (r : Rules) (g : State) (neg : List Pos) (t : Pos) (tsl : Slot) (q : PlayerId) : Int :=
+  ((List.range (g q).field.length).map fun j =>
+    match (g q).field[j]? with
+    | some src => boostFrom r neg t tsl q j src
+    | none => 0).sum
+
+/-- 位置 `t` のカード `tsl` の攻撃力 -/
+def State.atkOf (r : Rules) (g : State) (neg : List Pos) (t : Pos) (tsl : Slot) : Nat :=
+  (Int.ofNat tsl.card.attack + g.boostSide r neg t tsl true + g.boostSide r neg t tsl false).toNat
+
+/-- 戦闘できる「フィールド上」のカードか -/
+def Rules.fights (r : Rules) (sl : Slot) : Bool := r.onFieldZone sl.zone && r.fighters.contains sl.card.type
+
+/-- フィールドの `k` 番目のカードを破壊して墓地へ送る -/
+def PState.destroyAt (k : Nat) (s : PState) : PState :=
+  match s.field[k]? with
+  | some sl => { s with field := s.field.eraseIdx k, grave := s.grave ++ [sl.card] }
+  | none => s
+
+/-- `p` のフィールドの `k` 番目のカード `sl` で、相手のフィールドの `target` 番目のカード
+（`none` なら直接）を攻撃したあとの状態 -/
+def State.battle (r : Rules) (g : State) (neg : List Pos) (p : PlayerId) (k : Nat) (sl : Slot) :
+    Option Nat → State
+  | none => g.set (!p) ((g (!p)).damage (g.atkOf r neg (p, k) sl))
+  | some j =>
+    match (g (!p)).field[j]? with
+    | none => g
+    | some tl =>
+      let a := g.atkOf r neg (p, k) sl
+      if tl.faceUp then
+        let t := g.atkOf r neg (!p, j) tl
+        if t < a then g.set (!p) (((g (!p)).destroyAt j).damage (a - t))
+        else if a < t then g.set p (((g p).destroyAt k).damage (t - a))
+        else if a = 0 then g
+        else (g.set p ((g p).destroyAt k)).set (!p) ((g (!p)).destroyAt j)
+      else
+        let d := tl.card.defense
+        if d < a then g.set (!p) ((g (!p)).destroyAt j)
+        else if a < d then g.set p ((g p).damage (d - a))
+        else g
 
 /-- 対戦の1つの動き -/
 inductive Step (r : Rules) : State → State → Prop
@@ -101,10 +168,17 @@ inductive Step (r : Rules) : State → State → Prop
   | resolve (g : State) (p : PlayerId) (k : Nat) (sl : Slot) (as : List Action) (apply : Bool) :
       (g p).field[k]? = some sl → .activated as ∈ sl.card.effects →
       Step r g (g.resolve r p k sl as apply)
+  | attack (g : State) (p : PlayerId) (k : Nat) (sl : Slot) (target : Option Nat) (neg : List Pos) :
+      (g p).field[k]? = some sl → sl.faceUp → r.fights sl →
+      (match target with
+       | none => (g (!p)).field.all (!r.fights ·)
+       | some j => ∃ tl, (g (!p)).field[j]? = some tl ∧ r.fights tl) →
+      Step r g (g.battle r neg p k sl target)
 
 /-- ゲーム開始時の状態：それぞれのデッキから初期手札を引いた状態 -/
 def start (r : Rules) (decks : PlayerId → List Card) : State :=
-  fun p => { deck := (decks p).drop r.handSize, hand := (decks p).take r.handSize, grave := [], field := [] }
+  fun p => { deck := (decks p).drop r.handSize, hand := (decks p).take r.handSize, grave := [], field := [],
+             life := r.life }
 
 /-- 開始時の状態から動きを繰り返して到達できる -/
 inductive Reachable (r : Rules) (decks : PlayerId → List Card) : State → Prop
