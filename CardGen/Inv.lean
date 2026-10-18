@@ -8,6 +8,7 @@ import CardGen.Model
 - 1人あたりのカードの枚数はデッキの枚数のまま
 - フィールドのカードは、その種類を置けるゾーンにある
 - 「1枚まで」のゾーンのカードは、マスの数を超えない
+- デッキの枚数は、開始時の枚数（デッキの枚数 − 初期手札）を超えない（デッキに戻す動きはない）
 
 効果の動き（破壊・手札に戻す・ドロー）はどのカードのどんな範囲の指定でもカードを移すだけなので、
 カードの効果をどう組み合わせても崩れない（企画書の「第1層」）。
@@ -28,22 +29,24 @@ structure Inv (r : Rules) (g : State) : Prop where
     ∃ z, r.zones[sl.zone]? = some z ∧ z.role = .plain ∧ z.admits.contains sl.card.type
   cap : ∀ p i z, r.zones[i]? = some z → z.capacity = .one →
     ((g p).field.filter (·.zone == i)).length ≤ z.count
+  deck : ∀ p, (g p).deck.length ≤ r.deckSize - r.handSize
 
 /-! ## カードを取り除くだけの動き -/
 
-/-- どのプレイヤーも、枚数は同じでフィールドのカードは減るだけ -/
+/-- どのプレイヤーも、枚数は同じでフィールドのカードとデッキは減るだけ -/
 def Shrinks (g g' : State) : Prop :=
-  ∀ q, (g' q).size = (g q).size ∧ (g' q).field.Sublist (g q).field
+  ∀ q, (g' q).size = (g q).size ∧ (g' q).field.Sublist (g q).field ∧ (g' q).deck.length ≤ (g q).deck.length
 
-theorem Shrinks.refl (g : State) : Shrinks g g := fun _ => ⟨rfl, List.Sublist.refl _⟩
+theorem Shrinks.refl (g : State) : Shrinks g g := fun _ => ⟨rfl, List.Sublist.refl _, Nat.le_refl _⟩
 
 theorem Shrinks.trans {a b c : State} (h1 : Shrinks a b) (h2 : Shrinks b c) : Shrinks a c :=
-  fun q => ⟨(h2 q).1.trans (h1 q).1, (h2 q).2.trans (h1 q).2⟩
+  fun q => ⟨(h2 q).1.trans (h1 q).1, (h2 q).2.1.trans (h1 q).2.1, Nat.le_trans (h2 q).2.2 (h1 q).2.2⟩
 
 theorem Inv.shrinks {r : Rules} {g g' : State} (h : Inv r g) (hs : Shrinks g g') : Inv r g' where
   size p := (hs p).1.trans (h.size p)
-  zones p sl hm := h.zones p sl ((hs p).2.subset hm)
-  cap p i z hz hc := Nat.le_trans ((hs p).2.filter _).length_le (h.cap p i z hz hc)
+  zones p sl hm := h.zones p sl ((hs p).2.1.subset hm)
+  cap p i z hz hc := Nat.le_trans ((hs p).2.1.filter _).length_le (h.cap p i z hz hc)
+  deck p := Nat.le_trans (hs p).2.2 (h.deck p)
 
 theorem PState.size_destroy (r : Rules) (sel : Selector) (m : Bool) (s : PState) :
     (s.destroy r sel m).size = s.size := by
@@ -64,18 +67,18 @@ theorem PState.size_drawN (n : Nat) (s : PState) : (s.drawN n).size = s.size := 
 theorem shrinks_applyAction (r : Rules) (p : PlayerId) (g : State) (a : Action) :
     Shrinks g (g.applyAction r p a) := by
   cases a with
-  | destroy sel => exact fun q => ⟨PState.size_destroy .., List.filter_sublist⟩
-  | bounce sel => exact fun q => ⟨PState.size_bounce .., List.filter_sublist⟩
+  | destroy sel => exact fun q => ⟨PState.size_destroy .., List.filter_sublist, Nat.le_refl _⟩
+  | bounce sel => exact fun q => ⟨PState.size_bounce .., List.filter_sublist, Nat.le_refl _⟩
   | draw n =>
     intro q
     by_cases hq : q = p
     · subst hq
       simp only [State.applyAction, State.set_same]
-      exact ⟨PState.size_drawN .., List.Sublist.refl _⟩
+      exact ⟨PState.size_drawN .., List.Sublist.refl _, by simp [PState.drawN]⟩
     · have h := State.set_other g ((g p).drawN n) hq
       simp only [State.applyAction]
       rw [h]
-      exact ⟨rfl, List.Sublist.refl _⟩
+      exact Shrinks.refl g q
 
 theorem shrinks_foldl (r : Rules) (p : PlayerId) (as : List Action) (g : State) :
     Shrinks g (as.foldl (State.applyAction r p) g) := by
@@ -102,10 +105,11 @@ theorem shrinks_resolve (r : Rules) (p : PlayerId) (g : State) {k : Nat} {sl : S
       omega
     have hs1 : (g1 q).field.Sublist (g q).field := by
       simp only [g1, State.set_same]; exact List.eraseIdx_sublist _ _
-    refine ⟨?_, ?_⟩
+    refine ⟨?_, ?_, ?_⟩
     · simp only [State.set_same, PState.size, List.length_append, List.length_singleton]
       have := (h12 q).1; simp only [PState.size] at this h1; omega
-    · simp only [State.set_same]; exact (h12 q).2.trans hs1
+    · simp only [State.set_same]; exact (h12 q).2.1.trans hs1
+    · have := (h12 q).2.2; simp only [g1, State.set_same] at this; simpa using this
   · have h1 : g1 q = g q := State.set_other _ _ hq
     rw [State.set_other _ _ hq, ← h1]; exact h12 q
 
@@ -115,14 +119,14 @@ theorem Inv.step {r : Rules} {g g' : State} (h : Inv r g) : Step r g g' → Inv 
   | .draw _ p c d hd => h.shrinks fun q => by
       by_cases hq : q = p
       · subst hq
-        refine ⟨?_, by simp⟩
+        refine ⟨?_, by simp, by simp [hd]⟩
         simp [PState.size, hd]
         omega
-      · rw [State.set_other _ _ hq]; exact ⟨rfl, List.Sublist.refl _⟩
+      · rw [State.set_other _ _ hq]; exact Shrinks.refl g q
   | .place _ p c i z up hc hz hrole hadm hcap => by
       have hlen := List.length_erase_of_mem hc
       have hpos := List.length_pos_of_mem hc
-      refine ⟨fun q => ?_, fun q sl hm => ?_, fun q j z' hz' hc' => ?_⟩
+      refine ⟨fun q => ?_, fun q sl hm => ?_, fun q j z' hz' hc' => ?_, fun q => ?_⟩
       · by_cases hq : q = p
         · subst hq
           have := h.size q
@@ -151,6 +155,9 @@ theorem Inv.step {r : Rules} {g g' : State} (h : Inv r g) : Step r g g' → Inv 
             simp only [List.filter_cons, this, List.filter_nil]
             exact h.cap q j z' hz' hc'
         · simp only [State.set_other _ _ hq]; exact h.cap q j z' hz' hc'
+      · by_cases hq : q = p
+        · subst hq; simpa using h.deck q
+        · simp only [State.set_other _ _ hq]; exact h.deck q
   | .resolve _ p k sl as apply hk _ => h.shrinks (shrinks_resolve r p g as apply hk)
 
 theorem inv_start (r : Rules) (decks : PlayerId → List Card) (hd : ∀ p, (decks p).length = r.deckSize) :
@@ -160,6 +167,7 @@ theorem inv_start (r : Rules) (decks : PlayerId → List Card) (hd : ∀ p, (dec
     omega
   zones _ _ hm := by simp [start] at hm
   cap _ _ _ _ _ := by simp [start]
+  deck p := by simp [start, hd p]
 
 /-- **到達できるどの状態でも、盤面の制約が成り立つ** -/
 theorem Reachable.inv {r : Rules} {decks : PlayerId → List Card} (hd : ∀ p, (decks p).length = r.deckSize)

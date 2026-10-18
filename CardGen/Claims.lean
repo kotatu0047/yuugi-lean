@@ -13,6 +13,7 @@ import CardGen.Inv
 | B. 容量 | ある種類のカードの自分のフィールド上の最大数 ＝ その種類を置ける「フィールド上」のゾーンのマスの数の合計 |
 | C. 対称 | フィールド全体の最大数 ＝ 自分の最大数 × 2（共通ルール②） |
 | D. 保存 | カードの総数 ＝ デッキの枚数 × 2（共通ルール①） |
+| E. 戻らない | デッキの最大数 ＝ デッキの枚数 − 初期手札（デッキにカードを戻す動きがない） |
 
 B と C は、その種類を置ける「フィールド上」のゾーンがすべて「1枚まで」のときだけ列挙する
 （「何枚でも」のゾーンがあれば上限はない）。
@@ -31,6 +32,8 @@ inductive ClaimProp
   /-- フィールド上の種類 `t` のカード（`none` なら全種類）は常に最大 `n` 枚。
       `both` なら両プレイヤーの合計、そうでなければ1人分 -/
   | fieldMax (t : Option TypeName) (both : Bool) (n : Nat)
+  /-- どちらのデッキも常に最大 `n` 枚 -/
+  | deckMax (n : Nat)
 deriving Repr, DecidableEq
 
 /-- フィールド上の、種類 `t` のカードの枚数 -/
@@ -48,6 +51,7 @@ def ClaimProp.Holds (r : Rules) (g : State) : ClaimProp → Prop
   | .totalCards n => (g true).size + (g false).size = n
   | .fieldMax t false n => ∀ p, fieldCount r t (g p) ≤ n
   | .fieldMax t true n => fieldCount r t (g true) + fieldCount r t (g false) ≤ n
+  | .deckMax n => ∀ p, (g p).deck.length ≤ n
 
 /-- ★として正しい：開始時の性質は開始時に、それ以外は到達できるどの状態でも成り立つ -/
 def ClaimProp.Valid (r : Rules) (decks : PlayerId → List Card) (c : ClaimProp) : Prop :=
@@ -164,7 +168,7 @@ theorem fieldCount_le_bound {r : Rules} {g : State} (h : Inv r g) (p : PlayerId)
 def derivedProps (r : Rules) : List ClaimProp :=
   [.deckAtStart (r.deckSize - r.handSize)] ++
   (if r.handSize ≤ r.deckSize then [.handAtStart r.handSize] else []) ++
-  [.totalCards (2 * r.deckSize)] ++
+  [.totalCards (2 * r.deckSize), .deckMax (r.deckSize - r.handSize)] ++
   ((none :: r.cardTypes.map some).filter r.bounded).flatMap fun t =>
     [.fieldMax t false (r.bound t), .fieldMax t true (2 * r.bound t)]
 
@@ -174,7 +178,7 @@ theorem derived_sound (r : Rules) (decks : PlayerId → List Card)
   intro c hc
   simp only [derivedProps, List.mem_append, List.mem_flatMap, List.mem_filter,
     List.mem_cons, List.mem_map, List.not_mem_nil, or_false] at hc
-  rcases hc with ((rfl | hc) | rfl) | ⟨t, ⟨-, hb⟩, rfl | rfl⟩
+  rcases hc with ((rfl | hc) | rfl | rfl) | ⟨t, ⟨-, hb⟩, rfl | rfl⟩
   · intro p; simp [start, hd p]
   · by_cases hh : r.handSize ≤ r.deckSize
     · simp only [hh, ite_true, List.mem_singleton] at hc; subst hc
@@ -185,6 +189,9 @@ theorem derived_sound (r : Rules) (decks : PlayerId → List Card)
     have h := hg.inv hd
     show (g true).size + (g false).size = 2 * r.deckSize
     rw [h.size, h.size]; omega
+  · simp only [ClaimProp.Valid, ClaimProp.atStart]
+    intro g hg p
+    exact (hg.inv hd).deck p
   · simp only [ClaimProp.Valid, ClaimProp.atStart]
     intro g hg p
     exact fieldCount_le_bound (hg.inv hd) p hb
@@ -233,6 +240,8 @@ def ClaimProp.describe (r : Rules) : ClaimProp → Claim
     if both then ⟨p, s!"フィールド全体の{typeLabel t}は最大{n}枚",
       zs ++ ["共通ルール②（相手のフィールドは自分のフィールドを逆さまにした形）"]⟩
     else ⟨p, s!"自分のフィールド上の{typeLabel t}は最大{n}枚", zs⟩
+  | p@(.deckMax n) => ⟨p, s!"デッキは各プレイヤー最大{n}枚（増えない）",
+      [s!"デッキの枚数（{r.deckSize}枚）", s!"初期手札（{r.handSize}枚）", "デッキにカードを戻す効果の部品がない"]⟩
 
 /-- ルールから導いた★（どれも `derived_sound` で証明済み） -/
 def derived (r : Rules) : List Claim := (derivedProps r).map (·.describe r)
