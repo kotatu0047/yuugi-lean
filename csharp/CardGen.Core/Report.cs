@@ -25,6 +25,10 @@ namespace CardGen
         public string Status;
         public string Message;
         public List<SideCard> Board;
+        /// <summary>その盤面のターンプレイヤー（"self"・"opp"。なければ null）</summary>
+        public string Turn;
+        /// <summary>順番を自由にした判定（反転の手続き）での結果</summary>
+        public string Detail;
     }
 
     public sealed class NegOut
@@ -71,6 +75,8 @@ namespace CardGen
                         Status = (string)g["status"],
                         Message = (string)g["message"],
                         Board = g["board"].Select(b => new SideCard { Card = (string)b["card"], Side = (string)b["side"] }).ToList(),
+                        Turn = g["turn"]?.Type == JTokenType.String ? (string)g["turn"] : null,
+                        Detail = (string)g["detail"] ?? "",
                     }).ToList(),
                     Theorem = n["theorem"]?.Type == JTokenType.String ? (string)n["theorem"] : null,
                 },

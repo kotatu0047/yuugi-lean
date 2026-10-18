@@ -369,6 +369,8 @@ namespace CardGen.App
                     box.Add(Text($"[{Report.StatusLabel(g.Status)}] {g.Message}", 11, StatusColor(g.Status)));
                     if (g.Board.Count > 0)
                         box.Add(Text("盤面：" + string.Join("、", g.Board.Select(b => (b.Side == "self" ? "自分：" : "相手：") + b.Card)), 11, new Color(0.8f, 0.8f, 0.85f)));
+                    if (!string.IsNullOrEmpty(g.Detail))
+                        box.Add(Text("参考：" + g.Detail, 10, new Color(0.65f, 0.65f, 0.7f)));
                     results.Add(box);
                 }
             }

@@ -213,8 +213,39 @@ def selfNegator : Card :=
 #guard analyzeBoard [⟨selfNegator, true, true⟩] == .noStable
 
 -- 検査ツールは、自分自身を無効にするカードを反例として報告する
-#guard (negOut [selfNegator]).status == "counterexample"
--- 4すくみの4枚は「プレイヤーの選択」
-#guard (negOut game.cards).status == "choice"
+#guard (negOut game.rules [selfNegator]).status == "counterexample"
+
+/-! ## 適用の時刻つきの判定（OCG の手順） -/
+
+/-- 4すくみ：スキルドレイン・お触れ・ショッカーが自分、Bloo－D が相手 -/
+def quadBoard : List Inst :=
+  [⟨skillDrain, true, true⟩, ⟨royalDecree, true, true⟩, ⟨jinzo, true, true⟩, ⟨blooD, false, true⟩]
+
+-- Bloo－D 側（相手）のターンなら、どの状態から、どう選んでも止まり、結果は1通り
+-- （yuugi-lean の quad_allEnd_any と同じ結論）。証明書の検査も通る
+#guard ((TSys.ofInsts quadBoard).analyze false).verdict == .unique
+#guard let S := TSys.ofInsts quadBoard; S.certified false (S.analyze false)
+-- 結果は「スキルドレイン無効・お触れ有効・ショッカー無効・Bloo－D 有効」
+#guard let r := (TSys.ofInsts quadBoard).analyze false; r.res.toList.all (·.2 == [false, true, false, true])
+-- スキルドレイン側のターンでは、選び方によって回り続ける（quad_someEnd と同じ）
+#guard ((TSys.ofInsts quadBoard).analyze true).verdict == .someLoop
+
+-- 自分のスキルドレイン・ショッカーと、相手のお触れ・Bloo－D：自分のターンでは止まらない状態がある
+-- （yuugi-lean の loopSrcs と同じ盤面）
+#guard ((TSys.ofInsts [⟨skillDrain, true, true⟩, ⟨jinzo, true, true⟩, ⟨royalDecree, false, true⟩,
+  ⟨blooD, false, true⟩]).analyze true).verdict == .cannotHalt
+
+-- お触れどうし：先に適用された方が勝つので、結果は適用された順番だけで決まる
+#guard ((TSys.ofInsts [⟨royalDecree, true, true⟩, ⟨royalDecree, false, true⟩]).analyze true).verdict == .byHistory
+
+-- 自分自身を無効にするカード：止まる状態がない
+#guard ((TSys.ofInsts [⟨selfNegator, true, true⟩]).analyze true).verdict == .noStable
+
+-- 4すくみの4枚のまとまりは、上の止まらない盤面が見つかるので「反例あり」
+#guard (negOut game.rules game.cards).status == "counterexample"
+
+-- 容量：モンスターカードゾーンは5マスなので、モンスター6枚は置けない
+#guard fitsZones game.rules (List.replicate 5 jinzo)
+#guard !fitsZones game.rules (List.replicate 6 jinzo)
 
 end CardGen.Sample

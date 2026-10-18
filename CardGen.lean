@@ -6,6 +6,7 @@ import CardGen.Play
 import CardGen.Claims
 import CardGen.Negation
 import CardGen.Explore
+import CardGen.Timed
 import CardGen.Report
 import CardGen.Vectors
 import CardGen.Custom

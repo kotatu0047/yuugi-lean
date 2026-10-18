@@ -4,8 +4,8 @@ import CardGen.Negation
 # 循環があるときの総当たりの検査（第3層）
 
 無効にしうる関係に循環があるカードのまとまりについて、小さな盤面をすべて作り、
-判定の手続き（`System.Step`）の振る舞いを調べる。盤面は、まとまりの各カードを
-「置かない・自分だけ・相手だけ・両方」に置いたもの（すべて表側表示）。
+判定の手続き（`System.Step`、順番を自由にした反転）の振る舞いを調べる。盤面の作り方と、
+OCG の手順（適用の時刻つき）での判定は `Timed.lean`。
 
 盤面ごとに、次のどれかに分類する（下ほど悪い）。
 
@@ -65,31 +65,5 @@ def analyzeBoard (insts : List Inst) : Verdict := Id.run do
         changed := true
   if allHalt.any (!·) then return .someLoop
   return .ok
-
-/-- まとまりのカードを「置かない・自分だけ・相手だけ・両方」に置いた盤面（空の盤面は除く） -/
-def boardsFor (group : List Card) : List (List Inst) :=
-  (group.foldr (fun c acc => acc.flatMap fun b =>
-    [b, ⟨c, true, true⟩ :: b, ⟨c, false, true⟩ :: b, ⟨c, true, true⟩ :: ⟨c, false, true⟩ :: b]) [[]]).filter
-    (!·.isEmpty)
-
-/-- 総当たりする盤面の上限（まとまりのカードの枚数） -/
-def exploreLimit : Nat := 4
-
-structure GroupResult where
-  cards : List String
-  verdict : Option Verdict
-  /-- 一番悪い分類になった盤面（カード名と、自分の側か） -/
-  board : List (String × Bool)
-deriving Repr
-
-/-- まとまりについて、一番悪い分類の盤面を探す（大きすぎれば調べない） -/
-def exploreGroup (group : List Card) : GroupResult :=
-  let names := group.map (·.name)
-  if group.length > exploreLimit then ⟨names, none, []⟩
-  else
-    let (v, b) := (boardsFor group).foldl (fun (best : Verdict × List Inst) b =>
-      let v := analyzeBoard b
-      if v.severity > best.1.severity then (v, b) else best) (.ok, [])
-    ⟨names, some v, b.map fun i => (i.card.name, i.controller)⟩
 
 end CardGen

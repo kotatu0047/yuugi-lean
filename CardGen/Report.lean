@@ -1,4 +1,4 @@
-import CardGen.Explore
+import CardGen.Timed
 
 /-!
 # 検査ツールの報告
@@ -8,7 +8,8 @@ import CardGen.Explore
 - `errors`：形式の誤り（あれば★と無効の検査は行わない）
 - `claims`：ルールから導いた★。どれも `CardGen.derived_valid` で証明済み
 - `negation`：無効の関係の検査。循環がなければ `CardGen.negation_settles` で証明済み。
-  循環があれば、まとまりごとに小さな盤面を総当たりで調べた結果（`CardGen.exploreGroup`）
+  循環があれば、まとまりごとに小さな盤面を総当たりで調べた結果（`CardGen.exploreGroup`）。
+  分類は OCG の手順（適用の時刻つき、`Timed.lean`）による
 
 命題の状態は `proved`（証明済み）、`counterexample`（反例あり）、`choice`（プレイヤーの選択）、
 `unknown`（未確定）のどれか。
@@ -37,6 +38,12 @@ structure GroupOut where
   message : String
   /-- 一番悪い結果になった盤面 -/
   board : List SideCard
+  /-- その盤面のターンプレイヤー（`"self"`・`"opp"`。盤面がなければ `none`） -/
+  turn : Option String
+  /-- 調べた盤面の数 -/
+  boards : Nat
+  /-- 順番を自由にした判定（反転の手続き）での結果 -/
+  detail : String
 deriving ToJson, FromJson, Repr
 
 structure NegOut where
@@ -56,19 +63,36 @@ structure Report where
   negation : Option NegOut
 deriving ToJson, FromJson, Repr
 
+def sideCards (b : List (String × Bool)) : List SideCard :=
+  b.map fun (c, mine) => ⟨c, if mine then "self" else "opp"⟩
+
+def flipDetail : Verdict → String
+  | .ok => "順番を自由にした判定でも、調べた盤面ではどう選んでも止まり、結果は1通りです"
+  | .someLoop => "順番を自由にした判定では、選び方によって回り続ける盤面があります"
+  | .multiStable => "順番を自由にした判定では、安定な状態が複数ある盤面があります"
+  | .cannotHalt => "順番を自由にした判定では、どう選んでも止まらない状態がある盤面があります"
+  | .noStable => "順番を自由にした判定では、どの状態も安定しない盤面があります"
+
 def groupOut (g : GroupResult) : GroupOut :=
-  let board := g.board.map fun (c, mine) => (⟨c, if mine then "self" else "opp"⟩ : SideCard)
-  let (status, message) : String × String := match g.verdict with
-    | none => ("unknown", s!"カードが{exploreLimit}枚を超えるため、総当たりで調べていません")
-    | some .ok => ("unknown",
-        "各カードを自分・相手に1枚ずつまで置いた盤面では問題は見つかりませんでした（それより多い盤面は調べていません）")
-    | some .someLoop => ("choice",
-        "この盤面では、結果は1通りですが、選び方によって判定が回り続けます（止まる選び方はあります）")
-    | some .multiStable => ("choice",
-        "この盤面では、安定な状態が複数あり、適用の順番で結果が変わります（先に適用された方を優先するなどの規則が必要です）")
-    | some .cannotHalt => ("counterexample", "この盤面では、どう選んでも判定が止まらない状態があります")
-    | some .noStable => ("counterexample", "この盤面では、どの状態も安定せず、判定が止まりません")
-  ⟨g.cards, status, message, board⟩
+  if g.boards == 0 then
+    ⟨g.cards, "unknown", s!"カードが{exploreLimit}枚を超えるため、総当たりで調べていません", [], none, 0, ""⟩
+  else
+    let turn := if g.timedTurn then "自分のターン" else "相手のターン"
+    let (status, message) : String × String := match g.timed with
+      | .unique | .byHistory => ("unknown",
+          s!"各カードを1人{maxCopies}枚まで、合計{timedLimit}枚まで、ゾーンの容量を守って置いた盤面では、" ++
+          "OCG の手順（適用の時刻）で、どちらのターンでも、どう選んでも判定は止まり、結果は適用された順番だけで決まります" ++
+          (if g.certified then "（証明書を検査済み：CardGen.TSys.allEnd_of_certOK）" else "") ++
+          "。それより大きい盤面は調べていません")
+      | .choiceResult => ("choice", s!"この盤面の{turn}では、有効に戻すカードの選び方によって結果が変わります")
+      | .someLoop => ("choice", s!"この盤面の{turn}では、選び方によって判定が回り続けます（止まる選び方はあります）")
+      | .cannotHalt => ("counterexample", s!"この盤面の{turn}では、どう選んでも判定が止まらない状態があります")
+      | .noStable => ("counterexample", s!"この盤面では、{turn}にどの状態から始めても判定が止まりません")
+    let bad := g.timed.severity ≥ TVerdict.choiceResult.severity
+    ⟨g.cards, status, message, if bad then sideCards g.timedBoard else [],
+      if bad then some (if g.timedTurn then "self" else "opp") else none, g.boards,
+      flipDetail g.verdict ++ (if g.board.isEmpty then "" else
+        s!"（盤面：{"、".intercalate (g.board.map fun (c, m) => (if m then "自分：" else "相手：") ++ c)}）")⟩
 
 def statusSeverity : String → Nat
   | "counterexample" => 3
@@ -76,7 +100,7 @@ def statusSeverity : String → Nat
   | "choice" => 1
   | _ => 0
 
-def negOut (cards : List Card) : NegOut :=
+def negOut (r : Rules) (cards : List Card) : NegOut :=
   let edges := (negEdges cards).map fun (a, b) => [a, b]
   match checkNegation cards with
   | .none => ⟨"proved", "無効にする効果を持つカードはありません", edges, [], none⟩
@@ -85,7 +109,7 @@ def negOut (cards : List Card) : NegOut :=
       edges, [], some "CardGen.negation_settles"⟩
   | .cyclic gs =>
     let groups := gs.map fun names =>
-      groupOut (exploreGroup (names.filterMap fun nm => cards.find? (·.name == nm)))
+      groupOut (exploreGroup r (names.filterMap fun nm => cards.find? (·.name == nm)))
     let worst := groups.foldl (fun w g => if statusSeverity g.status > statusSeverity w then g.status else w) "choice"
     ⟨worst, "無効にしうる関係に循環があります。循環のまとまりごとに、小さな盤面を総当たりで調べました",
       edges, groups, none⟩
@@ -102,7 +126,7 @@ def report (input : String) : Report :=
       | [] =>
         let claims := (derived g.rules).map fun c =>
           (⟨c.text, c.grounds, "proved", "CardGen.derived_valid"⟩ : ClaimOut)
-        ⟨1, true, [], claims, some (negOut g.cards)⟩
+        ⟨1, true, [], claims, some (negOut g.rules g.cards)⟩
       | es => fail es
 
 def statusLabel : String → String
@@ -123,7 +147,8 @@ def Report.toText (r : Report) : String :=
       | some n =>
         let gs := n.groups.map fun g =>
           s!"\n    循環：{" ⇄ ".intercalate g.cards}\n      [{statusLabel g.status}] {g.message}" ++
-          (if g.board.isEmpty then "" else s!"\n      盤面：{"、".intercalate (g.board.map side)}")
+          (if g.board.isEmpty then "" else s!"\n      盤面：{"、".intercalate (g.board.map side)}") ++
+          (if g.detail.isEmpty then "" else s!"\n      参考：{g.detail}")
         s!"- [{statusLabel n.status}] {n.message}{String.join gs}"
       | none => ""
     "★ ルールから導いた性質\n" ++ "\n".intercalate claims ++ "\n\n無効の関係\n" ++ neg
