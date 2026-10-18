@@ -113,6 +113,11 @@ namespace CardGen.App
                     Int("初期ライフ", n.Rules.Life, v => n.Rules.Life = v);
                     ListField("戦闘できる種類", n.Rules.Fighters, v => n.Rules.Fighters = v);
                     Hint("戦闘できる種類のカードは、表側表示で相手の戦闘できるカードを攻撃できます（相手にいなければ直接攻撃）。");
+                    Int("1ターンの召喚の上限", n.Rules.SummonsPerTurn, v => n.Rules.SummonsPerTurn = v);
+                    Int("ターンの最初に引く枚数", n.Rules.DrawPerTurn, v => n.Rules.DrawPerTurn = v);
+                    Toggle("先攻の最初のターンも引く", n.Rules.FirstTurnDraw, v => n.Rules.FirstTurnDraw = v);
+                    Toggle("先攻の最初のターンも攻撃できる", n.Rules.FirstTurnAttack, v => n.Rules.FirstTurnAttack = v);
+                    Hint("召喚の上限は、戦闘できる種類のカードを1ターンに置ける枚数です（0 なら制限なし）。攻撃は1ターンに1枚1回です。");
                     break;
                 case NodeKind.Zone:
                     Hint("1人分のゾーン。相手のフィールドは同じ形になります（共通ルール②）。");

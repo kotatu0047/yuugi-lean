@@ -127,6 +127,10 @@ namespace CardGen
                 Zones = Arr(o, "zones", ParseZone),
                 Life = Int(o, "life"),
                 Fighters = Strs(o, "fighters"),
+                SummonsPerTurn = Int(o, "summonsPerTurn"),
+                DrawPerTurn = Int(o, "drawPerTurn"),
+                FirstTurnDraw = Bool(o, "firstTurnDraw"),
+                FirstTurnAttack = Bool(o, "firstTurnAttack"),
             };
         }
 
@@ -142,6 +146,21 @@ namespace CardGen
         }
 
         public static Game ParseGame(string json) => ParseGame(JToken.Parse(json));
+
+        /// <summary>
+        /// 古い版の中間表現を今の版に上げる（エディタで開くとき用）。版 2 → 3 はターンのルールを既定の値で加える。
+        /// 上げたときは true。版が分からない・新しすぎるときは何もしない
+        /// </summary>
+        public static bool Upgrade(JObject o)
+        {
+            if (o["version"]?.Type != JTokenType.Integer || (int)o["version"] != 2 || !(o["rules"] is JObject r)) return false;
+            if (r["summonsPerTurn"] == null) r["summonsPerTurn"] = 1;
+            if (r["drawPerTurn"] == null) r["drawPerTurn"] = 1;
+            if (r["firstTurnDraw"] == null) r["firstTurnDraw"] = false;
+            if (r["firstTurnAttack"] == null) r["firstTurnAttack"] = false;
+            o["version"] = 3;
+            return true;
+        }
 
         // ---- 書き出し ----
 
@@ -200,6 +219,10 @@ namespace CardGen
             ["zones"] = new JArray(r.Zones.Select(ToJson)),
             ["life"] = r.Life,
             ["fighters"] = new JArray(r.Fighters),
+            ["summonsPerTurn"] = r.SummonsPerTurn,
+            ["drawPerTurn"] = r.DrawPerTurn,
+            ["firstTurnDraw"] = r.FirstTurnDraw,
+            ["firstTurnAttack"] = r.FirstTurnAttack,
         };
 
         public static JObject ToJson(Game g) => new JObject

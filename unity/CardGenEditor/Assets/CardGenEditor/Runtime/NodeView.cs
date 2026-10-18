@@ -128,7 +128,9 @@ namespace CardGen.App
         {
             NodeKind.Rules =>
                 $"カードの種類：{List(n.Rules.CardTypes)}\nデッキ {n.Rules.DeckSize}枚・初期手札 {n.Rules.HandSize}枚\n" +
-                $"ライフ {n.Rules.Life}・戦闘できる種類：{List(n.Rules.Fighters)}",
+                $"ライフ {n.Rules.Life}・戦闘できる種類：{List(n.Rules.Fighters)}\n" +
+                $"召喚 {(n.Rules.SummonsPerTurn == 0 ? "制限なし" : $"1ターン{n.Rules.SummonsPerTurn}回")}・ドロー {n.Rules.DrawPerTurn}枚" +
+                (n.Rules.FirstTurnDraw ? "・先攻1ターン目も引く" : "") + (n.Rules.FirstTurnAttack ? "・先攻1ターン目も攻撃" : ""),
             NodeKind.Zone =>
                 $"{n.Zone.Count}マス・{(n.Zone.Capacity == Capacity.One ? "1枚まで" : "何枚でも")}・" +
                 $"{(n.Zone.Role == ZoneRole.Deck ? "デッキ" : n.Zone.Role == ZoneRole.Grave ? "墓地" : n.Zone.OnField ? "フィールド上" : "フィールド外")}\n" +

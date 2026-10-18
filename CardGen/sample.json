@@ -1,4 +1,4 @@
-{"version": 2,
+{"version": 3,
  "rules":
  {"zones":
   [{"role": "plain",
@@ -25,9 +25,13 @@
     "count": 1,
     "capacity": "many",
     "admits": ["モンスター", "魔法", "罠"]}],
+  "summonsPerTurn": 1,
   "life": 8000,
   "handSize": 5,
+  "firstTurnDraw": false,
+  "firstTurnAttack": false,
   "fighters": ["モンスター"],
+  "drawPerTurn": 1,
   "deckSize": 40,
   "cardTypes": ["モンスター", "魔法", "罠"]},
  "cards":

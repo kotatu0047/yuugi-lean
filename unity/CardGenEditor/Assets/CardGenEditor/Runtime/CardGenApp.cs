@@ -235,7 +235,11 @@ namespace CardGen.App
             try
             {
                 var path = pathField.value;
-                SetDoc(GraphDoc.FromGame(IrJson.ParseGame(File.ReadAllText(path))), $"開きました：{path}");
+                var o = Newtonsoft.Json.Linq.JObject.Parse(File.ReadAllText(path));
+                var upgraded = IrJson.Upgrade(o);
+                SetDoc(GraphDoc.FromGame(IrJson.ParseGame(o)), upgraded
+                    ? $"開きました：{path}（版 2 のファイルなので版 3 に上げました。ターンのルールは既定の値です。保存すると版 3 で書き出します）"
+                    : $"開きました：{path}");
                 PlayerPrefs.SetString(PathKey, path);
             }
             catch (Exception e) { status.text = $"開けません：{e.Message}"; }

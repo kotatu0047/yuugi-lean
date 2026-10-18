@@ -1,5 +1,6 @@
 import CardGen.Timed
 import CardGen.Pool
+import CardGen.Turn
 
 /-!
 # 検査ツールの報告
@@ -142,6 +143,20 @@ def attackClaim (cards : List Card) : Option ClaimOut :=
       ["無効にしうる関係に循環がないので、どのカードの効果が有効かは1通りに決まる（メタ定理1）",
        "攻撃力の変化は足し算なので、適用する順番によらない"], "proved", "CardGen.negation_settles"⟩
 
+/-- ターンについての★（`Turn.lean`）。どれも証明済み -/
+def turnClaims (r : Rules) : List ClaimOut :=
+  let fighters := "・".intercalate r.fighters
+  [⟨"ターンのある対戦でも、ここに挙げた★と盤面の制約はそのまま成り立ちます",
+    ["ターンのある対戦の盤面は、どれもターンのない（いつでも何度でも動ける）モデルで到達できる盤面"],
+    "proved", "CardGen.TReachable.of_reachable"⟩] ++
+  (if r.fighters.isEmpty || r.summonsPerTurn == 0 then [] else
+    [⟨s!"戦闘できるカード（{fighters}）を置けるのは、1ターンに {r.summonsPerTurn} 枚まで",
+      [s!"ルール：1ターンの召喚の上限は {r.summonsPerTurn}"], "proved", "CardGen.TReachable.summons_le"⟩]) ++
+  (if r.fighters.isEmpty then [] else
+    [⟨"戦闘できるカードの攻撃は、1ターンに1枚1回まで",
+      ["攻撃したカードの記録は、いつもターンプレイヤーのフィールドのカードの一部（同じカードの枚数も含めて）"],
+      "proved", "CardGen.TReachable.attacked_bagLe"⟩])
+
 def report (input : String) : Report :=
   let fail (es : List String) : Report := ⟨1, false, es, [], none⟩
   match Json.parse input with
@@ -155,6 +170,7 @@ def report (input : String) : Report :=
         let claims := (derived g.rules).map (fun c =>
           (⟨c.text, c.grounds, "proved", "CardGen.derived_valid"⟩ : ClaimOut)) ++
           (gameClaims g).map (fun c => (⟨c.text, c.grounds, "proved", "CardGen.gameClaims_valid"⟩ : ClaimOut)) ++
+          turnClaims g.rules ++
           (attackClaim g.cards).toList
         ⟨1, true, [], claims, some (negOut g.rules g.cards)⟩
       | es => fail es

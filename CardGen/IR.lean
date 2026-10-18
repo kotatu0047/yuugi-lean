@@ -66,6 +66,14 @@ structure Rules where
   life : Nat := 0
   /-- 戦闘できる（攻撃する・攻撃される）カードの種類。空なら戦闘はない -/
   fighters : List TypeName := []
+  /-- 1ターンに置ける、戦闘できる種類のカードの枚数（通常召喚の回数）。0 なら制限なし -/
+  summonsPerTurn : Nat := 1
+  /-- ターンの最初に引く枚数 -/
+  drawPerTurn : Nat := 1
+  /-- 先攻の最初のターンにも引くか -/
+  firstTurnDraw : Bool := false
+  /-- 先攻の最初のターンにも攻撃できるか -/
+  firstTurnAttack : Bool := false
 deriving Repr, DecidableEq, FromJson, ToJson
 
 /-- 効果の持ち主から見た陣営 -/
@@ -135,7 +143,7 @@ structure Game where
 deriving Repr, DecidableEq, FromJson, ToJson
 
 /-- 現在の形式の版 -/
-def currentVersion : Nat := 2
+def currentVersion : Nat := 3
 
 /-! ## 範囲の指定の意味
 

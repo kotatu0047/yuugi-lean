@@ -36,6 +36,14 @@ namespace CardGen
         public int Life;
         /// <summary>戦闘できる（攻撃する・攻撃される）カードの種類。空なら戦闘はない</summary>
         public List<string> Fighters = new List<string>();
+        /// <summary>1ターンに置ける、戦闘できる種類のカードの枚数（通常召喚の回数）。0 なら制限なし</summary>
+        public int SummonsPerTurn = 1;
+        /// <summary>ターンの最初に引く枚数</summary>
+        public int DrawPerTurn = 1;
+        /// <summary>先攻の最初のターンにも引くか</summary>
+        public bool FirstTurnDraw;
+        /// <summary>先攻の最初のターンにも攻撃できるか</summary>
+        public bool FirstTurnAttack;
 
         /// <summary>i 番目のゾーンが「フィールド上」に数えるゾーンか（Rules.onFieldZone）</summary>
         public bool OnFieldZone(int i) =>
@@ -152,7 +160,7 @@ namespace CardGen
     /// <summary>エディタが出力する中間表現の全体</summary>
     public sealed class Game
     {
-        public const int CurrentVersion = 2;
+        public const int CurrentVersion = 3;
         public int Version = CurrentVersion;
         public Rules Rules = new Rules();
         public List<Card> Cards = new List<Card>();

@@ -19,6 +19,10 @@ namespace CardGen
         public int HandSize;
         public int Life;
         public List<string> Fighters = new List<string>();
+        public int SummonsPerTurn = 1;
+        public int DrawPerTurn = 1;
+        public bool FirstTurnDraw;
+        public bool FirstTurnAttack;
     }
 
     /// <summary>カードのノードの中身（効果はつないだノードから作る）</summary>
@@ -169,6 +173,10 @@ namespace CardGen
                 rules.HandSize = r.Rules.HandSize;
                 rules.Life = r.Rules.Life;
                 rules.Fighters = r.Rules.Fighters.ToList();
+                rules.SummonsPerTurn = r.Rules.SummonsPerTurn;
+                rules.DrawPerTurn = r.Rules.DrawPerTurn;
+                rules.FirstTurnDraw = r.Rules.FirstTurnDraw;
+                rules.FirstTurnAttack = r.Rules.FirstTurnAttack;
                 rules.Zones = Children(r).Select(z => z.Zone).ToList();
             }
             foreach (var z in Nodes.Where(n => n.Kind == NodeKind.Zone && Parents(n).Count == 0))
@@ -242,6 +250,10 @@ namespace CardGen
             r.Rules.HandSize = g.Rules.HandSize;
             r.Rules.Life = g.Rules.Life;
             r.Rules.Fighters = g.Rules.Fighters.ToList();
+            r.Rules.SummonsPerTurn = g.Rules.SummonsPerTurn;
+            r.Rules.DrawPerTurn = g.Rules.DrawPerTurn;
+            r.Rules.FirstTurnDraw = g.Rules.FirstTurnDraw;
+            r.Rules.FirstTurnAttack = g.Rules.FirstTurnAttack;
             float zy = 40;
             foreach (var z in g.Rules.Zones)
             {

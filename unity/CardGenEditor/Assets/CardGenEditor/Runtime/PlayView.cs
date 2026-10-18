@@ -14,19 +14,20 @@ namespace CardGen.App
     /// TSys.succ。C# 版は差分テスト済み）で判定を進めて決める。先に適用された効果が勝つので、
     /// 例えば相手の Bloo－D がいるところに自分の Bloo－D を出すと、自分の Bloo－D が無効になる。
     /// 手順の途中でプレイヤーが選ぶ場面（同じプレイヤーのカードを複数、有効に戻せるときなど）だけ選択肢を出す。
-    /// ターンの区切りがあり、カードを置く・攻撃する・ドローするのはターンプレイヤーだけ（場のカードの発動はどちらのターンでもできる）。
-    /// 「ターン終了」で相手のターンになり、新しいターンプレイヤーが1枚引く（先攻の最初のターンは引かない）。
-    /// この制限は動きを減らすだけなので、Lean で証明した盤面の制約はそのまま成り立つ。
+    /// ターンは C# の Match（Lean の Turn.lean の Match.step? と差分テスト済み）で進める。カードを置く・攻撃するのは
+    /// ターンプレイヤーだけ（場のカードの発動はどちらのターンでもできる）、召喚は1ターンにルールの回数まで、攻撃は1ターンに
+    /// 1枚1回まで。「ターン終了」で相手のターンになり、新しいターンプレイヤーがルールの枚数を引く。
     /// </summary>
     public sealed class PlayView : VisualElement
     {
         Game game;
-        MatchState state;
+        Match match;
+        MatchState state => match.G;
         int seed = 1;
         // ターン：先攻のプレイヤー、今のターンプレイヤー、何ターン目か
         bool firstPlayer = true;
-        bool turn = true;
-        int turnCount = 1;
+        bool turn => match.Turn.Tp;
+        int turnCount => match.Turn.Count;
         readonly List<string> log = new List<string>();
 
         // 無効の判定（適用された順番を覚えておく。C# のコアの Judge）
@@ -88,13 +89,12 @@ namespace CardGen.App
         {
             game = g;
             var rng = new System.Random(seed);
-            state = MatchState.Start(g.Rules, MakeDeck(rng), MakeDeck(rng));
+            match = Match.Start(g.Rules, MakeDeck(rng), MakeDeck(rng), firstPlayer);
             log.Clear();
-            turn = firstPlayer;
-            turnCount = 1;
             judge = new Judge();
             judge.Sync(state, g.Rules, turn);
-            log.Add($"開始（混ぜ方 {seed}）：お互いに {g.Rules.HandSize} 枚引きました。先攻は{Who(firstPlayer)}");
+            log.Add($"開始（混ぜ方 {seed}）：お互いに {g.Rules.HandSize} 枚引きました。先攻は{Who(firstPlayer)}" +
+                    (g.Rules.FirstTurnDraw ? $"（先攻も {g.Rules.DrawPerTurn} 枚引きました）" : ""));
             log.Add($"── 第1ターン：{Who(turn)}のターン ──");
             ClearSelection();
             Render();
@@ -102,15 +102,16 @@ namespace CardGen.App
 
         void ClearSelection() { selHand = -1; selField = -1; }
 
-        /// <summary>ターンを終えて、相手のターンにする。新しいターンプレイヤーは1枚引く</summary>
+        /// <summary>ターンを終えて、相手のターンにする。新しいターンプレイヤーはルールの枚数を引く</summary>
         void EndTurn()
         {
-            turn = !turn;
-            turnCount++;
+            var q = !turn;
+            var before = state.Get(q).Hand.Count;
+            match = match.Step(game.Rules, TChoice.EndTurn());
             log.Add($"── 第{turnCount}ターン：{Who(turn)}のターン ──");
-            var next = state.Step(game.Rules, Choice.Draw(turn));
-            if (next != null) { state = next; log.Add($"{Who(turn)}：ドロー"); }
-            else log.Add($"{Who(turn)}：デッキがないので引けません");
+            var drawn = state.Get(q).Hand.Count - before;
+            if (game.Rules.DrawPerTurn > 0)
+                log.Add(drawn == game.Rules.DrawPerTurn ? $"{Who(q)}：{drawn} 枚ドロー" : $"{Who(q)}：デッキが足りず {drawn} 枚だけ引きました");
             judge.Sync(state, game.Rules, turn);
             ClearSelection();
         }
@@ -127,10 +128,10 @@ namespace CardGen.App
                 for (int h = 0; h < s.Hand.Count && !placed; h++)
                     for (int zi = 0; zi < game.Rules.Zones.Count && !placed; zi++)
                     {
-                        var next = state.Step(game.Rules, Choice.Place(p, h, zi, true));
+                        var next = match.Step(game.Rules, TChoice.Place(h, zi, true));
                         if (next == null) continue;
                         log.Add($"{Who(p)}：{s.Hand[h].Name} を{game.Rules.Zones[zi].Name}に表側で置く");
-                        state = next;
+                        match = next;
                         judge.Sync(state, game.Rules, turn);
                         placed = true;
                     }
@@ -145,11 +146,11 @@ namespace CardGen.App
 
         static string Who(bool p) => p ? "自分" : "相手";
 
-        void Do(Choice ch, string message)
+        void Do(TChoice ch, string message)
         {
-            var next = state.Step(game.Rules, ch);
+            var next = match.Step(game.Rules, ch);
             if (next == null) { log.Add($"（できません）{message}"); Render(); return; }
-            state = next;
+            match = next;
             log.Add(message);
             judge.Sync(state, game.Rules, turn);
             ClearSelection();
@@ -287,11 +288,8 @@ namespace CardGen.App
             head.Add(Text($"　デッキ {s.Deck.Count} 枚・墓地 {s.Grave.Count} 枚", 12, Quiet));
             if (p == turn)
             {
-                var draw = new Button(() => Do(Choice.Draw(p), $"{Who(p)}：ドロー（追加）")) { text = "もう1枚ドロー" };
-                draw.style.marginLeft = 12;
-                head.Add(draw);
                 var end = new Button(() => { EndTurn(); Render(); }) { text = "ターン終了" };
-                end.style.marginLeft = 6;
+                end.style.marginLeft = 12;
                 head.Add(end);
             }
             box.Add(head);
@@ -397,8 +395,10 @@ namespace CardGen.App
             swap.style.marginLeft = 6;
             turnRow.Add(swap);
             side.Add(turnRow);
-            side.Add(Text("両方のプレイヤーを動かせます。カードを置く・攻撃する・ドローするのはターンプレイヤーだけで、" +
-                          "場のカードの発動はどちらのターンでもできます。カードを選ぶと、できる動きが出ます。", 11, Quiet));
+            var lim = game.Rules.SummonsPerTurn == 0 ? "制限なし" : $"{match.Turn.Summons}/{game.Rules.SummonsPerTurn}";
+            side.Add(Text($"このターンの召喚：{lim}・攻撃したカード：{match.Turn.Attacked.Count} 枚", 11, Quiet));
+            side.Add(Text("両方のプレイヤーを動かせます。カードを置く・攻撃するのはターンプレイヤーだけで、場のカードの発動はどちらのターンでも" +
+                          "できます。引くのはターンの最初だけです。カードを選ぶと、できる動きが出ます。", 11, Quiet));
             if (judge.Choices != null)
                 side.Add(Text("無効の判定で、プレイヤーが選ぶ場面です（下の「無効の状態」から選んでください）", 12, Warn, true));
 
@@ -413,8 +413,18 @@ namespace CardGen.App
                 else for (int zi = 0; zi < game.Rules.Zones.Count; zi++)
                     foreach (var up in new[] { true, false })
                     {
-                        var ch = Choice.Place(selPlayer, selHand, zi, up);
-                        if (state.Step(game.Rules, ch) == null) continue;
+                        var ch = TChoice.Place(selHand, zi, up);
+                        if (match.Step(game.Rules, ch) == null)
+                        {
+                            // 置ける場所なのに召喚の上限で置けないときは、そう伝える
+                            if (state.Step(game.Rules, Choice.Place(selPlayer, selHand, zi, up)) != null && !any &&
+                                !match.SummonOK(game.Rules, new Slot(zi, c, up)))
+                            {
+                                side.Add(Text($"このターンはもう召喚できません（1ターンに {game.Rules.SummonsPerTurn} 回まで）", 12, Warn));
+                                any = true;
+                            }
+                            continue;
+                        }
                         any = true;
                         var zname = game.Rules.Zones[zi].Name;
                         var msg = $"{Who(selPlayer)}：{c.Name} を{zname}に{(up ? "表側" : "裏側")}で置く";
@@ -434,9 +444,9 @@ namespace CardGen.App
                     var what = string.Join("、", act.Actions.Select(ActionText));
                     int ei = e;
                     if (st != "無効")
-                        ActionButton($"発動する（{what}）", () => Do(Choice.Resolve(selPlayer, selField, ei, true), $"{Who(selPlayer)}：{sl.Card.Name} を発動（{what}）"));
+                        ActionButton($"発動する（{what}）", () => Do(TChoice.Resolve(selPlayer, selField, ei, true), $"{Who(selPlayer)}：{sl.Card.Name} を発動（{what}）"));
                     if (st != "有効")
-                        ActionButton("無効にされた状態で解決する（何も起きない）", () => Do(Choice.Resolve(selPlayer, selField, ei, false), $"{Who(selPlayer)}：{sl.Card.Name} を発動したが無効"));
+                        ActionButton("無効にされた状態で解決する（何も起きない）", () => Do(TChoice.Resolve(selPlayer, selField, ei, false), $"{Who(selPlayer)}：{sl.Card.Name} を発動したが無効"));
                 }
                 foreach (var n in sl.Card.Effects.OfType<Negate>())
                     side.Add(Text($"永続効果：{NodeView.SelectorSummary(n.Target).Replace("\n", "・")}の効果を無効にする", 11, Quiet));
@@ -444,6 +454,10 @@ namespace CardGen.App
                     side.Add(Text($"永続効果：{NodeView.SelectorSummary(bo.Target).Replace("\n", "・")}の攻撃力を{(bo.Amount >= 0 ? "+" : "")}{bo.Amount}", 11, Quiet));
                 if (sl.FaceUp && MatchState.Fights(game.Rules, sl) && selPlayer != turn)
                     side.Add(Text($"{Who(turn)}のターンなので攻撃できません", 12, Quiet));
+                else if (sl.FaceUp && MatchState.Fights(game.Rules, sl) && !match.AttackPhaseOK(game.Rules))
+                    side.Add(Text("先攻の最初のターンは攻撃できません", 12, Quiet));
+                else if (sl.FaceUp && MatchState.Fights(game.Rules, sl) && !match.Turn.CanAttack(sl, s.Field))
+                    side.Add(Text("このカードはこのターンにもう攻撃しました", 12, Quiet));
                 else if (sl.FaceUp && MatchState.Fights(game.Rules, sl))
                 {
                     var negs = NegList(neg);
@@ -460,10 +474,10 @@ namespace CardGen.App
                         var name = tl.FaceUp ? tl.Card.Name : "裏側のカード";
                         int tj = j;
                         ActionButton($"{name}を攻撃する（{a} 対 {vs}）",
-                            () => Do(Choice.Attack(pp, pk, tj, negs), $"{Who(pp)}：{sl.Card.Name}（{a}）で{name}（{vs}）を攻撃"));
+                            () => Do(TChoice.Attack(pk, tj, negs), $"{Who(pp)}：{sl.Card.Name}（{a}）で{name}（{vs}）を攻撃"));
                     }
                     if (state.TargetOK(game.Rules, pp, null))
-                        ActionButton($"直接攻撃する（{a} ダメージ）", () => Do(Choice.Attack(pp, pk, null, negs), $"{Who(pp)}：{sl.Card.Name}で直接攻撃（{a}）"));
+                        ActionButton($"直接攻撃する（{a} ダメージ）", () => Do(TChoice.Attack(pk, null, negs), $"{Who(pp)}：{sl.Card.Name}で直接攻撃（{a}）"));
                 }
             }
             else side.Add(Text("（なし）", 12, Quiet));

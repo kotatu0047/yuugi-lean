@@ -1,5 +1,6 @@
 import CardGen.Report
 import CardGen.Play
+import CardGen.Turn
 
 /-!
 # 中間表現の見本
@@ -329,5 +330,47 @@ def battleState : State := fun p =>
 #guard (attackClaim [skillDrain, darkCommander, blackMagician]).map (·.status) == some "proved"
 -- 攻撃力の変化を持つカードがなければ出さない
 #guard (attackClaim [skillDrain, jinzo]).isNone
+
+/-! ## ターン -/
+
+/-- 手札5枚：サイコ・ショッカー・Bloo－D・スキルドレイン・闇の加護・ブラック・マジシャン、次に引くのは闇の指揮官 -/
+def turnDeck : List Card := [jinzo, blooD, skillDrain, darkBlessing, blackMagician, darkCommander, fireball]
+
+/-- 動きを順に進める（途中でできない動きがあれば `none`） -/
+def Match.run (r : Rules) (m : Match) : List TChoice → Option Match
+  | [] => some m
+  | ch :: chs => (m.step? r ch).bind (Match.run r · chs)
+
+def turn0 : Match := Match.start rules (fun _ => turnDeck) true
+
+-- 先攻の最初のターンは引かない
+#guard (turn0.g true).hand.length == 5 && turn0.turn.tp == true
+-- 1ターンにモンスターを置けるのは1枚まで。魔法・罠はいくつでも置ける
+#guard (Match.run rules turn0 [.place 0 0 true]).isSome
+#guard (Match.run rules turn0 [.place 0 0 true, .place 0 0 true]).isNone
+#guard (Match.run rules turn0 [.place 0 0 true, .place 1 1 true, .place 1 1 true]).isSome
+-- 先攻の最初のターンは攻撃できない
+#guard (Match.run rules turn0 [.place 0 0 true, .attack 0 none []]).isNone
+-- ターン終了：相手のターンになり、相手が1枚引く
+#guard match Match.run rules turn0 [.place 0 0 true, .endTurn] with
+  | some m => m.turn.tp == false && m.turn.count == 2 && (m.g false).hand.length == 6 && (m.g true).hand.length == 4
+  | none => false
+-- 相手のターンには、自分はカードを置けない（置くのはターンプレイヤー）が、場のカードの発動はできる
+#guard match Match.run rules turn0 [.place 0 0 true, .endTurn, .place 0 0 true] with
+  | some m => (m.g false).field.length == 1 && (m.g true).field.length == 1
+  | none => false
+-- 3ターン目：自分のサイコ・ショッカー（2400）で相手の Bloo－D（1900）……ではなく、相手が置いたショッカーを攻撃（相打ち）
+-- 同じカードで2回は攻撃できない
+#guard (Match.run rules turn0 [.place 0 0 true, .endTurn, .endTurn, .attack 0 none []]).isSome
+#guard (Match.run rules turn0 [.place 0 0 true, .endTurn, .endTurn, .attack 0 none [], .attack 0 none []]).isNone
+-- 次のターンにはまた攻撃できる
+#guard (Match.run rules turn0
+  [.place 0 0 true, .endTurn, .endTurn, .attack 0 none [], .endTurn, .endTurn, .attack 0 none []]).isSome
+-- ルールで先攻の最初のターンの攻撃を許せば、1ターン目から攻撃できる
+#guard (Match.run { rules with firstTurnAttack := true }
+  (Match.start { rules with firstTurnAttack := true } (fun _ => turnDeck) true) [.place 0 0 true, .attack 0 none []]).isSome
+-- 召喚の上限を 0（制限なし）にすれば、1ターンに何枚でも置ける
+#guard (Match.run { rules with summonsPerTurn := 0 }
+  (Match.start { rules with summonsPerTurn := 0 } (fun _ => turnDeck) true) [.place 0 0 true, .place 0 0 true]).isSome
 
 end CardGen.Sample

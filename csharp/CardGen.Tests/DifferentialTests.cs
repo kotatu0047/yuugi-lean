@@ -167,6 +167,61 @@ public class DifferentialTests
         Assert.Equal(4000, steps);
     }
 
+    static TChoice ParseTChoice(JToken c) => (string)c["kind"] switch
+    {
+        "place" => TChoice.Place((int)c["hand"], (int)c["zone"], (bool)c["faceUp"]),
+        "resolve" => TChoice.Resolve((bool)c["player"], (int)c["field"], (int)c["effect"], (bool)c["apply"]),
+        "attack" => TChoice.Attack((int)c["field"],
+            c["target"].Type == JTokenType.Null ? (int?)null : (int)c["target"], ParseNeg(c["neg"])),
+        _ => TChoice.EndTurn(),
+    };
+
+    static JObject TurnJson(TurnInfo t) => new JObject
+    {
+        ["tp"] = t.Tp,
+        ["count"] = t.Count,
+        ["summons"] = t.Summons,
+        ["attacked"] = new JArray(t.Attacked.Select(sl => new JObject
+            { ["zone"] = sl.Zone, ["card"] = sl.Card.Name, ["faceUp"] = sl.FaceUp })),
+    };
+
+    static JObject MatchJson(Match m) => new JObject
+    {
+        ["state"] = new JArray(StateJson(m.G.P1), StateJson(m.G.P2)),
+        ["turn"] = TurnJson(m.Turn),
+    };
+
+    [Fact]
+    public void Turn_play_like_Lean()
+    {
+        int games = 0, steps = 0, ok = 0;
+        foreach (var game in V["turnPlay"])
+        {
+            var r = IrJson.ParseRules(game["rules"]);
+            var decks = game["decks"].Select(d => d.Select(x => Cards[(string)x]).ToList()).ToList();
+            var m = Match.Start(r, decks[0], decks[1], (bool)game["first"]);
+            Assert.True(JToken.DeepEquals(game["start"], MatchJson(m)), $"開始時の状態が不一致：{game["start"]}");
+            foreach (var s in game["steps"])
+            {
+                var next = m.Step(r, ParseTChoice(s["choice"]));
+                if (s["result"].Type == JTokenType.Null)
+                    Assert.True(next == null, $"Lean ではできない動きが C# ではできた：{s["choice"]}");
+                else
+                {
+                    Assert.True(next != null, $"Lean ではできる動きが C# ではできない：{s["choice"]}");
+                    Assert.True(JToken.DeepEquals(s["result"], MatchJson(next)), $"不一致：{s["choice"]}\n期待：{s["result"]}\n実際：{MatchJson(next)}");
+                    m = next;
+                    ok++;
+                }
+                steps++;
+            }
+            games++;
+        }
+        Assert.Equal(30, games);
+        Assert.Equal(1200, steps);
+        Assert.True(ok > 200);
+    }
+
     [Fact]
     public void Sample_json_round_trips()
     {
@@ -174,6 +229,19 @@ public class DifferentialTests
         var g = IrJson.ParseGame(src);
         Assert.Empty(Check.Game(g));
         Assert.True(JToken.DeepEquals(src, IrJson.ToJson(g)));
+    }
+
+    [Fact]
+    public void Version_2_is_upgraded()
+    {
+        var o = (JObject)JToken.Parse(File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "sample.json")));
+        var expected = IrJson.ParseGame(o.DeepClone());
+        o["version"] = 2;
+        foreach (var k in new[] { "summonsPerTurn", "drawPerTurn", "firstTurnDraw", "firstTurnAttack" }) ((JObject)o["rules"]).Remove(k);
+        Assert.Throws<FormatException>(() => IrJson.ParseGame(o.DeepClone()));
+        Assert.True(IrJson.Upgrade(o));
+        Assert.True(JToken.DeepEquals(IrJson.ToJson(expected), IrJson.ToJson(IrJson.ParseGame(o))));
+        Assert.False(IrJson.Upgrade(o));
     }
 
     [Fact]
