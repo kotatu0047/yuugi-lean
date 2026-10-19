@@ -39,6 +39,11 @@ namespace CardGen
         public int Spent;
         /// <summary>ターンの最初に引く枚数が足りずに負けたプレイヤー</summary>
         public bool? Decked;
+        /// <summary>優先権を持つプレイヤー（公理：優先権を持つプレイヤーだけが動ける）。指定しなければターンプレイヤー</summary>
+        public bool Prio { get => prio ?? Tp; set => prio = value; }
+        bool? prio;
+        /// <summary>続けてパスした回数（2 なら両者がパスした：スタックの一番上の解決か、ブロックを待つ）</summary>
+        public int Passes;
 
         /// <summary>Lean の Slot.base の等しさ（ゾーン・マス・カード・表裏が同じ。ダメージは見ない）</summary>
         public static bool SameSlot(Slot a, Slot b) => a.SameBase(b);
@@ -83,8 +88,29 @@ namespace CardGen
             Tp = Tp, Count = Count, Summons = Summons, Attacked = Attacked.ToList(), Placed = Placed.ToList(),
             Entered = Entered.ToList(), Pool = Pool.ToList(), OppPool = OppPool.ToList(), Tapped = Tapped.ToList(),
             OppTapped = OppTapped.ToList(), Attackers = Attackers.ToList(), Blocked = Blocked.ToList(),
-            Stack = Stack.ToList(), Made = Made, Spent = Spent, Decked = Decked,
+            Stack = Stack.ToList(), Made = Made, Spent = Spent, Decked = Decked, prio = prio, Passes = Passes,
         };
+
+        TurnInfo WithPrio(bool p, int n) { var t = Copy(); t.Prio = p; t.Passes = n; return t; }
+
+        /// <summary>TurnInfo.afterPasses：両者が続けてパスしたあとにだけできる動きか（スタックの一番上の解決と、ブロック）</summary>
+        public bool AfterPasses(Rules r, TChoice ch) =>
+            ch.Kind == TChoiceKind.Block || (ch.Kind == TChoiceKind.Resolve && r.Stack && Stack.Count > 0);
+
+        /// <summary>TurnInfo.prioOK：優先権について、その動きをしてよいか</summary>
+        public bool PrioOK(Rules r, TChoice ch) =>
+            ch.Kind == TChoiceKind.Settle ||
+            (AfterPasses(r, ch) ? Passes == 2 : Passes < 2 && ch.Actor(Tp) == Prio);
+
+        /// <summary>TurnInfo.afterPass：パスしたあと（両者がパスしても、何もなければターンプレイヤーに戻る）</summary>
+        public TurnInfo AfterPass() =>
+            Passes + 1 < 2 ? WithPrio(!Prio, Passes + 1) : Quiet ? WithPrio(Tp, 0) : WithPrio(!Prio, 2);
+
+        /// <summary>TurnInfo.prioAfter：動いたあとの優先権</summary>
+        public TurnInfo PrioAfter(Rules r, TurnInfo after, TChoice ch) =>
+            ch.Kind == TChoiceKind.Settle ? after.WithPrio(Prio, Passes)
+            : ch.Kind == TChoiceKind.EndTurn ? after.WithPrio(after.Tp, 0)
+            : AfterPasses(r, ch) ? after.WithPrio(after.Tp, 0) : after.WithPrio(ch.Actor(Tp), 0);
 
         /// <summary>TurnInfo.prune：記録を新しい盤面に合わせる</summary>
         public TurnInfo Pruned(MatchState g)
@@ -207,7 +233,7 @@ namespace CardGen
             !NotIn(owner == Tp ? Tapped : OppTapped, field, sl);
     }
 
-    public enum TChoiceKind { Place, Cast, Resolve, Attack, Block, Tap, OppTap, EndTurn, Settle }
+    public enum TChoiceKind { Place, Cast, Resolve, Attack, Block, Tap, OppTap, EndTurn, Settle, Pass }
 
     /// <summary>ターンのある対戦の動き（TChoice）</summary>
     public sealed class TChoice
@@ -239,6 +265,17 @@ namespace CardGen
             new TChoice { Kind = TChoiceKind.Resolve, Player = p, Field = field, Effect = effect, Apply = apply,
                           Neg = neg ?? new List<(bool, int)>(), Tgt = tgt };
         public static TChoice Settle(List<(bool, int)> neg) => new TChoice { Kind = TChoiceKind.Settle, Neg = neg };
+        public static TChoice Pass() => new TChoice { Kind = TChoiceKind.Pass };
+
+        /// <summary>TChoice.actor：動きをするプレイヤー</summary>
+        public bool Actor(bool tp) => Kind switch
+        {
+            TChoiceKind.Cast => !tp,
+            TChoiceKind.OppTap => !tp,
+            TChoiceKind.Block => !tp,
+            TChoiceKind.Resolve => Player,
+            _ => tp,
+        };
         public static TChoice Attack(int field, int? target, List<(bool, int)> neg) =>
             new TChoice { Kind = TChoiceKind.Attack, Field = field, Target = target, Neg = neg };
         public static TChoice Block(List<(int, int)> blocks, List<(bool, int)> neg) =>
@@ -272,7 +309,7 @@ namespace CardGen
         {
             var g = MatchState.Start(r, deck1, deck2);
             if (r.FirstTurnDraw) g = DrawUpTo(r, first, r.DrawPerTurn, g);
-            return new Match { G = g, Turn = new TurnInfo { Tp = first } };
+            return new Match { G = g, Turn = new TurnInfo { Tp = first, Prio = first } };
         }
 
         /// <summary>Match.over：対戦が終わっているか（デッキ切れか、ライフのルールでどちらかのライフが 0）</summary>
@@ -289,10 +326,20 @@ namespace CardGen
 
         Match Next(MatchState g, TurnInfo t) => new Match { G = g, Turn = t.Pruned(g) };
 
-        /// <summary>Match.step?：選んだ動きをしたあとの状態（できない動きなら null）</summary>
+        /// <summary>Match.step?：選んだ動きをしたあとの状態（できない動きなら null）。優先権を持つプレイヤーだけが動ける</summary>
         public Match Step(Rules r, TChoice ch)
         {
             if (Over(r)) return null;
+            if (ch.Kind == TChoiceKind.Pass)
+                return Turn.Passes < 2 ? new Match { G = G, Turn = Turn.AfterPass() } : null;
+            if (!Turn.PrioOK(r, ch)) return null;
+            var m = Step0(r, ch);
+            return m == null ? null : new Match { G = m.G, Turn = Turn.PrioAfter(r, m.Turn, ch) };
+        }
+
+        /// <summary>Match.step0?：優先権を考えない1歩</summary>
+        Match Step0(Rules r, TChoice ch)
+        {
             var p = Turn.Tp;
             switch (ch.Kind)
             {
@@ -388,7 +435,7 @@ namespace CardGen
                     if (!Turn.Quiet) return null;
                     var g1 = G.Mend();
                     var g = DrawUpTo(r, !p, r.DrawPerTurn, g1);
-                    var t = new TurnInfo { Tp = !p, Count = Turn.Count + 1, OppTapped = Turn.Tapped.ToList() };
+                    var t = new TurnInfo { Tp = !p, Prio = !p, Count = Turn.Count + 1, OppTapped = Turn.Tapped.ToList() };
                     if (g1.Get(!p).Deck.Count < r.DrawPerTurn) t.Decked = !p;
                     return Next(g, t);
                 }

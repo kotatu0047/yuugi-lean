@@ -105,6 +105,10 @@ structure TurnInfo where
   spent : Nat := 0
   /-- ターンの最初に引く枚数が足りずに負けたプレイヤー -/
   decked : Option PlayerId := none
+  /-- 優先権を持つプレイヤー（公理：優先権を持つプレイヤーだけが動ける） -/
+  prio : PlayerId := tp
+  /-- 続けてパスした回数（2 なら両者がパスした：スタックの一番上の解決か、ブロックを待つ） -/
+  passes : Nat := 0
 deriving Repr, DecidableEq
 
 /-- ターンのある対戦の状態 -/
@@ -131,8 +135,10 @@ inductive TChoice
   | oppTap (k : Nat) (color : String := "")
   /-- ターンを終え、相手のターンにする -/
   | endTurn
-  /-- 状態の確認（どちらのプレイヤーでも、いつでも） -/
+  /-- 状態の確認（どちらのプレイヤーでも、いつでも。優先権は変わらない） -/
   | settle (neg : List Pos)
+  /-- 優先権を持つプレイヤーがパスする（優先権が相手に移る） -/
+  | pass
 deriving Repr, DecidableEq
 
 /-- `n` 枚引く（デッキが足りなければある分だけ） -/
@@ -332,6 +338,7 @@ def Match.step0? (r : Rules) (m : Match) (ch : TChoice) : Option Match :=
       (m.g.step? r (.resolve p k e apply neg tgt)).map fun g => ⟨g, (m.turn.pop r).prune g⟩
     else none
   | .settle neg => some ⟨m.g.sweep r neg, m.turn.prune (m.g.sweep r neg)⟩
+  | .pass => none
   | .attack k t neg =>
     match (m.g tp).field[k]? with
     | none => none
@@ -375,9 +382,58 @@ def Match.step0? (r : Rules) (m : Match) (ch : TChoice) : Option Match :=
         decked := if (g1 (!tp)).deck.length < r.drawPerTurn then some (!tp) else none }.prune g⟩
     else none
 
+/-! ## 優先権（公理） -/
+
+/-- 優先権とパスの回数だけを変える -/
+def TurnInfo.withPrio (t : TurnInfo) (p : PlayerId) (n : Nat) : TurnInfo := { t with prio := p, passes := n }
+
+/-- 動きをするプレイヤー -/
+def TChoice.actor (tp : PlayerId) : TChoice → PlayerId
+  | .cast .. | .oppTap .. | .block .. => !tp
+  | .resolve p .. => p
+  | _ => tp
+
+/-- 両者が続けてパスしたあとにだけできる動きか（スタックの一番上の解決と、ブロック） -/
+def TurnInfo.afterPasses (r : Rules) (t : TurnInfo) : TChoice → Bool
+  | .resolve .. => r.stack && !t.stack.isEmpty
+  | .block .. => true
+  | _ => false
+
+/-- 優先権について、その動きをしてよいか：両者がパスしたあとの動きは、両者がパスしたときだけ。
+それ以外の動きは、優先権を持つプレイヤーが、両者がパスする前に行う。状態の確認はいつでもよい -/
+def TurnInfo.prioOK (r : Rules) (t : TurnInfo) (ch : TChoice) : Bool :=
+  match ch with
+  | .settle _ => true
+  | _ => if t.afterPasses r ch then t.passes == 2 else t.passes < 2 && ch.actor t.tp == t.prio
+
+/-- パスしたあとのターンの情報：優先権が相手に移る。両者がパスしても、スタックが空で攻撃の途中でもなければ、
+何も起きずにターンプレイヤーに優先権が戻る -/
+def TurnInfo.afterPass (t : TurnInfo) : TurnInfo :=
+  if t.passes + 1 < 2 then t.withPrio (!t.prio) (t.passes + 1)
+  else if t.quiet then t.withPrio t.tp 0
+  else t.withPrio (!t.prio) 2
+
+/-- 動いたあとの優先権：動いた本人が持ち続ける。両者がパスしたあとの動き（解決・ブロック）のあとはターンプレイヤーに戻る。
+ターン終了のあとは新しいターンプレイヤー。状態の確認では変わらない -/
+def TurnInfo.prioAfter (r : Rules) (before after : TurnInfo) (ch : TChoice) : TurnInfo :=
+  match ch with
+  | .settle _ => after.withPrio before.prio before.passes
+  | .endTurn => after.withPrio after.tp 0
+  | _ => if before.afterPasses r ch then after.withPrio after.tp 0 else after.withPrio (ch.actor before.tp) 0
+
+/-- 優先権を考えた1歩（盤面を計算済みの値にする前） -/
+def Match.step1? (r : Rules) (m : Match) (ch : TChoice) : Option Match :=
+  if m.over r then none else
+  match ch with
+  | .pass => if m.turn.passes < 2 then some ⟨m.g, m.turn.afterPass⟩ else none
+  | ch =>
+    if m.turn.prioOK r ch then
+      (m.step0? r ch).map fun m' => ⟨m'.g, m.turn.prioAfter r m'.turn ch⟩
+    else none
+
 /-- 選んだ動きをしたあとの状態（できない動きなら `none`）。盤面は計算済みの値にする（`State.fresh`） -/
 def Match.step? (r : Rules) (m : Match) (ch : TChoice) : Option Match :=
-  match m.step0? r ch with
+  match m.step1? r ch with
   | some m' => some ⟨State.of (m'.g true) (m'.g false), m'.turn⟩
   | none => none
 
@@ -452,6 +508,7 @@ theorem Match.step0?_moved {r : Rules} {m m' : Match} {ch : TChoice} (hs : m.ste
   | settle neg =>
     simp only [Option.some.injEq] at hs
     subst hs; exact .settle
+  | pass => simp at hs
   | attack k t neg =>
     simp only at hs
     split at hs
@@ -499,16 +556,75 @@ theorem Match.step0?_moved {r : Rules} {m m' : Match} {ch : TChoice} (hs : m.ste
     · cases hs; exact .endTurn
     · cases hs
 
+@[simp] theorem TurnInfo.withPrio_tp (t : TurnInfo) (p n) : (t.withPrio p n).tp = t.tp := rfl
+@[simp] theorem TurnInfo.withPrio_summons (t : TurnInfo) (p n) : (t.withPrio p n).summons = t.summons := rfl
+@[simp] theorem TurnInfo.withPrio_placed (t : TurnInfo) (p n) : (t.withPrio p n).placed = t.placed := rfl
+@[simp] theorem TurnInfo.withPrio_pool (t : TurnInfo) (p n) : (t.withPrio p n).pool = t.pool := rfl
+@[simp] theorem TurnInfo.withPrio_oppPool (t : TurnInfo) (p n) : (t.withPrio p n).oppPool = t.oppPool := rfl
+@[simp] theorem TurnInfo.withPrio_spent (t : TurnInfo) (p n) : (t.withPrio p n).spent = t.spent := rfl
+@[simp] theorem TurnInfo.withPrio_made (t : TurnInfo) (p n) : (t.withPrio p n).made = t.made := rfl
+
+theorem TurnInfo.prioAfter_eq (r : Rules) (before after : TurnInfo) (ch : TChoice) :
+    ∃ p n, before.prioAfter r after ch = after.withPrio p n := by
+  unfold TurnInfo.prioAfter
+  split
+  · exact ⟨_, _, rfl⟩
+  · exact ⟨_, _, rfl⟩
+  · split <;> exact ⟨_, _, rfl⟩
+
+theorem TurnInfo.afterPass_eq (t : TurnInfo) : ∃ p n, t.afterPass = t.withPrio p n := by
+  unfold TurnInfo.afterPass
+  split
+  · exact ⟨_, _, rfl⟩
+  · split <;> exact ⟨_, _, rfl⟩
+
+/-- 1歩は、優先権を考えない1歩（`Moved`。パスなら何も変えない）のあとに、優先権とパスの回数だけを変えたもの -/
 theorem Match.step?_moved {r : Rules} {m m' : Match} {ch : TChoice} (hs : m.step? r ch = some m') :
-    Match.Moved r m ch m' := by
+    ∃ m0 p n, (ch = .pass ∧ m0 = m ∨ Match.Moved r m ch m0) ∧ m' = ⟨m0.g, m0.turn.withPrio p n⟩ := by
   unfold Match.step? at hs
   split at hs
-  · rename_i m0 h0
+  · rename_i m1 h1
     cases hs
-    have : (⟨State.of (m0.g true) (m0.g false), m0.turn⟩ : Match) = m0 := by
-      cases m0; simp only [Match.mk.injEq, and_true]; exact State.fresh_eq _
-    rw [this]
-    exact Match.step0?_moved h0
+    have hf : State.of (m1.g true) (m1.g false) = m1.g := State.fresh_eq _
+    rw [hf]
+    unfold Match.step1? at h1
+    split at h1
+    · cases h1
+    · split at h1
+      · split at h1
+        · cases h1
+          obtain ⟨p, n, hpn⟩ := m.turn.afterPass_eq
+          exact ⟨m, p, n, .inl ⟨rfl, rfl⟩, by rw [hpn]⟩
+        · cases h1
+      · split at h1
+        · obtain ⟨m2, h2, rfl⟩ := Option.map_eq_some_iff.1 h1
+          obtain ⟨p, n, hpn⟩ := m.turn.prioAfter_eq r m2.turn ch
+          exact ⟨m2, p, n, .inr (Match.step0?_moved h2), by simp only [hpn]⟩
+        · cases h1
+  · cases hs
+
+/-- **優先権（公理）：パス・状態の確認・両者がパスしたあとの動き（解決・ブロック）以外の動きができたなら、
+動いたのは優先権を持つプレイヤー** -/
+theorem Match.step?_prio {r : Rules} {m m' : Match} {ch : TChoice} (hs : m.step? r ch = some m')
+    (hp : ch ≠ .pass) (hn : ∀ neg, ch ≠ .settle neg) (ha : m.turn.afterPasses r ch = false) :
+    ch.actor m.turn.tp = m.turn.prio := by
+  unfold Match.step? at hs
+  split at hs
+  · rename_i m1 h1
+    unfold Match.step1? at h1
+    split at h1
+    · cases h1
+    · split at h1
+      · exact absurd rfl hp
+      · rename_i hnp
+        split at h1
+        · rename_i hok
+          cases ch with
+          | settle neg => exact absurd rfl (hn neg)
+          | _ =>
+            simp only [TurnInfo.prioOK, ha, Bool.false_eq_true, ite_false, Bool.and_eq_true, beq_iff_eq] at hok
+            exact hok.2
+        · cases h1
   · cases hs
 
 /-! ## ターンのない対戦への引き継ぎ -/
@@ -533,7 +649,10 @@ theorem TReachable.reachable {r : Rules} {decks : PlayerId → List Card} {first
     · exact Reachable.drawUpTo first _ .start
     · exact .start
   | step ch _ hs ih =>
-    cases Match.step?_moved hs with
+    obtain ⟨m0, _, _, ⟨-, rfl⟩ | hmv, rfl⟩ := Match.step?_moved hs
+    · exact ih
+    show Reachable r decks m0.g
+    cases hmv with
     | place _ _ hg => exact ih.step (step?_sound hg)
     | cast _ _ hg => exact ih.step (step?_sound hg)
     | resolve hg => exact ih.step (step?_sound hg)
@@ -580,7 +699,10 @@ theorem TReachable.summons_le {r : Rules} {decks : PlayerId → List Card} {firs
   induction h with
   | start => simp [Match.start]
   | step ch _ hs ih =>
-    cases Match.step?_moved hs with
+    obtain ⟨m0, _, _, ⟨-, rfl⟩ | hmv, rfl⟩ := Match.step?_moved hs
+    · simpa using ih
+    simp only [TurnInfo.withPrio_summons]
+    cases hmv with
     | @place _ _ _ _ _ c _ hc hok _ =>
       simp only [TurnInfo.placeOK, Bool.and_eq_true, Bool.or_eq_true, Bool.not_eq_true',
         beq_iff_eq, decide_eq_true_eq] at hok
@@ -609,7 +731,10 @@ theorem TReachable.placed_le {r : Rules} {decks : PlayerId → List Card} {first
   induction h with
   | start => simp [Match.start]
   | step ch _ hs ih =>
-    cases Match.step?_moved hs with
+    obtain ⟨m0, _, _, ⟨-, rfl⟩ | hmv, rfl⟩ := Match.step?_moved hs
+    · simpa using ih
+    simp only [TurnInfo.withPrio_placed]
+    cases hmv with
     | @place _ _ _ _ _ c _ _ hok _ =>
       simp only [TurnInfo.placeOK, Bool.and_eq_true, List.all_eq_true] at hok
       have := hok.1.2 l hl
@@ -645,8 +770,11 @@ theorem TReachable.fits {r : Rules} {decks : PlayerId → List Card} {first : Pl
     (h : TReachable r decks first m) : m.turn.Fits m.g := by
   induction h with
   | start => refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩ <;> intro a <;> simp [Match.start]
-  | step ch _ hs _ =>
-    cases Match.step?_moved hs <;> exact TurnInfo.prune_fits _ _
+  | step ch _ hs ih =>
+    obtain ⟨m0, _, _, ⟨-, rfl⟩ | hmv, rfl⟩ := Match.step?_moved hs
+    · exact ih
+    show m0.turn.Fits m0.g
+    cases hmv <;> exact TurnInfo.prune_fits _ _
 
 /-- **攻撃したカードの記録は、ターンプレイヤーのフィールドのカードの一部**
 （同じカードの枚数も含めて。だから、フィールドのどのカードも1ターンに1回までしか攻撃できない） -/
@@ -693,7 +821,10 @@ theorem TReachable.mana_balance {r : Rules} {decks : PlayerId → List Card} {fi
   induction h with
   | start => simp [Match.start]
   | step ch _ hs ih =>
-    cases Match.step?_moved hs with
+    obtain ⟨m0, _, _, ⟨-, rfl⟩ | hmv, rfl⟩ := Match.step?_moved hs
+    · simpa using ih
+    simp only [TurnInfo.withPrio_pool, TurnInfo.withPrio_oppPool, TurnInfo.withPrio_spent, TurnInfo.withPrio_made]
+    cases hmv with
     | place _ hok _ =>
       simp only [TurnInfo.placeOK, Bool.and_eq_true] at hok
       have := length_pay hok.2

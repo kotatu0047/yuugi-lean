@@ -147,7 +147,10 @@ def attackClaim (cards : List Card) : Option ClaimOut :=
 /-- ターンについての★（`Turn.lean`）。どれも証明済み -/
 def turnClaims (r : Rules) (cards : List Card) : List ClaimOut :=
   let fighters := "・".intercalate r.fighters
-  [⟨"ターンのある対戦でも、ここに挙げた★と盤面の制約はそのまま成り立ちます",
+  [⟨"優先権を持つプレイヤーだけが動けます（パスすると相手に移り、両者が続けてパスしたらスタックの一番上を解決するかブロックに進む）",
+    ["公理：優先権を持つプレイヤーだけが動ける", "動いた本人が優先権を持ち続け、パスすると相手に移る"],
+    "proved", "CardGen.Match.step?_prio"⟩,
+   ⟨"ターンのある対戦でも、ここに挙げた★と盤面の制約はそのまま成り立ちます",
     ["ターンのある対戦の盤面は、どれもターンのない（いつでも何度でも動ける）モデルで到達できる盤面"],
     "proved", "CardGen.TReachable.of_reachable"⟩] ++
   (if r.fighters.isEmpty || r.summonsPerTurn == 0 then [] else

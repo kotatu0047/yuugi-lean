@@ -193,6 +193,7 @@ namespace CardGen.App
                 // スタックに積んだ呪文は、一番上から解決する
                 while (match.Turn.Stack.Count > 0)
                 {
+                    PassBoth();
                     var (q, top) = match.Turn.Stack[0];
                     var k = state.Get(q).Field.FindIndex(x => TurnInfo.SameSlot(x, top));
                     var e = top.Card.Effects.FindIndex(x => x is Activated);
@@ -213,7 +214,7 @@ namespace CardGen.App
                     log.Add($"{Who(turn)}：{state.Get(turn).Field[k].Card.Name} で攻撃（宣言）");
                     match = next;
                 }
-                if (match.Turn.Attackers.Count > 0) { Render(); return; }
+                if (match.Turn.Attackers.Count > 0) { PassBoth(); Render(); return; }
             }
             var f = state.Get(true).Field;
             selPlayer = true;
@@ -254,6 +255,7 @@ namespace CardGen.App
                 };
                 match = match.Step(game.Rules, TChoice.Attack(2, null, none)) ?? match;
                 match = match.Step(game.Rules, TChoice.Attack(3, null, none)) ?? match;
+                PassBoth();
                 blockPlan[2] = 1;
                 blockPlan[3] = 1;
                 log.Add("場面：自分がゴブリンの先兵と丘巨人で攻撃を宣言し、相手が灰色熊2体で丘巨人をブロックしようとしている");
@@ -271,6 +273,7 @@ namespace CardGen.App
                 };
                 foreach (var ch in new[] { TChoice.Tap(0), TChoice.Place(0, 1, 0, true, new List<string> { "赤" }) })
                     match = match.Step(game.Rules, ch) ?? match;
+                PassBoth();
                 var k = state.P1.Field.Count - 1;
                 targeting = (true, k, 0, "自分：ショック を解決");
                 log.Add("場面：自分がショックを唱え、解決するときに対象を選ぶ");
@@ -287,7 +290,7 @@ namespace CardGen.App
                     Turn = new TurnInfo { Tp = true, Count = 5 },
                 };
                 foreach (var ch in new[] { TChoice.Tap(0), TChoice.Tap(1), TChoice.Place(0, 1, 0, true, new List<string> { "赤", "赤" }),
-                                           TChoice.OppTap(0), TChoice.Cast(0, 1, 0, true, new List<string> { "赤" }) })
+                                           TChoice.Pass(), TChoice.OppTap(0), TChoice.Cast(0, 1, 0, true, new List<string> { "赤" }) })
                     match = match.Step(game.Rules, ch) ?? match;
                 log.Add("場面：自分が紅蓮地獄を唱え、相手が応答して稲妻を唱えた（稲妻が一番上）");
             }
@@ -298,6 +301,41 @@ namespace CardGen.App
         }
 
         static string Who(bool p) => p ? "自分" : "相手";
+
+        /// <summary>両者が続けてパスする（デモと場面づくり用）</summary>
+        void PassBoth()
+        {
+            for (int i = 0; i < 2 && match.Turn.Passes < 2; i++)
+            {
+                var next = match.Step(game.Rules, TChoice.Pass());
+                if (next == null) break;
+                log.Add($"{Who(match.Turn.Prio)}：パス");
+                match = next;
+            }
+        }
+
+        /// <summary>優先権の欄：誰が持っているか、パスの回数、パスするボタン</summary>
+        void PriorityPanel()
+        {
+            var t = match.Turn;
+            var row = Row();
+            row.style.alignItems = Align.Center;
+            row.style.marginTop = 6;
+            var what = t.Passes == 2
+                ? (t.Stack.Count > 0 ? "両者がパスしました。スタックの一番上を解決します" : "両者がパスしました。ブロックを選びます")
+                : t.Passes == 1 ? $"{Who(!t.Prio)}がパスしました。{Who(t.Prio)}もパスすると、" +
+                    (t.Stack.Count > 0 ? "一番上を解決します" : t.Attackers.Count > 0 ? "ブロックに進みます" : "何も起きずにターンプレイヤーに戻ります")
+                : "優先権を持つプレイヤーだけが動けます（動いても優先権は自分のまま。パスすると相手に移ります）";
+            row.Add(Text($"優先権：{Who(t.Prio)}", 14, Good, true));
+            if (t.Passes < 2 && !match.Over(game.Rules))
+            {
+                var b = new Button(() => Do(TChoice.Pass(), $"{Who(match.Turn.Prio)}：パス")) { text = $"{Who(t.Prio)}がパスする" };
+                b.style.marginLeft = 12;
+                row.Add(b);
+            }
+            side.Add(row);
+            side.Add(Text(what, 11, t.Passes == 2 ? Warn : Quiet));
+        }
 
         /// <summary>ゾーンの何番目のマスか（表示用。1 から数える）</summary>
         string CellName(int zi, int cell)
@@ -893,6 +931,11 @@ namespace CardGen.App
                 if (lost > 0) notes.Add($"{Who(q)}に {lost} ダメージ");
             }
             side.Add(Text("結果の予告：" + (notes.Count == 0 ? "何も起きない" : string.Join("、", notes)), 12, Good));
+            if (match.Turn.Passes < 2)
+            {
+                side.Add(Text("両者が続けてパスすると、このブロックで戦闘できます（その前にインスタントで応答できます）", 11, Quiet));
+                return;
+            }
             ActionButton(blocks.Count == 0 ? "ブロックしないで戦闘する" : "このブロックで戦闘する",
                 () => Do(TChoice.Block(blocks, negs), $"{Who(o)}：" +
                     (blocks.Count == 0 ? "ブロックしない" : string.Join("、", blocks.Select(b => $"{of[b.Item1].Card.Name}で攻撃 {b.Item2 + 1} をブロック"))) +
@@ -913,6 +956,11 @@ namespace CardGen.App
             var (tq, top) = st[0];
             var k = state.Get(tq).Field.FindIndex(x => TurnInfo.SameSlot(x, top));
             if (k < 0) return;
+            if (match.Turn.Passes < 2)
+            {
+                side.Add(Text("両者が続けてパスすると、一番上を解決します（その前に、優先権を持つプレイヤーはインスタントで応答できます）", 11, Quiet));
+                return;
+            }
             neg.TryGetValue((tq, k), out var status);
             for (int e = 0; e < top.Card.Effects.Count; e++)
             {
@@ -992,7 +1040,7 @@ namespace CardGen.App
             turnRow.Add(Text($"第{turnCount}ターン：{Who(turn)}のターン", 14, Warn, true));
             var endTurn = new Button(() => { EndTurn(); Render(); }) { text = "ターン終了" };
             endTurn.style.marginLeft = 12;
-            endTurn.SetEnabled(match.Turn.Quiet && !match.Over(game.Rules));
+            endTurn.SetEnabled(match.Turn.Quiet && !match.Over(game.Rules) && match.Turn.Prio == turn && match.Turn.Passes < 2);
             turnRow.Add(endTurn);
             var swap = new Button(() => { firstPlayer = !firstPlayer; Start(game); }) { text = $"{Who(!firstPlayer)}の先攻で最初から" };
             swap.style.marginLeft = 6;
@@ -1009,8 +1057,10 @@ namespace CardGen.App
             if (game.Rules.PlaceLimits.Count > 0)
                 side.Add(Text("このターンに置いた枚数：" + string.Join("・", game.Rules.PlaceLimits.Select(l =>
                     $"{string.Join("+", l.Types)} {match.Turn.Placed.Count(l.Types.Contains)}/{l.Count}")), 11, Quiet));
-            side.Add(Text("両方のプレイヤーを動かせます。カードを置く・攻撃するのはターンプレイヤーだけで（インスタントはどちらも置けます）、" +
-                          "場のカードの発動はどちらのターンでもできます。引くのはターンの最初だけです。カードを選ぶと、できる動きが出ます。", 11, Quiet));
+            side.Add(Text("両方のプレイヤーを動かせます。動けるのは優先権を持つプレイヤーだけです（公理）。カードを置く・攻撃するのは" +
+                          "ターンプレイヤーだけで（インスタントはどちらも置けます）、場のカードの発動はどちらのターンでもできます。" +
+                          "相手に動いてほしいときは「パスする」で優先権を渡します。引くのはターンの最初だけです。カードを選ぶと、できる動きが出ます。", 11, Quiet));
+            PriorityPanel();
             var winner = Winner();
             if (winner != null)
             {

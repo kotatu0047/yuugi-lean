@@ -255,7 +255,7 @@ def turnJson (t : TurnInfo) : Json :=
          tapped: $(t.tapped.map slotJson), oppTapped: $(t.oppTapped.map slotJson),
          attackers: $(t.attackers.map slotJson), blocked: $(t.blocked.map slotJson),
          stack: $(t.stack.map fun (q, sl) => json% [$(q), $(slotJson sl)]), made: $(t.made), spent: $(t.spent),
-         decked: $(t.decked)}
+         decked: $(t.decked), prio: $(t.prio), passes: $(t.passes)}
 
 def tchoiceJson : TChoice → Json
   | .place h z c up pay => json% {kind: "place", hand: $(h), zone: $(z), cell: $(c), faceUp: $(up), pay: $(pay)}
@@ -268,6 +268,7 @@ def tchoiceJson : TChoice → Json
   | .oppTap k color => json% {kind: "oppTap", field: $(k), color: $(color)}
   | .block blocks neg => json% {kind: "block", blocks: $(blocks.map fun (j, a) => json% [$(j), $(a)]),
       neg: $(negJson neg)}
+  | .pass => json% {kind: "pass"}
   | .endTurn => json% {kind: "endTurn"}
 
 /-- ターンのある対戦のテストのゾーン：見本のゾーンに、「フィールド上」でない魔法・罠のゾーン（スタック）を加えたもの -/
@@ -311,6 +312,24 @@ def Rand.tchoice (r : Rules) (m : Match) : Rand TChoice := do
   let tp := m.turn.tp
   let o := (m.g (!tp)).field
   let fighters := (List.range o.length).filter fun j => (o[j]?.map r.fights).getD false
+  -- 優先権：ときどきパスする。スタックがあるか攻撃の途中で、両者がまだパスしていなければ、パスを多くする
+  if (← Rand.next 10) == 0 then return .pass
+  if m.turn.passes < 2 && !m.turn.quiet && (← Rand.next 3) != 0 then return .pass
+  -- 優先権を持つのがターンプレイヤーでなければ、たいていはインスタント・タップ・発動かパス
+  if m.turn.prio != tp && m.turn.passes < 2 && (← Rand.next 4) != 0 then
+    match ← Rand.next 5 with
+    | 0 | 4 => return .pass
+    | 1 =>
+      let f := (m.g (!tp)).field
+      return .resolve (!tp) (← Rand.next (f.length + 1)) 0 ((← Rand.next 4) != 0) (← Rand.negs m.g) (← Rand.tgt m.g)
+    | 2 =>
+      let (k, color) ← Rand.tapOf o
+      return .oppTap k color
+    | _ =>
+      let hand := (m.g (!tp)).hand
+      let h ← Rand.next (hand.length + 1)
+      let (z, c, up, pay) ← Rand.placeArgs r m.g (!tp) m.turn.oppPool h
+      return .cast h z c up pay
   -- スタックがあれば、たいていは一番上を解決する
   if let some (q, top) := m.turn.stack.head? then
     if (← Rand.next 3) != 0 then
@@ -347,7 +366,7 @@ def Rand.tchoice (r : Rules) (m : Match) : Rand TChoice := do
   | 10 | 11 | 12 | 13 | 14 => do
     let (k, color) ← Rand.tapOf (m.g tp).field
     return .tap k color
-  | 1 | 2 | 3 => do
+  | 1 | 2 | 3 | 7 | 8 => do
     let f := (m.g tp).field
     let mons := (List.range f.length).filter fun i => (f[i]?.map fun sl => sl.faceUp && r.fights sl).getD false
     let k ← if mons.isEmpty || (← Rand.next 5) == 0 then Rand.next (f.length + 1) else Rand.pick mons

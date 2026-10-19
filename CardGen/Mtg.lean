@@ -204,9 +204,12 @@ def turn1 : List TChoice := [.place 0 0 0 true, .tap 0, .place 1 0 1 true ["赤"
 -- 召喚酔い：置いたターンには攻撃できない
 #guard (Match.run rules m0 (turn1 ++ [.attack 1 none []])).isNone
 
-/-- 2ターン目（相手）：同じように山とゴブリンの先兵。3ターン目（自分）：ゴブリンの先兵で攻撃を宣言する -/
-def toAttack : List TChoice := turn1 ++ [.endTurn] ++ turn1 ++ [.endTurn, .attack 1 none []]
+/-- 2ターン目（相手）：同じように山とゴブリンの先兵。3ターン目（自分）：ゴブリンの先兵で攻撃を宣言し、
+両者がパスする（相手がブロックを選ぶ番になる） -/
+def toAttack : List TChoice := turn1 ++ [.endTurn] ++ turn1 ++ [.endTurn, .attack 1 none [], .pass, .pass]
 
+-- 両者がパスするまでは、ブロックを選べない
+#guard (Match.run rules m0 (turn1 ++ [.endTurn] ++ turn1 ++ [.endTurn, .attack 1 none [], .block [] []])).isNone
 -- 攻撃を宣言すると、相手がブロックを選ぶまで待つ（ターン終了やソーサリー速度のカードを置くことはできない）
 #guard match Match.run rules m0 toAttack with
   | some m => m.turn.attackers.length == 1
@@ -225,8 +228,8 @@ def toAttack : List TChoice := turn1 ++ [.endTurn] ++ turn1 ++ [.endTurn, .attac
 #guard (Match.run rules m0 (toAttack ++ [.block [(0, 0)] []])).isNone
 #guard (Match.run rules m0 (toAttack ++ [.block [(1, 0), (1, 0)] []])).isNone
 -- 攻撃したゴブリンの先兵はタップしたまま。相手のターンには、ブロックできない
-#guard (Match.run rules m0 (toAttack ++ [.block [] [], .endTurn, .attack 1 none [], .block [(1, 0)] []])).isNone
-#guard match Match.run rules m0 (toAttack ++ [.block [] [], .endTurn, .attack 1 none [], .block [] []]) with
+#guard (Match.run rules m0 (toAttack ++ [.block [] [], .endTurn, .attack 1 none [], .pass, .pass, .block [(1, 0)] []])).isNone
+#guard match Match.run rules m0 (toAttack ++ [.block [] [], .endTurn, .attack 1 none [], .pass, .pass, .block [] []]) with
   | some m => (m.g true).life == 19 && (m.g false).life == 19
   | none => false
 
@@ -302,8 +305,8 @@ def grown : Option State :=
   | none => false
 -- 飛行：風のドレイクの攻撃は、灰色熊ではブロックできず、到達を持つ巨大蜘蛛ならブロックできる
 def flyer : Match := ⟨board [slot 0 drake] [slot 0 bear, slot 1 spider], { tp := true, count := 3 }⟩
-#guard (Match.run rules flyer [.attack 0 none [], .block [(0, 0)] []]).isNone
-#guard (Match.run rules flyer [.attack 0 none [], .block [(1, 0)] []]).isSome
+#guard (Match.run rules flyer [.attack 0 none [], .pass, .pass, .block [(0, 0)] []]).isNone
+#guard (Match.run rules flyer [.attack 0 none [], .pass, .pass, .block [(1, 0)] []]).isSome
 -- 守備力が 0 になったクリーチャーは、状態の確認で破壊される
 #guard match (board [{ slot 0 goblin with defBonus := -1 }] []).step? rules (.settle []) with
   | some g => (g true).field.isEmpty && (g true).grave == [goblin]
@@ -320,8 +323,29 @@ def duel : Match :=
               field := [slot 0 mountain, slot 1 (if p then mountain else karplusan), slot 2 (if p then giant else goblin)] },
    { tp := true, count := 3 }⟩
 
-/-- 自分が紅蓮地獄を唱え（スタックに積まれる）、相手が応答して稲妻を唱える -/
-def respond : List TChoice := [.tap 0, .tap 1, .place 0 1 0 true ["赤", "赤"], .oppTap 0, .cast 0 1 0 true ["赤"]]
+/-- 自分が紅蓮地獄を唱え（スタックに積まれる）、パスして優先権を渡し、相手が応答して稲妻を唱える -/
+def respond : List TChoice := [.tap 0, .tap 1, .place 0 1 0 true ["赤", "赤"], .pass, .oppTap 0, .cast 0 1 0 true ["赤"]]
+
+/-! ## 優先権（公理） -/
+
+-- 優先権を持たないプレイヤーは動けない（最初はターンプレイヤーが持つ）
+#guard (Match.run rules duel [.oppTap 0]).isNone
+-- パスすると相手に移り、パスしたプレイヤーは動けない
+#guard (Match.run rules duel [.pass, .tap 0]).isNone
+#guard match Match.run rules duel [.pass] with
+  | some m => m.turn.prio == false && m.turn.passes == 1
+  | none => false
+-- 両者が続けてパスしても、スタックが空で攻撃の途中でもなければ、何も起きずにターンプレイヤーに戻る
+#guard match Match.run rules duel [.pass, .pass, .tap 0] with
+  | some m => m.turn.prio == true && m.turn.passes == 0 && m.turn.pool == ["赤"]
+  | none => false
+-- 動いた本人が優先権を持ち続ける（紅蓮地獄を唱えたあとも自分が持つ）
+#guard match Match.run rules duel (respond.take 3) with
+  | some m => m.turn.prio == true
+  | none => false
+-- スタックがあるとき、両者がパスするまでは一番上も解決できない。パスしたら解決だけができる
+#guard (Match.run rules duel (respond ++ [.resolve false 3 0 true])).isNone
+#guard (Match.run rules duel (respond ++ [.pass, .pass, .tap 2])).isNone
 
 #guard match Match.run rules duel respond with
   | some m => m.turn.stack.map (·.1) == [false, true] && m.turn.oppPool == [] && m.turn.spent == 3 && m.turn.made == 3
@@ -330,24 +354,25 @@ def respond : List TChoice := [.tap 0, .tap 1, .place 0 1 0 true ["赤", "赤"],
 #guard (Match.run rules duel (respond.take 3 ++ [.attack 2 none []])).isNone
 #guard (Match.run rules duel (respond ++ [.resolve true 3 0 true])).isNone
 -- 稲妻を解決（自分に 3 点）、次に紅蓮地獄を解決：ゴブリンの先兵は破壊され、丘巨人は 2 点のダメージが残る
-#guard match Match.run rules duel (respond ++ [.resolve false 3 0 true, .resolve true 3 0 true]) with
+#guard match Match.run rules duel (respond ++ [.pass, .pass, .resolve false 3 0 true, .pass, .pass, .resolve true 3 0 true]) with
   | some m => (m.g true).life == 17 && (m.g true).field == [slot 0 mountain, slot 1 mountain, slot 2 giant 2] &&
       (m.g false).grave == [bolt, goblin] && m.turn.stack.isEmpty
   | none => false
 -- ダメージはターンの終わりに消える
-#guard match Match.run rules duel (respond ++ [.resolve false 3 0 true, .resolve true 3 0 true, .endTurn]) with
+#guard match Match.run rules duel
+    (respond ++ [.pass, .pass, .resolve false 3 0 true, .pass, .pass, .resolve true 3 0 true, .endTurn]) with
   | some m => (m.g true).field.all (·.damage == 0)
   | none => false
 -- 相手のターンには、相手のマナで払う（持っていない色では払えない）
-#guard (Match.run rules duel [.oppTap 0, .cast 0 1 0 true ["緑"]]).isNone
+#guard (Match.run rules duel [.pass, .oppTap 0, .cast 0 1 0 true ["緑"]]).isNone
 -- カープルーザンの森は、赤か緑を選んでマナを出す（ほかの色や、色を選ばないことはできない）
-#guard match Match.run rules duel [.oppTap 1 "緑"] with
+#guard match Match.run rules duel [.pass, .oppTap 1 "緑"] with
   | some m => m.turn.oppPool == ["緑"]
   | none => false
-#guard (Match.run rules duel [.oppTap 1 "白"]).isNone
-#guard (Match.run rules duel [.oppTap 1]).isNone
+#guard (Match.run rules duel [.pass, .oppTap 1 "白"]).isNone
+#guard (Match.run rules duel [.pass, .oppTap 1]).isNone
 -- 攻撃の途中（ブロックの前）にもインスタントを置ける。ブロックはスタックが空になってから
-#guard match Match.run rules duel [.attack 2 none [], .oppTap 0, .cast 0 1 0 true ["赤"]] with
+#guard match Match.run rules duel [.attack 2 none [], .pass, .oppTap 0, .cast 0 1 0 true ["赤"], .pass, .pass] with
   | some m => m.turn.attackers.length == 1 && m.turn.stack.length == 1 &&
       (m.step? rules (.block [(2, 0)] [])).isNone
   | none => false
@@ -356,7 +381,7 @@ def respond : List TChoice := [.tap 0, .tap 1, .place 0 1 0 true ["赤", "赤"],
 
 -- ライフが 0 になったら、それ以上動けない
 #guard match Match.run rules { duel with g := duel.g.set false { duel.g false with life := 3 } }
-    [.tap 0, .attack 2 none [], .block [] []] with
+    [.tap 0, .attack 2 none [], .pass, .pass, .block [] []] with
   | some m => (m.g false).life == 0 && Match.over rules m && (m.step? rules .endTurn).isNone
   | none => false
 -- ライブラリーから引けなければ負け

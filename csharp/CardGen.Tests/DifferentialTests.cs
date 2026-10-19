@@ -215,6 +215,7 @@ public class DifferentialTests
         "resolve" => TChoice.Resolve((bool)c["player"], (int)c["field"], (int)c["effect"], (bool)c["apply"], ParseNeg(c["neg"]),
             ParseTgt(c["tgt"])),
         "settle" => TChoice.Settle(ParseNeg(c["neg"])),
+        "pass" => TChoice.Pass(),
         "attack" => TChoice.Attack((int)c["field"],
             c["target"].Type == JTokenType.Null ? (int?)null : (int)c["target"], ParseNeg(c["neg"])),
         "tap" => TChoice.Tap((int)c["field"], (string)c["color"]),
@@ -241,6 +242,8 @@ public class DifferentialTests
         ["made"] = t.Made,
         ["spent"] = t.Spent,
         ["decked"] = t.Decked == null ? JValue.CreateNull() : new JValue(t.Decked.Value),
+        ["prio"] = t.Prio,
+        ["passes"] = t.Passes,
     };
 
     static JObject MatchJson(Match m) => new JObject
@@ -299,6 +302,8 @@ public class DifferentialTests
             m = m.Step(r, ch) ?? throw new Exception("できない動き");
         m = m.Step(r, TChoice.Attack(1, null, new List<(bool, int)>()));
         Assert.Single(m.Turn.Attackers);
+        Assert.Null(m.Step(r, TChoice.Block(new List<(int, int)>(), new List<(bool, int)>())));
+        m = m.Step(r, TChoice.Pass()).Step(r, TChoice.Pass());
         Assert.Null(m.Step(r, TChoice.EndTurn()));
         var none = new List<(bool, int)>();
         var blocked = m.Step(r, TChoice.Block(new List<(int, int)> { (1, 0) }, none));
@@ -323,20 +328,24 @@ public class DifferentialTests
         var red = new List<string> { "赤" };
         var d = duel;
         foreach (var ch in new[] { TChoice.Tap(0), TChoice.Tap(1), TChoice.Place(0, 1, 0, true, new List<string> { "赤", "赤" }),
-                                   TChoice.OppTap(0), TChoice.Cast(0, 1, 0, true, red) })
+                                   TChoice.Pass(), TChoice.OppTap(0), TChoice.Cast(0, 1, 0, true, red) })
             d = d.Step(r, ch) ?? throw new Exception($"できない動き：{ch.Kind}");
         Assert.Equal(new[] { false, true }, d.Turn.Stack.Select(x => x.player));
+        Assert.Null(d.Step(r, TChoice.Resolve(false, 3, 0, true)));
+        d = d.Step(r, TChoice.Pass()).Step(r, TChoice.Pass());
         Assert.Null(d.Step(r, TChoice.Resolve(true, 3, 0, true)));
         d = d.Step(r, TChoice.Resolve(false, 3, 0, true));
         Assert.Equal(17, d.G.P1.Life);
-        d = d.Step(r, TChoice.Resolve(true, 3, 0, true));
+        d = d.Step(r, TChoice.Pass()).Step(r, TChoice.Pass()).Step(r, TChoice.Resolve(true, 3, 0, true));
         Assert.Equal(2, d.G.P1.Field[2].Damage);
         Assert.Equal(new[] { "稲妻", "ゴブリンの先兵" }, d.G.P2.Grave.Select(x => x.Name));
         d = d.Step(r, TChoice.EndTurn());
         Assert.All(d.G.P1.Field, sl => Assert.Equal(0, sl.Damage));
         // カープルーザンの森は赤か緑を選ぶ
-        Assert.Equal(new[] { "緑" }, duel.Step(r, TChoice.OppTap(1, "緑")).Turn.OppPool);
-        Assert.Null(duel.Step(r, TChoice.OppTap(1, "白")));
+        Assert.Null(duel.Step(r, TChoice.OppTap(1, "緑")));
+        var opp = duel.Step(r, TChoice.Pass());
+        Assert.Equal(new[] { "緑" }, opp.Step(r, TChoice.OppTap(1, "緑")).Turn.OppPool);
+        Assert.Null(opp.Step(r, TChoice.OppTap(1, "白")));
     }
 
     [Fact]
