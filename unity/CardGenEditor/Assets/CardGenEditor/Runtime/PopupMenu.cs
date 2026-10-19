@@ -17,6 +17,8 @@ namespace CardGen.App
         /// <summary>メニューの一番上の帯（何のメニューか）</summary>
         public bool IsTitle;
         public bool IsSeparator;
+        /// <summary>押せない情報の行（カードの詳細など）。押せない項目と違って薄くしない</summary>
+        public bool IsInfo;
         /// <summary>取り消しにくい操作（削除など）。赤で出す</summary>
         public bool Danger;
         /// <summary>左に出す色の印（ノードの種類の色など）</summary>
@@ -28,7 +30,9 @@ namespace CardGen.App
         public static MenuEntry Header(string text) => new MenuEntry { Text = text, IsHeader = true };
         public static MenuEntry Title(string text, string hint = null, Color? swatch = null) =>
             new MenuEntry { Text = text, Hint = hint, Swatch = swatch, IsHeader = true, IsTitle = true };
-        public static MenuEntry Separator() => new MenuEntry { IsSeparator = true };
+        public static MenuEntry Separator() => new MenuEntry { Text = "", IsSeparator = true, Enabled = false };
+        public static MenuEntry Info(string text, string hint = null, Color? swatch = null) =>
+            new MenuEntry { Text = text, Hint = hint, Swatch = swatch, IsInfo = true, Enabled = false };
     }
 
     /// <summary>
@@ -203,9 +207,14 @@ namespace CardGen.App
             var col = new VisualElement { pickingMode = PickingMode.Ignore };
             col.style.flexShrink = 1;
             col.style.flexGrow = 1;
-            col.Add(Lbl(it.Text, 13, it.Danger ? DangerText : Text));
-            if (!string.IsNullOrEmpty(it.Hint)) col.Add(Lbl(it.Hint, 10, Muted));
+            col.Add(Lbl(it.Text, it.IsInfo ? 12 : 13, it.Danger ? DangerText : it.IsInfo ? Muted : Text));
+            if (!string.IsNullOrEmpty(it.Hint)) col.Add(Lbl(it.Hint, 10, it.IsInfo ? Theme.Dim : Muted));
             row.Add(col);
+            if (it.IsInfo)
+            {
+                row.style.paddingTop = row.style.paddingBottom = 2;
+                return row;
+            }
             if (!it.Enabled)
             {
                 row.style.opacity = 0.45f;
@@ -262,7 +271,7 @@ namespace CardGen.App
         /// <summary>文字に text を含む押せる項目を選ぶ（なければ false。自動テスト用）</summary>
         public static bool Choose(List<MenuEntry> items, string text)
         {
-            var it = items.Find(i => !i.IsHeader && !i.IsSeparator && i.Enabled && i.Text.Contains(text));
+            var it = items.Find(i => !i.IsHeader && !i.IsSeparator && !i.IsInfo && i.Enabled && i.Text.Contains(text));
             if (it == null) return false;
             it.Action();
             return true;

@@ -67,6 +67,8 @@ namespace CardGen.App
             box.style.paddingTop = 8;
             box.style.paddingBottom = 4;
             Theme.Frame(box, p == turn ? Theme.LineHi : Theme.Line, Theme.Panel, p == turn ? Theme.Amber : Theme.Alpha(Theme.Cyan, 0.6f));
+            // プレイヤーの盤面の空き場所の右クリック：ライフ・デッキ・手札・墓地
+            PopupMenu.Attach(box, _ => PlayerMenu(p));
 
             var head = Row();
             head.style.alignItems = Align.Center;
@@ -111,7 +113,12 @@ namespace CardGen.App
                 {
                     foreach (var (sl, i) in s.Field.Select((sl, i) => (sl, i)).Where(x => x.sl.Zone == zi))
                         zr.Add(SlotChip(p, i, sl, neg));
-                    if (CanPlaceSelected(p, zi, 0)) zr.Add(PlaceButton(zi, 0));
+                    if (CanPlaceSelected(p, zi, 0))
+                    {
+                        var pb = PlaceButton(zi, 0);
+                        PopupMenu.Attach(pb, _ => CellMenu(p, zi, 0));
+                        zr.Add(pb);
+                    }
                 }
                 zones.Add(zr);
             }
@@ -239,8 +246,10 @@ namespace CardGen.App
             var f = state.Get(p).Field;
             var i = f.FindIndex(sl => sl.Zone == zi && sl.Cell == k);
             if (i >= 0) return SlotChip(p, i, f[i], neg);
-            if (CanPlaceSelected(p, zi, k)) return PlaceButton(zi, k);
-            return EmptyCell(emptyLabel);
+            // 空きのマスの右クリック：そこに置ける手札
+            var cell = CanPlaceSelected(p, zi, k) ? PlaceButton(zi, k) : EmptyCell(emptyLabel);
+            PopupMenu.Attach(cell, _ => CellMenu(p, zi, k));
+            return cell;
         }
 
         /// <summary>マスの位置があるゾーンを、盤面のマス目の並びで表示する（行の小さい方が上。見本では相手が上）</summary>

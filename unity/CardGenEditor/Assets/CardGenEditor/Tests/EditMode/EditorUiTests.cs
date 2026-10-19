@@ -319,5 +319,78 @@ namespace CardGen.App.Tests
             Assert.AreEqual("", View(card).FaultText);
             Assert.AreEqual(DisplayStyle.None, View(card).Q("fault-tape").style.display.value);
         }
+
+        [Test]
+        public void Cell_menu_places_a_hand_card_in_that_cell()
+        {
+            var view = new PlayView();
+            view.Start(Load("mtg"));
+            var menu = view.CellMenu(true, 0, 5);
+            Assert.IsTrue(menu[0].IsTitle);
+            var place = menu.First(i => i.Enabled && i.Text.EndsWith("を置く"));
+            // 同じカードは1つだけ出る
+            var names = menu.Where(i => i.Enabled && i.Text.EndsWith("を置く")).Select(i => i.Text).ToList();
+            CollectionAssert.AllItemsAreUnique(names);
+            place.Action();
+            var f = view.CurrentMatch.G.P1.Field;
+            Assert.AreEqual(1, f.Count);
+            Assert.AreEqual(5, f[0].Cell, "右クリックしたマスに置かれる");
+            // 相手の側のマスには、自分のターンに置ける手札がない（インスタントでマナもない）
+            Assert.IsFalse(view.CellMenu(false, 0, 3).Any(i => i.Enabled && i.Text.EndsWith("を置く")));
+        }
+
+        [Test]
+        public void Field_menu_assigns_blocks_and_fights()
+        {
+            var view = new PlayView();
+            view.Start(Load("mtg"));
+            view.Scenario("combat");
+            var bear = view.CurrentMatch.G.P2.Field.FindIndex(s => s.Card.Name == "灰色熊");
+            var menu = view.FieldMenu(false, bear);
+            CollectionAssert.Contains(PopupMenu.Texts(menu), "ブロック");
+            Assert.IsTrue(menu.Any(i => i.Enabled && i.Text.Contains("（丘巨人）を止める")), string.Join(" / ", PopupMenu.Texts(menu)));
+            Pick(menu, "ブロックしない");
+            Assert.IsTrue(PopupMenu.Texts(view.FieldMenu(false, bear)).Contains("✓ ブロックしない"));
+            Assert.IsTrue(PopupMenu.Choose(view.FieldMenu(false, bear), "（丘巨人）を止める"));
+            Assert.IsTrue(PopupMenu.Choose(view.FieldMenu(false, bear), "で戦闘する"));
+            Assert.AreEqual(0, view.CurrentMatch.Turn.Attackers.Count);
+        }
+
+        [Test]
+        public void Field_menu_chooses_the_target()
+        {
+            var view = new PlayView();
+            view.Start(Load("mtg"));
+            view.Scenario("target");
+            var bear = view.CurrentMatch.G.P2.Field.FindIndex(s => s.Card.Name == "灰色熊");
+            var menu = view.FieldMenu(false, bear);
+            Assert.IsTrue(menu.Any(i => i.IsInfo && i.Text.StartsWith("今の攻撃力")), "場のカードの詳細が出る");
+            Pick(menu, "このカードを対象にする");
+            Assert.IsFalse(view.CurrentMatch.G.P2.Field.Any(s => s.Card.Name == "灰色熊"));
+        }
+
+        [Test]
+        public void Player_and_general_menus()
+        {
+            var view = new PlayView();
+            view.Start(Load("mtg"));
+            var pm = view.PlayerMenu(true);
+            Assert.AreEqual("自分", pm[0].Text);
+            Assert.AreEqual(view.CurrentMatch.G.P1.Hand.Count, pm.Count(i => i.Text.StartsWith("選ぶ：")));
+            Assert.IsTrue(pm.Any(i => i.IsInfo && i.Text.Contains("デッキ")));
+            // 場面は MTG 風の見本だけ
+            CollectionAssert.Contains(PopupMenu.Texts(view.GeneralMenu()), "場面：スタックで応答");
+            var ygo = new PlayView();
+            ygo.Start(Load("sample"));
+            CollectionAssert.DoesNotContain(PopupMenu.Texts(ygo.GeneralMenu()), "場面：スタックで応答");
+            // 両者がパスすると、スタックの一番上を解決できる（場のカードのメニューにも出る）
+            view.Scenario("stack");
+            Pick(view.GeneralMenu(), "両者がパスする");
+            Assert.AreEqual(2, view.CurrentMatch.Turn.Passes);
+            var (q, top) = view.CurrentMatch.Turn.Stack[0];
+            var k = (q ? view.CurrentMatch.G.P1 : view.CurrentMatch.G.P2).Field.FindIndex(x => TurnInfo.SameSlot(x, top));
+            Assert.IsTrue(PopupMenu.Choose(view.FieldMenu(q, k), "一番上を解決する"));
+            Assert.AreEqual(1, view.CurrentMatch.Turn.Stack.Count);
+        }
     }
 }

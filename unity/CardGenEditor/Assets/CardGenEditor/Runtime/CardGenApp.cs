@@ -620,7 +620,9 @@ namespace CardGen.App
         //   -cardgen-play <手数>              テストプレイを始め、置ける手札を交互に置く
         //   -cardgen-scenario combat|stack    テストプレイで、戦闘（ブロックの割り当て）かスタックの場面を作る（MTG 風の見本）
         //   -cardgen-claim                    命題の欄の値でジョブを作る（反例探し）
-        //   -cardgen-menu node|play|card      右クリックのメニューを出す（最初の発動のノード／テストプレイの空き場所／自分の最初の手札）
+        //   -cardgen-menu node|play|card|field|cell|player
+        //                                     右クリックのメニューを出す（最初の発動のノード／テストプレイの空き場所／自分の最初の手札／
+        //                                     相手の場の戦闘できるカード／自分の戦場の 6 番目のマス／自分の盤面）
         //   -cardgen-screenshot <パス>        画面を保存して終了する
 
         static string Arg(string name)
@@ -707,6 +709,16 @@ namespace CardGen.App
                 {
                     var b = playView.worldBound;
                     PopupMenu.Open(playView, new Vector2(b.x + b.width * 0.25f, b.y + b.height * 0.55f), playView.HandMenu(true, 0));
+                }
+                else if (menu == "field" || menu == "cell" || menu == "player")
+                {
+                    var b = playView.worldBound;
+                    var m = playView.CurrentMatch;
+                    var items = menu == "cell" ? playView.CellMenu(true, 0, 5)
+                        : menu == "player" ? playView.PlayerMenu(true)
+                        // 相手の場の、戦闘できる最初のカード（戦闘の場面ならブロックの割り当てが出る）
+                        : playView.FieldMenu(false, Math.Max(0, m.G.P2.Field.FindIndex(x => x.Card.Attack > 0 || x.Card.Defense > 0)));
+                    PopupMenu.Open(playView, new Vector2(b.x + b.width * 0.3f, b.y + b.height * 0.15f), items);
                 }
             }
             if (args.Contains("-cardgen-results-end"))
