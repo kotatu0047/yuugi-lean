@@ -173,6 +173,16 @@ def turnClaims (r : Rules) (cards : List Card) : List ClaimOut :=
       ["ルール：攻撃されたプレイヤーがブロックするカードを選ぶ（MTG 式の戦闘）",
        "ブロックしたカードの記録は、いつも相手のフィールドのカードの一部（同じカードの枚数も含めて）"],
       "proved", "CardGen.TReachable.fits"⟩] else []) ++
+  [⟨(if r.life > 0 then "ライフが 0 になるか、" else "") ++ "ターンの最初に引く枚数が足りなければ対戦は終わり、それ以上どの動きもできない",
+    ["対戦が終わったかは、ライフとデッキ切れの記録で決まる"], "proved", "CardGen.Match.step?_over"⟩] ++
+  (if r.blocking || cards.any (fun c => c.effects.any fun
+      | .activated as => as.any fun | .strike .. | .pump .. => true | _ => false
+      | _ => false) then
+    [⟨"受けたダメージと、ターンの終わりまでの攻撃力・守備力の変化は、次のターンに残らない",
+      ["ターン終了で、どのカードのダメージと一時的な変化も 0 に戻す"], "proved", "CardGen.Match.endTurn_clean"⟩] else []) ++
+  (if r.stack then
+    [⟨"スタックに積まれたカードは、いつも置いたプレイヤーのスタックのゾーンにある（打ち消されたり手札に戻されたりしたら、スタックからも消える）",
+      ["スタックの記録は、動きのたびにフィールドにあるものだけに絞る"], "proved", "CardGen.TReachable.stack_fits"⟩] else []) ++
   (if cards.any (fun c => c.cost > 0 || !c.colorCost.isEmpty) then
     [⟨"1ターンに払うマナは、そのターンにタップして出したマナを超えない（マナはターンの終わりに消える）",
       ["カードを置くには、持っているマナからコストの分を払う", "持っているマナと払ったマナの合計は、そのターンにタップで出したマナに等しい"],

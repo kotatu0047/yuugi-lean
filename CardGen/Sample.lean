@@ -384,6 +384,17 @@ def turn0 : Match := Match.start rules (fun _ => turnDeck) true
 #guard match Match.run rules turn0 [.place 0 0 0 true, .endTurn, .place 0 0 0 true] with
   | some m => (m.g false).field.length == 1 && (m.g true).field.length == 1
   | none => false
+-- 優先権（公理）：相手のターンに自分の魔法を発動するには、相手（ターンプレイヤー）がパスして優先権を渡してから
+def prio0 : Match :=
+  Match.start rules (fun _ => [fireball, jinzo, blooD, skillDrain, darkBlessing, blackMagician, darkCommander, fireball]) true
+#guard (Match.run rules prio0 [.place 0 1 0 true, .endTurn, .resolve true 0 0 true]).isNone
+#guard match Match.run rules prio0 [.place 0 1 0 true, .endTurn, .pass, .resolve true 0 0 true] with
+  | some m => (m.g false).life < 8000 && m.turn.prio == true && m.turn.tp == false
+  | none => false
+-- 発動したあとも優先権は自分のまま。パスすると相手に戻り、相手は動ける
+#guard match Match.run rules prio0 [.place 0 1 0 true, .endTurn, .pass, .resolve true 0 0 true, .pass, .place 1 0 0 true] with
+  | some m => (m.g false).field.length == 1 && m.turn.prio == false
+  | none => false
 -- 3ターン目：自分のサイコ・ショッカー（2400）で相手の Bloo－D（1900）……ではなく、相手が置いたショッカーを攻撃（相打ち）
 -- 同じカードで2回は攻撃できない
 #guard (Match.run rules turn0 [.place 0 0 0 true, .endTurn, .endTurn, .attack 0 none []]).isSome

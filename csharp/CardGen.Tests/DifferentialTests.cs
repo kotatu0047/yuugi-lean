@@ -11,8 +11,9 @@ public class DifferentialTests
 {
     static readonly JObject V = JObject.Parse(File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "vectors.json")));
     static readonly Rules R = IrJson.ParseRules(V["rules"]);
+    // テスト用のカード（vecCards）と、MTG 風の見本のカード（名前は重ならない）
     static readonly Dictionary<string, Card> Cards =
-        ((JArray)V["cards"]).Select(IrJson.ParseCard).ToDictionary(c => c.Name);
+        ((JArray)V["cards"]).Concat((JArray)V["mtgCards"]).Select(IrJson.ParseCard).ToDictionary(c => c.Name);
 
     static View ParseView(JToken t) => new View((string)t["type"], t["tags"].Select(x => (string)x).ToList(),
         (bool)t["mine"], (bool)t["faceUp"], (bool)t["isSelf"], (bool)t["adjacent"], (bool)t["sameColumn"], (bool)t["isTarget"]);
@@ -255,10 +256,29 @@ public class DifferentialTests
     [Fact]
     public void Turn_play_like_Lean()
     {
+        var (games, steps, ok) = RunTurnGames(V["turnPlay"], g => IrJson.ParseRules(g["rules"]));
+        Assert.Equal(80, games);
+        Assert.Equal(4800, steps);
+        Assert.True(ok > 400);
+    }
+
+    [Fact]
+    public void Mtg_play_like_Lean()
+    {
+        var rules = IrJson.ParseRules(V["mtgRules"]);
+        var (games, steps, ok) = RunTurnGames(V["mtgPlay"], _ => rules);
+        Assert.Equal(40, games);
+        Assert.Equal(4800, steps);
+        Assert.True(ok > 4000);
+    }
+
+    /// <summary>ターンのある対戦のベクタを C# の Match で進め、Lean の結果と照合する（試合数・手数・できた手数を返す）</summary>
+    static (int, int, int) RunTurnGames(JToken all, Func<JToken, Rules> rulesOf)
+    {
         int games = 0, steps = 0, ok = 0;
-        foreach (var game in V["turnPlay"])
+        foreach (var game in all)
         {
-            var r = IrJson.ParseRules(game["rules"]);
+            var r = rulesOf(game);
             var decks = game["decks"].Select(d => d.Select(x => Cards[(string)x]).ToList()).ToList();
             var m = Match.Start(r, decks[0], decks[1], (bool)game["first"]);
             Assert.True(JToken.DeepEquals(game["start"], MatchJson(m)), $"開始時の状態が不一致：{game["start"]}");
@@ -278,9 +298,7 @@ public class DifferentialTests
             }
             games++;
         }
-        Assert.Equal(80, games);
-        Assert.Equal(4800, steps);
-        Assert.True(ok > 400);
+        return (games, steps, ok);
     }
 
     [Fact]

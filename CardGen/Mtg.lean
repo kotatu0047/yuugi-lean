@@ -161,6 +161,8 @@ def game : Game where
 -- ★：土地は1ターンに1枚まで、払うマナはタップで出したマナを超えない
 #guard ((report (toJson game).compress).claims.map (·.text)).contains "「土地」を置けるのは、1ターンに 1 枚まで"
 #guard ((report (toJson game).compress).claims.map (·.theorem)).contains "CardGen.TReachable.spent_le"
+#guard ["CardGen.Match.step?_prio", "CardGen.Match.step?_over", "CardGen.Match.endTurn_clean", "CardGen.TReachable.stack_fits"].all
+  ((report (toJson game).compress).claims.map (·.theorem)).contains
 
 -- 形式の検査：永続効果の範囲では対象を選べない。打ち消す範囲は「フィールド上」でないゾーンに置ける種類
 #guard !({ game with cards := [{ anthem with effects := [.boost (target [creature] .self) 1] }] }).WellFormed

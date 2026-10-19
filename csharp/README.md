@@ -25,5 +25,10 @@ cd csharp/CardGen.Tests && dotnet test
 | `IrJson.Upgrade`（版 2〜8 のファイルを版 9 に上げる） | エディタ用（Lean は今の版だけを読む） |
 | `MatchState.Start` / `MatchState.Step` | `start` / `State.step?`（`CardGen/Play.lean`。`step?_sound` で証明に使う動きの関係と結びついている） |
 | `Judge`（対戦中の無効の判定。カードごとの有効・無効と適用の順番を覚え、盤面が変わるたびに `TSys.Succ` で進める） | テストプレイ用。`JudgeTests` で Bloo－D・スキルドレイン・お触れの場面を確かめる |
+| `DeckBuilder`（テストプレイの山札。土地を色のコストに合わせて選び、むらなく散らす） | エディタ用 |
 | `GraphDoc`（ノードのグラフ。`RenameValue` で集合の値の名前を、使っているところもまとめて変える）・`Report`（検査ツールの報告） | エディタ用（Lean 側に対応なし） |
 | `Slot.Key`（ダメージが変わっても同じカードを見分ける鍵） | エディタ用（`Judge` が使う。Lean のモデルはカードを位置で指す） |
+
+テスト：`DifferentialTests`（Lean のテストベクトルとの照合。MTG 風の見本での対戦も含む）、`PropertyTests`（乱択の対戦で、
+Lean で証明した性質が C# でも毎手成り立つか）、`JudgeTests`（無効の判定。ダメージを受けても順番を覚えていること）、
+`GraphTests`（ノードのグラフ・名前の変更・候補・整列・山札）。

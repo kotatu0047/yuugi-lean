@@ -852,3 +852,120 @@ theorem TReachable.spent_le {r : Rules} {decks : PlayerId → List Card} {first 
   have := h.mana_balance; omega
 
 end CardGen
+
+namespace CardGen
+
+/-! ## 優先権・スタック・対戦の終わり・ターンの終わりの性質 -/
+
+theorem TurnInfo.afterPass_passes (t : TurnInfo) (h : t.passes < 2) : t.afterPass.passes ≤ 2 := by
+  unfold TurnInfo.afterPass TurnInfo.withPrio
+  split
+  · simp only; omega
+  · split <;> simp
+
+theorem TurnInfo.prioAfter_passes (r : Rules) (b a : TurnInfo) (ch : TChoice) (h : b.passes ≤ 2) :
+    (b.prioAfter r a ch).passes ≤ 2 := by
+  unfold TurnInfo.prioAfter TurnInfo.withPrio
+  split
+  · simpa using h
+  · simp
+  · split <;> simp
+
+/-- **パスの回数はいつも 2 以下**（両者がパスしたら、解決かブロックをするまでパスできない） -/
+theorem TReachable.passes_le {r : Rules} {decks : PlayerId → List Card} {first : PlayerId} {m : Match}
+    (h : TReachable r decks first m) : m.turn.passes ≤ 2 := by
+  induction h with
+  | start => simp [Match.start]
+  | @step m m' ch _ hs ih =>
+    unfold Match.step? at hs
+    split at hs
+    · rename_i m1 h1
+      cases hs
+      show m1.turn.passes ≤ 2
+      unfold Match.step1? at h1
+      split at h1
+      · cases h1
+      · split at h1
+        · split at h1
+          · rename_i hlt; cases h1; exact m.turn.afterPass_passes hlt
+          · cases h1
+        · split at h1
+          · obtain ⟨m2, _, rfl⟩ := Option.map_eq_some_iff.1 h1
+            exact m.turn.prioAfter_passes r m2.turn ch ih
+          · cases h1
+    · cases hs
+
+/-- スタックの記録の、残ったものはどれもフィールドにある -/
+theorem pruneStack_mem : ∀ (st : List (PlayerId × Slot)) (f : PlayerId → List Slot),
+    ∀ e ∈ pruneStack st f, e.2 ∈ f e.1
+  | [], _, e, he => by simp [pruneStack] at he
+  | (q, a) :: as, f, e, he => by
+    unfold pruneStack at he
+    split at he
+    · rename_i ha
+      rcases List.mem_cons.1 he with rfl | he
+      · exact ha
+      · have := pruneStack_mem as _ e he
+        by_cases hq : e.1 = q
+        · simp only [hq, ite_true] at this
+          exact hq ▸ List.mem_of_mem_erase this
+        · simpa [hq] using this
+    · exact pruneStack_mem as f e he
+
+/-- スタックの記録が、どれもフィールドのカード -/
+def TurnInfo.StackFits (t : TurnInfo) (g : State) : Prop := ∀ e ∈ t.stack, e.2 ∈ (g e.1).bases
+
+theorem TurnInfo.prune_stackFits (t : TurnInfo) (g : State) : (t.prune g).StackFits g :=
+  fun e he => pruneStack_mem t.stack (fun q => (g q).bases) e he
+
+/-- **スタックに積まれたカードは、いつも置いたプレイヤーのフィールド（スタックのゾーン）にある**
+（打ち消されたり、手札に戻されたりしたカードは、スタックからも消える） -/
+theorem TReachable.stack_fits {r : Rules} {decks : PlayerId → List Card} {first : PlayerId} {m : Match}
+    (h : TReachable r decks first m) : m.turn.StackFits m.g := by
+  induction h with
+  | start => intro e he; simp [Match.start] at he
+  | step ch _ hs ih =>
+    obtain ⟨m0, _, _, ⟨-, rfl⟩ | hmv, rfl⟩ := Match.step?_moved hs
+    · exact ih
+    show m0.turn.StackFits m0.g
+    cases hmv <;> exact TurnInfo.prune_stackFits _ _
+
+/-- **対戦が終わったら（ライフが 0 か、デッキ切れ）、それ以上どの動きもできない** -/
+theorem Match.step?_over {r : Rules} {m : Match} (h : m.over r = true) (ch : TChoice) : m.step? r ch = none := by
+  unfold Match.step? Match.step1?
+  simp [h]
+
+/-- 引いても、フィールドは変わらない -/
+theorem State.drawUpTo_field (r : Rules) (p : PlayerId) :
+    ∀ (n : Nat) (g : State) (q : PlayerId), ((g.drawUpTo r p n) q).field = (g q).field
+  | 0, _, _ => rfl
+  | n + 1, g, q => by
+    unfold State.drawUpTo
+    cases hg : g.step? r (.draw p) with
+    | none => rfl
+    | some g' =>
+      simp only
+      rw [State.drawUpTo_field r p n g' q]
+      unfold State.step? at hg
+      split at hg
+      · rename_i g0 h0
+        cases hg
+        simp only [State.step0?] at h0
+        split at h0
+        · cases h0; cases q <;> cases p <;> rfl
+        · cases h0
+      · cases hg
+
+/-- **ターンの終わりに、どのカードの受けたダメージとターンの終わりまでの変化も消える**
+（新しいターンの始めには、フィールドのどのカードもダメージが 0 で、攻撃力・守備力の一時的な変化もない） -/
+theorem Match.endTurn_clean {r : Rules} {m m' : Match} (hs : m.step? r .endTurn = some m') :
+    ∀ q, ∀ sl ∈ (m'.g q).field, sl.base = sl := by
+  obtain ⟨m0, _, _, ⟨h, -⟩ | hmv, rfl⟩ := Match.step?_moved hs
+  · cases h
+  cases hmv
+  intro q sl hsl
+  simp only [State.drawUpTo_field, State.mend, State.map_apply, List.mem_map] at hsl
+  obtain ⟨x, -, rfl⟩ := hsl
+  rfl
+
+end CardGen

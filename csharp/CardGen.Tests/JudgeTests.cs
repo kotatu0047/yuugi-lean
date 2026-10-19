@@ -99,3 +99,27 @@ public class JudgeTests
         Assert.Equal(!tp, j.IsOn(theirs));
     }
 }
+
+public class JudgeDamageTests
+{
+    [Fact]
+    public void Judge_keeps_the_order_when_a_card_takes_damage()
+    {
+        var g = IrJson.ParseGame(File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "sample.json")));
+        var blooD = g.Cards.First(c => c.Name == "D－HERO Bloo－D");
+        var r = g.Rules;
+        var theirs = new Slot(0, 0, blooD, true);
+        var mine = new Slot(0, 0, blooD, true);
+        var j = new Judge();
+        j.Sync(new MatchState { P1 = new PState(), P2 = new PState { Field = new List<Slot> { theirs } } }, r, false);
+        var board = new MatchState { P1 = new PState { Field = new List<Slot> { mine } }, P2 = new PState { Field = new List<Slot> { theirs } } };
+        j.Sync(board, r, true);
+        Assert.True(j.IsOn(theirs));
+        Assert.False(j.IsOn(mine));
+        // 相手の Bloo－D がダメージを受けても、同じカードとして順番を覚えている（自分の Bloo－D は無効のまま）
+        var hurt = board.With(false, board.P2.Mark(i => 500));
+        j.Sync(hurt, r, true);
+        Assert.True(j.IsOn(hurt.P2.Field[0]));
+        Assert.False(j.IsOn(hurt.P1.Field[0]));
+    }
+}

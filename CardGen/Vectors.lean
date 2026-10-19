@@ -1,4 +1,5 @@
 import CardGen.Sample
+import CardGen.Mtg
 import CardGen.Play
 import CardGen.Timed
 import CardGen.Turn
@@ -18,6 +19,8 @@ C# のゲームエンジンが Lean の定義と同じ結果を出すかを確�
 - `combat`：MTG 式の戦闘（`State.combat`）。攻撃とブロックの組み合わせ、受けているダメージもいろいろに選ぶ
 - `turnPlay`：ターンのある対戦（`Match.step?`）。ターンのルール（召喚の上限・引く枚数・種類ごとの上限・
   攻撃でタップ・召喚酔い・インスタントとスタックなど）も対戦ごとに変える。マナとタップも含む
+- `mtgPlay`：MTG 風の見本のルールとカードでの、ターンのある対戦（土地・色のマナ・インスタントとスタック・
+  まとめての攻撃とブロック・飛行・対象・優先権）。カードは `mtgCards` の名前で参照する
 - `play`：小さなルール（`playRules`）での対戦。開始時の状態から、選んだ動きを `State.step?` で進める
   （できない動きは `null`）
 
@@ -390,6 +393,43 @@ def Rand.tchoice (r : Rules) (m : Match) : Rand TChoice := do
     if (← Rand.next 12) == 0 then return .settle (← Rand.negs m.g)
     return .resolve q k (if (← Rand.next 5) == 0 then 1 else 0) ((← Rand.next 4) != 0) (← Rand.negs m.g) (← Rand.tgt m.g)
 
+instance : Inhabited TChoice := ⟨.pass⟩
+
+/-- ターンのある対戦の動きの候補（できない動きも含む）：置く・唱える・タップ・攻撃・ブロック・解決・パス・ターン終了 -/
+def candidates (r : Rules) (m : Match) : List TChoice :=
+  let tp := m.turn.tp
+  let places (p : PlayerId) (pool : List String) (mk : Nat → Nat → Nat → Bool → List String → TChoice) : List TChoice :=
+    (List.range (m.g p).hand.length).flatMap fun h =>
+      match (m.g p).hand[h]? with
+      | some c => (zonesFor r c).map fun z => mk h z (m.g.freeCell r p z) true ((autoPay c pool).getD [])
+      | none => []
+  let taps (p : PlayerId) (mk : Nat → String → TChoice) : List TChoice :=
+    (List.range (m.g p).field.length).flatMap fun k =>
+      match (m.g p).field[k]? with
+      | some sl => if sl.card.manaChoice.isEmpty then [mk k ""] else sl.card.manaChoice.map (mk k)
+      | none => []
+  let allPos : List Pos := [true, false].flatMap fun q => (List.range (m.g q).field.length).map (q, ·)
+  let resolves := [true, false].flatMap fun q => (List.range (m.g q).field.length).flatMap fun k =>
+    (none :: allPos.map some).map fun t => TChoice.resolve q k 0 true [] t
+  let o := (m.g (!tp)).field
+  let fighters := (List.range o.length).filter fun j => (o[j]?.map r.fights).getD false
+  let blocks := [[]] ++ (fighters.flatMap fun j => (List.range m.turn.attackers.length).map fun a => [(j, a)]) ++
+    (match fighters with | j1 :: j2 :: _ => [[(j1, 0), (j2, 0)]] | _ => [])
+  places tp m.turn.pool (fun h z c up pay => .place h z c up pay) ++
+  places (!tp) m.turn.oppPool (fun h z c up pay => .cast h z c up pay) ++
+  taps tp (fun k c => .tap k c) ++ taps (!tp) (fun k c => .oppTap k c) ++
+  (List.range (m.g tp).field.length).map (fun k => .attack k none []) ++
+  blocks.map (fun b => .block b []) ++ resolves ++ [.pass, .endTurn]
+
+/-- 動きを選ぶ：たいていはできる動きから（パスとターン終了は少なめに）、ときどき `Rand.tchoice` の動き（できないことが多い） -/
+def Rand.validChoice (r : Rules) (m : Match) : Rand TChoice := do
+  if (← Rand.next 7) == 0 then return ← Rand.tchoice r m
+  let ok := (candidates r m).filter fun ch => (m.step? r ch).isSome
+  let busy := ok.filter fun ch => ch != .pass && ch != .endTurn
+  if !busy.isEmpty && (← Rand.next 5) != 0 then Rand.pick busy
+  else if !ok.isEmpty then Rand.pick ok
+  else Rand.tchoice r m
+
 def vectors (_ : Unit := ()) : Json := Id.run do
   let (j, _) := (do
     let selector ← Rand.list 300 do
@@ -491,7 +531,29 @@ def vectors (_ : Unit := ()) : Json := Id.run do
         m := next.getD m
       return json% {rules: $(toJson r), decks: [$(d1.map (·.name)), $(d2.map (·.name))], first: $(first),
                     start: {state: $(stateJson m0.g), turn: $(turnJson m0.turn)}, steps: $(steps)}
+    let mtgLands := Mtg.game.cards.filter (0 < ·.mana)
+    let mtgOthers := Mtg.game.cards.filter (·.mana == 0)
+    let mtgPlay ← Rand.list 40 do
+      let r := Mtg.rules
+      -- 5枚に2枚ほどを土地にする
+      let deck : Rand (List Card) := (List.range r.deckSize).mapM fun i =>
+        if i % 5 < 2 then Rand.pick mtgLands else Rand.pick mtgOthers
+      let d1 ← deck
+      let d2 ← deck
+      let first ← Rand.bool
+      let m0 := Match.start r (fun p => if p then d1 else d2) first
+      let mut m := m0
+      let mut steps : Array Json := #[]
+      for _ in [0:120] do
+        let ch ← Rand.validChoice r m
+        let next := m.step? r ch
+        steps := steps.push (json% {choice: $(tchoiceJson ch),
+          result: $(next.map fun m' => json% {state: $(stateJson m'.g), turn: $(turnJson m'.turn)})})
+        m := next.getD m
+      return json% {decks: [$(d1.map (·.name)), $(d2.map (·.name))], first: $(first),
+                    start: {state: $(stateJson m0.g), turn: $(turnJson m0.turn)}, steps: $(steps)}
     return json% {version: 1, rules: $(toJson Sample.rules), cards: $(toJson vecCards),
+                  mtgRules: $(toJson Mtg.rules), mtgCards: $(toJson Mtg.game.cards), mtgPlay: $(mtgPlay),
                   selector: $(selector), check: $(check), destroy: $(destroy), boards: $(boards), timed: $(timed), attack: $(attack),
                   combat: $(combat),
                   playRules: $(toJson playRules), play: $(play), turnPlay: $(turnPlay)}
