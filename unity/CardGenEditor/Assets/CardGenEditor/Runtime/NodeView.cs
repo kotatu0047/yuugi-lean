@@ -132,7 +132,8 @@ namespace CardGen.App
                 $"召喚 {(n.Rules.SummonsPerTurn == 0 ? "制限なし" : $"1ターン{n.Rules.SummonsPerTurn}回")}・ドロー {n.Rules.DrawPerTurn}枚" +
                 (n.Rules.FirstTurnDraw ? "・先攻1ターン目も引く" : "") + (n.Rules.FirstTurnAttack ? "・先攻1ターン目も攻撃" : "") +
                 (n.Rules.PlaceLimits.Count > 0 ? $"\n上限：{string.Join("・", n.Rules.PlaceLimits.Select(l => $"{string.Join("+", l.Types)} {l.Count}枚"))}" : "") +
-                (n.Rules.AttackTaps ? "\n攻撃でタップ" : "") + (n.Rules.SummoningSickness ? (n.Rules.AttackTaps ? "・" : "\n") + "召喚酔い" : ""),
+                (n.Rules.AttackTaps ? "\n攻撃でタップ" : "") + (n.Rules.SummoningSickness ? (n.Rules.AttackTaps ? "・" : "\n") + "召喚酔い" : "") +
+                (n.Rules.Blocking ? "\nMTG 式の戦闘（ブロック）" : ""),
             NodeKind.Zone =>
                 $"{n.Zone.Count}マス・{(n.Zone.Capacity == Capacity.One ? "1枚まで" : "何枚でも")}・" +
                 $"{(n.Zone.Role == ZoneRole.Deck ? "デッキ" : n.Zone.Role == ZoneRole.Grave ? "墓地" : n.Zone.OnField ? "フィールド上" : "フィールド外")}\n" +

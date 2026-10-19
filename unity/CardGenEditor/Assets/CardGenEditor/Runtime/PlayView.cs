@@ -82,7 +82,15 @@ namespace CardGen.App
         /// <summary>カードの一覧からデッキを作る（デッキの枚数になるまで繰り返し、混ぜる）</summary>
         List<Card> MakeDeck(System.Random rng)
         {
-            var d = Enumerable.Range(0, game.Rules.DeckSize).Select(i => game.Cards[i % game.Cards.Count]).ToList();
+            // マナを出すカード（土地）があれば、デッキの 4 割ほどをそれにする（マナが足りずに動けなくならないように）
+            var lands = game.Cards.Where(c => c.Mana > 0).ToList();
+            var others = game.Cards.Where(c => c.Mana == 0).ToList();
+            var n = game.Rules.DeckSize;
+            var nl = lands.Count == 0 || others.Count == 0 ? 0 : n * 2 / 5;
+            var d = lands.Count == 0 || others.Count == 0
+                ? Enumerable.Range(0, n).Select(i => game.Cards[i % game.Cards.Count]).ToList()
+                : Enumerable.Range(0, nl).Select(i => lands[i % lands.Count])
+                    .Concat(Enumerable.Range(0, n - nl).Select(i => others[i % others.Count])).ToList();
             for (int i = d.Count - 1; i > 0; i--)
             {
                 int j = rng.Next(i + 1);
@@ -150,6 +158,17 @@ namespace CardGen.App
                         placed = true;
                     }
             }
+            // MTG 式の戦闘なら、攻撃を宣言してブロックの場面を見せる
+            if (game.Rules.Blocking)
+                for (int k = 0; k < state.Get(turn).Field.Count; k++)
+                {
+                    var next = match.Step(game.Rules, TChoice.Attack(k, null, new List<(bool, int)>()));
+                    if (next == null) continue;
+                    log.Add($"{Who(turn)}：{state.Get(turn).Field[k].Card.Name} で攻撃");
+                    match = next;
+                    Render();
+                    return;
+                }
             var f = state.Get(true).Field;
             selPlayer = true;
             // 攻撃できるカードがあればそれを、なければ発動できるカードを選ぶ
@@ -405,18 +424,32 @@ namespace CardGen.App
                 stats = $"攻 {atk}" + (atk != sl.Card.Attack ? $"（元 {sl.Card.Attack}）" : "") + $"・守 {sl.Card.Defense}";
             }
             var f = state.Get(p).Field;
+            var tapped = UsesMana && TappedAt(p, i);
             if (UsesMana)
             {
                 var notes = new List<string>();
-                if (match.Turn.IsTapped(p, f, sl)) notes.Add("タップ中");
+                if (tapped) notes.Add("タップ中");
                 if (sl.Card.Mana > 0) notes.Add($"{sl.Card.Mana}マナ");
                 if (p == turn && match.Turn.Sick(game.Rules, f, sl)) notes.Add("召喚酔い");
                 if (notes.Count > 0) stats = (stats == null ? "" : stats + "\n") + string.Join("・", notes);
             }
             var chip = Chip(sl.Card, sl.FaceUp, st, selPlayer == p && selField == i,
                 () => { selPlayer = p; selField = i; selHand = -1; Render(); }, stats);
-            if (UsesMana && match.Turn.IsTapped(p, f, sl)) chip.style.opacity = 0.6f;
+            if (tapped) chip.style.opacity = 0.6f;
             return chip;
+        }
+
+        /// <summary>
+        /// p のフィールドの i 番目のカードをタップしている状態で表示するか。記録は「同じカードのうち何枚がタップしているか」
+        /// だけなので（Lean のモデルと同じ）、同じカードが複数あれば前から順にその枚数をタップしている状態で表示する
+        /// </summary>
+        bool TappedAt(bool p, int i)
+        {
+            var f = state.Get(p).Field;
+            var sl = f[i];
+            var rec = p == turn ? match.Turn.Tapped : match.Turn.OppTapped;
+            var before = f.Take(i + 1).Count(x => TurnInfo.SameSlot(x, sl));
+            return before <= rec.Count(x => TurnInfo.SameSlot(x, sl));
         }
 
         /// <summary>空いているマスに置くボタン</summary>
@@ -528,6 +561,40 @@ namespace CardGen.App
             return box;
         }
 
+        /// <summary>MTG 式の戦闘：攻撃されたプレイヤーが、ブロックするカードを選ぶ</summary>
+        void BlockPanel(int k, Dictionary<(bool, int), string> neg)
+        {
+            var p = turn;
+            var o = !p;
+            var sl = state.Get(p).Field[k];
+            var negs = NegList(neg);
+            var a = state.AtkOf(game.Rules, negs, (p, k), sl);
+            Section($"ブロック（{Who(o)}が選ぶ）");
+            side.Add(Text($"{Who(p)}の{sl.Card.Name}（攻撃力 {a}・守備力 {sl.Card.Defense}）が攻撃しています", 12, Warn, true));
+            var of = state.Get(o).Field;
+            for (int j = 0; j < of.Count; j++)
+            {
+                var tl = of[j];
+                if (!MatchState.Fights(game.Rules, tl)) continue;
+                var b = state.AtkOf(game.Rules, negs, (o, j), tl);
+                var dies = new List<string>();
+                if (0 < a && tl.Card.Defense <= a) dies.Add(tl.Card.Name);
+                if (0 < b && sl.Card.Defense <= b) dies.Add(sl.Card.Name);
+                var result = dies.Count == 0 ? "どちらも残る" : string.Join("と", dies) + "を破壊";
+                int jj = j;
+                if (match.Step(game.Rules, TChoice.Block(jj, negs)) == null)
+                {
+                    var why = match.Turn.IsTapped(o, of, tl) ? "タップしている" : "このターンにもうブロックした";
+                    side.Add(Text($"{tl.Card.Name}：{why}のでブロックできません", 11, Quiet));
+                    continue;
+                }
+                ActionButton($"{tl.Card.Name}（{b}/{tl.Card.Defense}）でブロックする（{result}）",
+                    () => Do(TChoice.Block(jj, negs), $"{Who(o)}：{tl.Card.Name}でブロック（{result}）"));
+            }
+            ActionButton($"ブロックしない（{Who(o)}に {a} ダメージ）",
+                () => Do(TChoice.Block(null, negs), $"{Who(o)}：ブロックしない（{a} ダメージ）"));
+        }
+
         void Section(string title)
         {
             var l = Text(title, 14, Color.white, true);
@@ -540,6 +607,7 @@ namespace CardGen.App
         {
             var b = new Button(a) { text = text };
             b.style.marginTop = 4;
+            b.style.whiteSpace = WhiteSpace.Normal;
             side.Add(b);
         }
 
@@ -582,6 +650,8 @@ namespace CardGen.App
                           "できます。引くのはターンの最初だけです。カードを選ぶと、できる動きが出ます。", 11, Quiet));
             if (judge.Choices != null)
                 side.Add(Text("無効の判定で、プレイヤーが選ぶ場面です（下の「無効の状態」から選んでください）", 12, Warn, true));
+            if (match.Turn.Pending is int pend)
+                BlockPanel(pend, neg);
 
             Section("選んでいるカード");
             var s = state.Get(selPlayer);
@@ -684,6 +754,12 @@ namespace CardGen.App
                     var of = state.Get(o).Field;
                     int pk = selField;
                     bool pp = selPlayer;
+                    if (game.Rules.Blocking)
+                    {
+                        ActionButton($"攻撃する（攻撃力 {a}。{Who(o)}がブロックするかを選ぶ）",
+                            () => Do(TChoice.Attack(pk, null, negs), $"{Who(pp)}：{sl.Card.Name}（{a}）で攻撃"));
+                        of = new List<Slot>();
+                    }
                     for (int j = 0; j < of.Count; j++)
                     {
                         if (!state.TargetOK(game.Rules, pp, j)) continue;
@@ -694,7 +770,7 @@ namespace CardGen.App
                         ActionButton($"{name}を攻撃する（{a} 対 {vs}）",
                             () => Do(TChoice.Attack(pk, tj, negs), $"{Who(pp)}：{sl.Card.Name}（{a}）で{name}（{vs}）を攻撃"));
                     }
-                    if (state.TargetOK(game.Rules, pp, null))
+                    if (!game.Rules.Blocking && state.TargetOK(game.Rules, pp, null))
                         ActionButton($"直接攻撃する（{a} ダメージ）", () => Do(TChoice.Attack(pk, null, negs), $"{Who(pp)}：{sl.Card.Name}で直接攻撃（{a}）"));
                 }
             }

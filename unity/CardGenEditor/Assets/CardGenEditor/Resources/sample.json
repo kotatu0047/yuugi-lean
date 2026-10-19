@@ -50,6 +50,7 @@
   "drawPerTurn": 1,
   "deckSize": 40,
   "cardTypes": ["モンスター", "魔法", "罠"],
+  "blocking": false,
   "attackTaps": false},
  "cards":
  [{"type": "魔法",

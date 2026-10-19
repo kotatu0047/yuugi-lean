@@ -98,7 +98,7 @@ namespace CardGen
         public bool TargetOK(Rules r, bool p, int? target)
         {
             var o = Get(!p).Field;
-            if (target == null) return o.All(t => !Fights(r, t));
+            if (target == null) return r.Blocking || o.All(t => !Fights(r, t));
             var j = target.Value;
             return j >= 0 && j < o.Count && Fights(r, o[j]);
         }
@@ -133,6 +133,13 @@ namespace CardGen
             var j = target.Value;
             if (j < 0 || j >= Get(o).Field.Count) return this;
             var tl = Get(o).Field[j];
+            if (r.Blocking)
+            {
+                // MTG 式：互いの攻撃力をダメージとして与え、守備力以上のダメージを受けた方を破壊する
+                var b = AtkOf(r, neg, (o, j), tl);
+                var g1 = 0 < b && sl.Card.Defense <= b ? With(p, Get(p).DestroyAt(k)) : this;
+                return 0 < a && tl.Card.Defense <= a ? g1.With(o, g1.Get(o).DestroyAt(j)) : g1;
+            }
             if (tl.FaceUp)
             {
                 var t = AtkOf(r, neg, (o, j), tl);

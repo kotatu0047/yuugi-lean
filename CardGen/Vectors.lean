@@ -125,6 +125,7 @@ def checkCases : List Game :=
     { g with cards := [{ Sample.drawSpell with effects := [.activated [.draw 0, .bounce (Sample.sel ["儀式"] .opp)]] }] },
     { g with rules := { r with fighters := ["儀式"] } },
     { g with rules := { r with life := 0 } },
+    { g with rules := { r with placeLimits := [⟨[], 0⟩, ⟨["土地", "罠"], 1⟩] } },
     { g with cards := [{ Sample.fireball with effects := [.activated [.damage 0, .heal 0]] }] },
     { g with cards := [{ Sample.darkBlessing with effects := [.boost (Sample.sel ["魔法"] .self) 0] }] } ]
 
@@ -180,7 +181,7 @@ def Rand.choice (g : State) : Rand Choice := do
 def turnJson (t : TurnInfo) : Json :=
   json% {tp: $(t.tp), count: $(t.count), summons: $(t.summons), attacked: $(t.attacked.map slotJson),
          placed: $(t.placed), entered: $(t.entered.map slotJson), pool: $(t.pool), tapped: $(t.tapped.map slotJson),
-         oppTapped: $(t.oppTapped.map slotJson)}
+         oppTapped: $(t.oppTapped.map slotJson), pending: $(t.pending), blocked: $(t.blocked.map slotJson)}
 
 def tchoiceJson : TChoice → Json
   | .place h z c up => json% {kind: "place", hand: $(h), zone: $(z), cell: $(c), faceUp: $(up)}
@@ -188,12 +189,21 @@ def tchoiceJson : TChoice → Json
   | .attack k t neg => json% {kind: "attack", field: $(k), target: $(t),
       neg: $(neg.map fun (q, j) => json% [$(q), $(j)])}
   | .tap k => json% {kind: "tap", field: $(k)}
+  | .block t neg => json% {kind: "block", target: $(t), neg: $(neg.map fun (q, j) => json% [$(q), $(j)])}
   | .endTurn => json% {kind: "endTurn"}
 
 /-- ターンのある対戦の動きを1つ選ぶ（できない動きも混ぜる）。攻撃は、ターンプレイヤーの戦闘できるカードと、
 攻撃できる対象を選びやすくする -/
 def Rand.tchoice (m : Match) : Rand TChoice := do
   let tp := m.turn.tp
+  -- ブロックを待っているときは、たいていブロックを選ぶ（戦闘できるカードを選びやすくする）
+  if m.turn.pending.isSome && (← Rand.next 8) != 0 then
+    let o := (m.g (!tp)).field
+    let ts := (List.range o.length).filter fun j => (o[j]?.map playRules.fights).getD false
+    let t ← if ts.isEmpty || (← Rand.next 4) == 0 then
+        (if (← Rand.bool) then pure none else some <$> Rand.next (o.length + 1))
+      else some <$> Rand.pick ts
+    return .block t (← Rand.negs m.g)
   match ← Rand.next 12 with
   | 0 => return .endTurn
   | 10 | 11 => do
@@ -281,7 +291,7 @@ def vectors : Json := Id.run do
         summonsPerTurn := ← Rand.next 3, drawPerTurn := ← Rand.next 3,
         firstTurnDraw := ← Rand.bool, firstTurnAttack := ← Rand.bool,
         placeLimits := ← Rand.pick [[], [⟨["罠"], 1⟩], [⟨["魔法", "罠"], 2⟩, ⟨["モンスター"], 1⟩]],
-        attackTaps := ← Rand.bool, summoningSickness := ← Rand.bool }
+        attackTaps := ← Rand.bool, summoningSickness := ← Rand.bool, blocking := ← Rand.bool }
       let d1 ← Rand.list r.deckSize (Rand.pick vecCards)
       let d2 ← Rand.list r.deckSize (Rand.pick vecCards)
       let first ← Rand.bool

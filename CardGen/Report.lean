@@ -163,6 +163,11 @@ def turnClaims (r : Rules) : List ClaimOut :=
   (if r.attackTaps then
     [⟨"タップしているカードは、持ち主の次のターンが来るまで、攻撃にもマナにも使えない",
       ["ルール：攻撃するとタップする", "タップしたカードの記録は、いつもフィールドのカードの一部（同じカードの枚数も含めて）"],
+      "proved", "CardGen.TReachable.fits"⟩] else []) ++
+  (if r.blocking && !r.fighters.isEmpty then
+    [⟨"ブロックは、1ターンに1枚1回まで",
+      ["ルール：攻撃されたプレイヤーがブロックするカードを選ぶ（MTG 式の戦闘）",
+       "ブロックしたカードの記録は、いつも相手のフィールドのカードの一部（同じカードの枚数も含めて）"],
       "proved", "CardGen.TReachable.fits"⟩] else [])
 
 def report (input : String) : Report :=

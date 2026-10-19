@@ -46,7 +46,7 @@ namespace CardGen.App
             var root = GetComponent<UIDocument>().rootVisualElement;
             Build(root);
             ApplyJapaneseFont(root);
-            LoadSample();
+            if (Environment.GetCommandLineArgs().Contains("-cardgen-mtg")) LoadMtgSample(); else LoadSample();
             StartCoroutine(CommandLineActions());
         }
 
@@ -83,6 +83,7 @@ namespace CardGen.App
             toolbar.style.flexShrink = 0;
             toolbar.Add(MakeButton("新規", NewDoc));
             toolbar.Add(MakeButton("見本", LoadSample));
+            toolbar.Add(MakeButton("見本（MTG 風）", LoadMtgSample));
             pathField = new TextField { value = PlayerPrefs.GetString(PathKey, DefaultPath()) };
             pathField.style.width = 360;
             toolbar.Add(pathField);
@@ -229,6 +230,13 @@ namespace CardGen.App
             var asset = Resources.Load<UnityEngine.TextAsset>("sample");
             var sample = IrJson.ParseGame(asset.text);
             SetDoc(GraphDoc.FromGame(sample), $"見本（入力例のルールとカード{sample.Cards.Count}枚）を読み込みました");
+        }
+
+        void LoadMtgSample()
+        {
+            var asset = Resources.Load<UnityEngine.TextAsset>("mtg");
+            var sample = IrJson.ParseGame(asset.text);
+            SetDoc(GraphDoc.FromGame(sample), $"MTG 風の見本（土地・マナ・タップ・ブロック。カード{sample.Cards.Count}枚）を読み込みました");
         }
 
         void Open()
@@ -412,6 +420,7 @@ namespace CardGen.App
         }
 
         // ---- コマンドライン（動作確認用）----
+        //   -cardgen-mtg                      最初に MTG 風の見本を読み込む
         //   -cardgen-select <ノードの番号>   そのノードを選ぶ
         //   -cardgen-focus <ノードの番号>    そのノードが見えるようにキャンバスを動かす
         //   -cardgen-check                    Lean で検査する

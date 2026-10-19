@@ -16,5 +16,6 @@
     <!-- Lean が書き出したテストベクトルと見本 -->
     <Content Include="..\vectors.json" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="..\..\CardGen\sample.json" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\..\CardGen\mtg.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

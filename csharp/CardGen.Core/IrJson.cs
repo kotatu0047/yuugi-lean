@@ -148,6 +148,7 @@ namespace CardGen
                 }),
                 AttackTaps = Bool(o, "attackTaps"),
                 SummoningSickness = Bool(o, "summoningSickness"),
+                Blocking = Bool(o, "blocking"),
             };
         }
 
@@ -192,6 +193,7 @@ namespace CardGen
             if (r["placeLimits"] == null) r["placeLimits"] = new JArray();
             if (r["attackTaps"] == null) r["attackTaps"] = false;
             if (r["summoningSickness"] == null) r["summoningSickness"] = false;
+            if (r["blocking"] == null) r["blocking"] = false;
             if (o["cards"] is JArray cs)
                 foreach (var c in cs.OfType<JObject>())
                 {
@@ -270,6 +272,7 @@ namespace CardGen
             ["placeLimits"] = new JArray(r.PlaceLimits.Select(l => new JObject { ["types"] = new JArray(l.Types), ["count"] = l.Count })),
             ["attackTaps"] = r.AttackTaps,
             ["summoningSickness"] = r.SummoningSickness,
+            ["blocking"] = r.Blocking,
         };
 
         public static JObject ToJson(Game g) => new JObject

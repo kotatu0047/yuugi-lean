@@ -21,7 +21,7 @@ JSON との相互変換は Lean の自動導出による（`Option` 以外のフ
 版 3 で、ターンのルールを加えた。版 4 で、マスの位置（ゾーンの `cells`）と、範囲の指定の
 マスの関係（`near`：隣・同じ縦列）を加えた。版 5 で、マナとタップ（カードの `cost`・`mana`）、
 1ターンに置ける枚数の上限（`placeLimits`）、攻撃でタップすること（`attackTaps`）、
-召喚酔い（`summoningSickness`）を加えた。
+召喚酔い（`summoningSickness`）、MTG 式の戦闘（`blocking`）を加えた。
 
 マスの並びは、縦と横の2本の序列で表す。盤面全体（2人分）は `gridSize`×`gridSize`（49×49。
 前提の「最大 50×50」に収まり、中心のマスがあるように奇数にした）のマス目で、マスは（列, 行）で表し、
@@ -116,6 +116,9 @@ structure Rules where
   attackTaps : Bool := false
   /-- 置いたターンには、戦闘できるカードで攻撃したりマナを出したりできない（召喚酔い） -/
   summoningSickness : Bool := false
+  /-- MTG 式の戦闘：攻撃されたプレイヤーが、ブロックするカードを選ぶ（選ばなければ直接のダメージ）。
+  ブロックされたら、攻撃力（パワー）と守備力（タフネス）で互いにダメージを与え、守備力以上のダメージを受けた方を破壊する -/
+  blocking : Bool := false
 deriving Repr, DecidableEq, FromJson, ToJson
 
 /-- 効果の持ち主から見た陣営 -/

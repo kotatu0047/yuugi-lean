@@ -17,6 +17,8 @@ import CardGen.IR
   - 表側表示のカードどうしは攻撃力を比べ、低い方を破壊し、差をそのコントローラーへのダメージにする
     （同じなら両方を破壊する。ともに 0 なら何も起きない）
   - 裏側表示のカードは守備力で受け、攻撃力が高ければ破壊し、低ければ差を攻撃した側へのダメージにする
+  - MTG 式の戦闘（`Rules.blocking`）では、相手に戦闘できるカードがいても直接攻撃でき（ブロックされなかったとき）、
+    ブロックされたら互いの攻撃力をダメージとして与え、守備力以上のダメージを受けた方を破壊する
 
 カードの持ち主とコントロールするプレイヤーは同じで、カードは持ち主の側から出ない。
 -/
@@ -172,7 +174,12 @@ def State.battle (r : Rules) (g : State) (neg : List Pos) (p : PlayerId) (k : Na
     | none => g
     | some tl =>
       let a := g.atkOf r neg (p, k) sl
-      if tl.faceUp then
+      if r.blocking then
+        -- MTG 式：互いの攻撃力をダメージとして与え、守備力以上のダメージを受けた方を破壊する（プレイヤーへのダメージはない）
+        let b := g.atkOf r neg (!p, j) tl
+        let g1 := if 0 < b ∧ sl.card.defense ≤ b then g.set p ((g p).destroyAt k) else g
+        if 0 < a ∧ tl.card.defense ≤ a then g1.set (!p) ((g1 (!p)).destroyAt j) else g1
+      else if tl.faceUp then
         let t := g.atkOf r neg (!p, j) tl
         if t < a then g.set (!p) (((g (!p)).destroyAt j).damage (a - t))
         else if a < t then g.set p (((g p).destroyAt k).damage (t - a))
@@ -199,7 +206,7 @@ inductive Step (r : Rules) : State → State → Prop
   | attack (g : State) (p : PlayerId) (k : Nat) (sl : Slot) (target : Option Nat) (neg : List Pos) :
       (g p).field[k]? = some sl → sl.faceUp → r.fights sl →
       (match target with
-       | none => (g (!p)).field.all (!r.fights ·)
+       | none => r.blocking ∨ (g (!p)).field.all (!r.fights ·)
        | some j => ∃ tl, (g (!p)).field[j]? = some tl ∧ r.fights tl) →
       Step r g (g.battle r neg p k sl target)
 

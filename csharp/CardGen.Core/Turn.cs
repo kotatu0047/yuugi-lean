@@ -25,6 +25,10 @@ namespace CardGen
         public List<Slot> Tapped = new List<Slot>();
         /// <summary>タップしている、相手のカード</summary>
         public List<Slot> OppTapped = new List<Slot>();
+        /// <summary>ブロックを待っている攻撃（攻撃したカードの、ターンプレイヤーのフィールドの位置）。MTG 式の戦闘だけで使う</summary>
+        public int? Pending;
+        /// <summary>このターンにブロックした、相手のカード</summary>
+        public List<Slot> Blocked = new List<Slot>();
 
         /// <summary>Lean の Slot の等しさ（ゾーン・マス・カード・表裏が同じ）</summary>
         public static bool SameSlot(Slot a, Slot b) =>
@@ -54,6 +58,7 @@ namespace CardGen
         {
             Tp = Tp, Count = Count, Summons = Summons, Attacked = Attacked.ToList(), Placed = Placed.ToList(),
             Entered = Entered.ToList(), Pool = Pool, Tapped = Tapped.ToList(), OppTapped = OppTapped.ToList(),
+            Pending = Pending, Blocked = Blocked.ToList(),
         };
 
         /// <summary>TurnInfo.prune：記録を新しい盤面に合わせる</summary>
@@ -65,6 +70,7 @@ namespace CardGen
             t.Entered = Prune(Entered, mine);
             t.Tapped = Prune(Tapped, mine);
             t.OppTapped = Prune(OppTapped, g.Get(!Tp).Field);
+            t.Blocked = Prune(Blocked, g.Get(!Tp).Field);
             return t;
         }
 
@@ -90,12 +96,22 @@ namespace CardGen
         public bool TapOK(Rules r, List<Slot> field, Slot sl) =>
             sl.FaceUp && r.OnFieldZone(sl.Zone) && sl.Card.Mana > 0 && NotIn(Tapped, field, sl) && !Sick(r, field, sl);
 
+        /// <summary>TurnInfo.blockOK：相手のフィールド opp の target 番目のカードでブロックできるか</summary>
+        public bool BlockOK(Rules r, List<Slot> opp, int? target)
+        {
+            if (target == null) return true;
+            var j = target.Value;
+            if (j < 0 || j >= opp.Count) return false;
+            var tl = opp[j];
+            return NotIn(Blocked, opp, tl) && (!r.AttackTaps || NotIn(OppTapped, opp, tl));
+        }
+
         /// <summary>タップしているか（どちらのプレイヤーのカードでも）</summary>
         public bool IsTapped(bool owner, List<Slot> field, Slot sl) =>
             !NotIn(owner == Tp ? Tapped : OppTapped, field, sl);
     }
 
-    public enum TChoiceKind { Place, Resolve, Attack, Tap, EndTurn }
+    public enum TChoiceKind { Place, Resolve, Attack, Block, Tap, EndTurn }
 
     /// <summary>ターンのある対戦の動き（TChoice）</summary>
     public sealed class TChoice
@@ -114,6 +130,8 @@ namespace CardGen
             new TChoice { Kind = TChoiceKind.Resolve, Player = p, Field = field, Effect = effect, Apply = apply };
         public static TChoice Attack(int field, int? target, List<(bool, int)> neg) =>
             new TChoice { Kind = TChoiceKind.Attack, Field = field, Target = target, Neg = neg };
+        public static TChoice Block(int? target, List<(bool, int)> neg) =>
+            new TChoice { Kind = TChoiceKind.Block, Target = target, Neg = neg };
         public static TChoice Tap(int field) => new TChoice { Kind = TChoiceKind.Tap, Field = field };
         public static TChoice EndTurn() => new TChoice { Kind = TChoiceKind.EndTurn };
     }
@@ -148,8 +166,23 @@ namespace CardGen
         public Match Step(Rules r, TChoice ch)
         {
             var p = Turn.Tp;
+            // ブロックを待っている間は、ブロックしかできない
+            if (Turn.Pending != null)
+            {
+                if (ch.Kind != TChoiceKind.Block) return null;
+                var opp = G.Get(!p).Field;
+                if (!Turn.BlockOK(r, opp, ch.Target)) return null;
+                var g = G.Step(r, Choice.Attack(p, Turn.Pending.Value, ch.Target, ch.Neg));
+                if (g == null) return null;
+                var t = Turn.Copy();
+                t.Pending = null;
+                if (ch.Target is int j && j >= 0 && j < opp.Count) t.Blocked.Insert(0, opp[j]);
+                return new Match { G = g, Turn = t.Pruned(g) };
+            }
             switch (ch.Kind)
             {
+                case TChoiceKind.Block:
+                    return null;
                 case TChoiceKind.Place:
                 {
                     var hand = G.Get(p).Hand;
@@ -177,11 +210,18 @@ namespace CardGen
                     if (ch.Field < 0 || ch.Field >= field.Count) return null;
                     var sl = field[ch.Field];
                     if (!Turn.AttackOK(r, field, sl)) return null;
-                    var g = G.Step(r, Choice.Attack(p, ch.Field, ch.Target, ch.Neg));
-                    if (g == null) return null;
                     var t = Turn.Copy();
                     t.Attacked.Insert(0, sl);
                     if (r.AttackTaps) t.Tapped.Insert(0, sl);
+                    if (r.Blocking)
+                    {
+                        // 攻撃の宣言：相手がブロックを選ぶまで待つ
+                        if (!(sl.FaceUp && MatchState.Fights(r, sl) && ch.Target == null)) return null;
+                        t.Pending = ch.Field;
+                        return new Match { G = G, Turn = t.Pruned(G) };
+                    }
+                    var g = G.Step(r, Choice.Attack(p, ch.Field, ch.Target, ch.Neg));
+                    if (g == null) return null;
                     return new Match { G = g, Turn = t.Pruned(g) };
                 }
                 case TChoiceKind.Tap:

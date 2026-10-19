@@ -181,6 +181,7 @@ public class DifferentialTests
         "attack" => TChoice.Attack((int)c["field"],
             c["target"].Type == JTokenType.Null ? (int?)null : (int)c["target"], ParseNeg(c["neg"])),
         "tap" => TChoice.Tap((int)c["field"]),
+        "block" => TChoice.Block(c["target"].Type == JTokenType.Null ? (int?)null : (int)c["target"], ParseNeg(c["neg"])),
         _ => TChoice.EndTurn(),
     };
 
@@ -195,6 +196,8 @@ public class DifferentialTests
         ["pool"] = t.Pool,
         ["tapped"] = new JArray(t.Tapped.Select(SlotJson)),
         ["oppTapped"] = new JArray(t.OppTapped.Select(SlotJson)),
+        ["pending"] = t.Pending == null ? JValue.CreateNull() : new JValue(t.Pending.Value),
+        ["blocked"] = new JArray(t.Blocked.Select(SlotJson)),
     };
 
     static JObject MatchJson(Match m) => new JObject
@@ -235,6 +238,34 @@ public class DifferentialTests
     }
 
     [Fact]
+    public void Mtg_sample_round_trips_and_plays()
+    {
+        var src = JToken.Parse(File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "mtg.json")));
+        var g = IrJson.ParseGame(src);
+        Assert.Empty(Check.Game(g));
+        Assert.True(JToken.DeepEquals(src, IrJson.ToJson(g)));
+        Assert.True(JToken.DeepEquals(src, IrJson.ToJson(GraphDoc.FromGame(g).ToGame(out _))));
+        // Lean の CardGen/Mtg.lean と同じ流れ：山を置いてタップし、ゴブリンの先兵を置く。3ターン目に攻撃し、相手がゴブリンの先兵でブロックする
+        var c = g.Cards.ToDictionary(x => x.Name);
+        var deck = new[] { "山", "山", "ゴブリンの先兵", "灰色熊", "稲妻", "山", "森" }.Select(n => c[n])
+            .Concat(Enumerable.Range(0, 33).Select(i => c[i % 2 == 0 ? "山" : "灰色熊"])).ToList();
+        var r = g.Rules;
+        var m = Match.Start(r, deck, deck, true);
+        var turn1 = new[] { TChoice.Place(0, 0, 0, true), TChoice.Tap(0), TChoice.Place(1, 0, 0, true) };
+        foreach (var ch in turn1.Append(TChoice.EndTurn()).Concat(turn1).Append(TChoice.EndTurn()))
+            m = m.Step(r, ch) ?? throw new Exception("できない動き");
+        m = m.Step(r, TChoice.Attack(1, null, new List<(bool, int)>()));
+        Assert.Equal(1, m.Turn.Pending);
+        Assert.Null(m.Step(r, TChoice.EndTurn()));
+        var blocked = m.Step(r, TChoice.Block(1, new List<(bool, int)>()));
+        Assert.Single(blocked.G.P1.Field);
+        Assert.Single(blocked.G.P2.Field);
+        Assert.Equal(20, blocked.G.P2.Life);
+        var unblocked = m.Step(r, TChoice.Block(null, new List<(bool, int)>()));
+        Assert.Equal(19, unblocked.G.P2.Life);
+    }
+
+    [Fact]
     public void Sample_json_round_trips()
     {
         var src = JToken.Parse(File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "sample.json")));
@@ -248,7 +279,7 @@ public class DifferentialTests
     static JObject WithoutMana(JObject o)
     {
         o["version"] = 4;
-        foreach (var k in new[] { "placeLimits", "attackTaps", "summoningSickness" }) ((JObject)o["rules"]).Remove(k);
+        foreach (var k in new[] { "placeLimits", "attackTaps", "summoningSickness", "blocking" }) ((JObject)o["rules"]).Remove(k);
         foreach (var c in o["cards"]) { ((JObject)c).Remove("cost"); ((JObject)c).Remove("mana"); }
         return o;
     }

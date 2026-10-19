@@ -164,6 +164,9 @@ namespace CardGen.App
                     Hint("1ターンに置ける枚数の上限を、種類ごとに「種類=枚数」で書きます（例：「土地=1」。種類をまとめるなら「魔法+罠=2」）。");
                     Toggle("攻撃するとタップする", n.Rules.AttackTaps, v => n.Rules.AttackTaps = v);
                     Toggle("召喚酔い（置いたターンは攻撃・タップできない）", n.Rules.SummoningSickness, v => n.Rules.SummoningSickness = v);
+                    Toggle("MTG 式の戦闘（守る側がブロックを選ぶ）", n.Rules.Blocking, v => n.Rules.Blocking = v);
+                    Hint("MTG 式の戦闘：攻撃されたプレイヤーが、ブロックするカードを選びます（選ばなければ攻撃力のダメージ）。" +
+                         "ブロックされたら、攻撃力（パワー）と守備力（タフネス）で互いにダメージを与え、守備力以上のダメージを受けた方を破壊します。");
                     Hint("マナ：ターンプレイヤーは、マナを出すカードをタップしてマナを得て、カードのコストを支払って置きます。" +
                          "マナはターンの終わりに消え、タップしたカードは持ち主の次のターンの始めに起きます。");
                     break;

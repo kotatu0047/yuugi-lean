@@ -26,7 +26,7 @@ deriving Repr, DecidableEq
 
 /-- 攻撃の対象として選べるか（`none` は直接攻撃：相手に戦闘できるカードがないとき） -/
 def State.targetOK (r : Rules) (g : State) (p : PlayerId) : Option Nat → Bool
-  | none => (g (!p)).field.all (!r.fights ·)
+  | none => r.blocking || (g (!p)).field.all (!r.fights ·)
   | some j => ((g (!p)).field[j]?.map r.fights).getD false
 
 /-- `p` の `i` 番目のゾーンの、空いている最初のマス（なければ 0。「何枚でも」のゾーンなら 0） -/
@@ -117,7 +117,7 @@ theorem step?_sound {r : Rules} {g g' : State} {ch : Choice} (h : g.step? r ch =
         simp only [Bool.and_eq_true] at hg
         refine .attack g p k sl t neg hk hg.1.1 hg.1.2 ?_
         cases t with
-        | none => exact hg.2
+        | none => simpa [State.targetOK] using hg.2
         | some j =>
           have h2 := hg.2
           simp only [State.targetOK] at h2

@@ -26,6 +26,7 @@ namespace CardGen
         public List<PlaceLimit> PlaceLimits = new List<PlaceLimit>();
         public bool AttackTaps;
         public bool SummoningSickness;
+        public bool Blocking;
     }
 
     /// <summary>カードのノードの中身（効果はつないだノードから作る）</summary>
@@ -185,6 +186,7 @@ namespace CardGen
                 rules.PlaceLimits = r.Rules.PlaceLimits.Select(l => new PlaceLimit { Types = l.Types.ToList(), Count = l.Count }).ToList();
                 rules.AttackTaps = r.Rules.AttackTaps;
                 rules.SummoningSickness = r.Rules.SummoningSickness;
+                rules.Blocking = r.Rules.Blocking;
                 rules.Zones = Children(r).Select(z => z.Zone).ToList();
             }
             foreach (var z in Nodes.Where(n => n.Kind == NodeKind.Zone && Parents(n).Count == 0))
@@ -265,6 +267,7 @@ namespace CardGen
             r.Rules.PlaceLimits = g.Rules.PlaceLimits.Select(l => new PlaceLimit { Types = l.Types.ToList(), Count = l.Count }).ToList();
             r.Rules.AttackTaps = g.Rules.AttackTaps;
             r.Rules.SummoningSickness = g.Rules.SummoningSickness;
+            r.Rules.Blocking = g.Rules.Blocking;
             float zy = 40;
             foreach (var z in g.Rules.Zones)
             {

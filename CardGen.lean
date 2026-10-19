@@ -14,3 +14,4 @@ import CardGen.Vectors
 import CardGen.Custom
 import CardGen.VectorsCheck
 import CardGen.Sample
+import CardGen.Mtg

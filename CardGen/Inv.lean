@@ -154,21 +154,27 @@ theorem shrinks_battle (r : Rules) (g : State) (neg : List Pos) (p : PlayerId) (
     split
     · exact Shrinks.refl g
     · split
+      · split <;> (try split) <;>
+          first
+          | exact Shrinks.refl g
+          | exact Shrinks.set (pshrinks_destroyAt _ _)
+          | exact (Shrinks.set (pshrinks_destroyAt _ _)).trans (Shrinks.set (pshrinks_destroyAt _ _))
       · split
-        · exact Shrinks.set ((pshrinks_destroyAt _ _).trans (pshrinks_damage _ _))
         · split
           · exact Shrinks.set ((pshrinks_destroyAt _ _).trans (pshrinks_damage _ _))
           · split
-            · exact Shrinks.refl g
-            · have hne : (!p) ≠ p := by cases p <;> decide
-              refine (Shrinks.set (pshrinks_destroyAt k (g p))).trans (Shrinks.set ?_)
-              rw [State.set_other _ _ hne]
-              exact pshrinks_destroyAt _ _
-      · split
-        · exact Shrinks.set (pshrinks_destroyAt _ _)
+            · exact Shrinks.set ((pshrinks_destroyAt _ _).trans (pshrinks_damage _ _))
+            · split
+              · exact Shrinks.refl g
+              · have hne : (!p) ≠ p := by cases p <;> decide
+                refine (Shrinks.set (pshrinks_destroyAt k (g p))).trans (Shrinks.set ?_)
+                rw [State.set_other _ _ hne]
+                exact pshrinks_destroyAt _ _
         · split
-          · exact Shrinks.set (pshrinks_damage _ _)
-          · exact Shrinks.refl g
+          · exact Shrinks.set (pshrinks_destroyAt _ _)
+          · split
+            · exact Shrinks.set (pshrinks_damage _ _)
+            · exact Shrinks.refl g
 
 theorem shrinks_applyAction (r : Rules) (src : Src) (g : State) (a : Action) :
     Shrinks g (g.applyAction r src a) := by

@@ -91,6 +91,9 @@ namespace CardGen
         public bool AttackTaps;
         /// <summary>置いたターンには、戦闘できるカードで攻撃したりマナを出したりできない（召喚酔い）</summary>
         public bool SummoningSickness;
+        /// <summary>MTG 式の戦闘：攻撃されたプレイヤーがブロックするカードを選ぶ。ブロックされたら互いの攻撃力をダメージとして与え、
+        /// 守備力以上のダメージを受けた方を破壊する</summary>
+        public bool Blocking;
 
         /// <summary>i 番目のゾーンが「フィールド上」に数えるゾーンか（Rules.onFieldZone）</summary>
         public bool OnFieldZone(int i) =>

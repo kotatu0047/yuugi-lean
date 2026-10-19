@@ -112,21 +112,27 @@ theorem cardsSub_battle (r : Rules) (g : State) (neg : List Pos) (p : PlayerId) 
     split
     · exact CardsSub.refl g
     · split
+      · split <;> (try split) <;>
+          first
+          | exact CardsSub.refl g
+          | exact CardsSub.set (cards_destroyAt _ _)
+          | exact (CardsSub.set (cards_destroyAt _ _)).trans (CardsSub.set (cards_destroyAt _ _))
       · split
-        · exact CardsSub.set (dd _ _ _)
         · split
           · exact CardsSub.set (dd _ _ _)
           · split
-            · exact CardsSub.refl g
-            · have hne : (!p) ≠ p := by cases p <;> decide
-              refine (CardsSub.set (cards_destroyAt k (g p))).trans (CardsSub.set ?_)
-              rw [State.set_other _ _ hne]
-              exact cards_destroyAt _ _
-      · split
-        · exact CardsSub.set (cards_destroyAt _ _)
+            · exact CardsSub.set (dd _ _ _)
+            · split
+              · exact CardsSub.refl g
+              · have hne : (!p) ≠ p := by cases p <;> decide
+                refine (CardsSub.set (cards_destroyAt k (g p))).trans (CardsSub.set ?_)
+                rw [State.set_other _ _ hne]
+                exact cards_destroyAt _ _
         · split
-          · exact CardsSub.set (cards_damage _ _)
-          · exact CardsSub.refl g
+          · exact CardsSub.set (cards_destroyAt _ _)
+          · split
+            · exact CardsSub.set (cards_damage _ _)
+            · exact CardsSub.refl g
 
 theorem cardsSub_resolve (r : Rules) (p : PlayerId) (g : State) {k : Nat} {sl : Slot} (as : List Action)
     (apply : Bool) (hk : (g p).field[k]? = some sl) : CardsSub g (g.resolve r p k sl as apply) := by
@@ -268,20 +274,28 @@ theorem lifeLe_battle {L : Nat} (r : Rules) {g : State} (h : LifeLe L g) (neg : 
     split
     · exact h
     · split
+      · have dl : ∀ (j : Nat) (s : PState), (s.destroyAt j).life ≤ s.life := by
+          intro j s; rw [life_destroyAt]; exact Nat.le_refl _
+        split <;> (try split) <;>
+          first
+          | exact h
+          | exact lifeLe_set h (dl _ _)
+          | exact lifeLe_set (lifeLe_set h (dl _ _)) (dl _ _)
       · split
-        · exact lifeLe_set h (dd _ _ _)
         · split
           · exact lifeLe_set h (dd _ _ _)
           · split
-            · exact h
-            · have hne : (!p) ≠ p := by cases p <;> decide
-              refine lifeLe_set (lifeLe_set h (by rw [life_destroyAt]; exact Nat.le_refl _)) ?_
-              simp [life_destroyAt]
-      · split
-        · exact lifeLe_set h (by rw [life_destroyAt]; exact Nat.le_refl _)
+            · exact lifeLe_set h (dd _ _ _)
+            · split
+              · exact h
+              · have hne : (!p) ≠ p := by cases p <;> decide
+                refine lifeLe_set (lifeLe_set h (by rw [life_destroyAt]; exact Nat.le_refl _)) ?_
+                simp [life_destroyAt]
         · split
-          · exact lifeLe_set h (dm _ _)
-          · exact h
+          · exact lifeLe_set h (by rw [life_destroyAt]; exact Nat.le_refl _)
+          · split
+            · exact lifeLe_set h (dm _ _)
+            · exact h
 
 /-- **一覧に「回復」の動きを持つカードがなければ、到達できるどの状態でもライフは初期ライフ以下** -/
 theorem Reachable.life_le {r : Rules} {decks : PlayerId → List Card} {pool : List Card}

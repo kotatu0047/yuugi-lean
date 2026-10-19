@@ -77,6 +77,10 @@ structure TurnInfo where
   tapped : List Slot := []
   /-- タップしている、相手のカード（相手の次のターンの始めに起きる） -/
   oppTapped : List Slot := []
+  /-- ブロックを待っている攻撃（攻撃したカードの、ターンプレイヤーのフィールドの位置）。MTG 式の戦闘だけで使う -/
+  pending : Option Nat := none
+  /-- このターンにブロックした、相手のカード（相手のフィールドにあるものだけ） -/
+  blocked : List Slot := []
 deriving Repr, DecidableEq
 
 /-- ターンのある対戦の状態 -/
@@ -90,8 +94,10 @@ inductive TChoice
   | place (hand : Nat) (zone : Nat) (cell : Nat) (up : Bool)
   /-- `p` がフィールドの `k` 番目のカードの `eff` 番目の効果を発動して解決する（どちらのターンでもよい） -/
   | resolve (p : PlayerId) (k : Nat) (eff : Nat) (apply : Bool)
-  /-- ターンプレイヤーがフィールドの `k` 番目のカードで攻撃する -/
+  /-- ターンプレイヤーがフィールドの `k` 番目のカードで攻撃する（MTG 式の戦闘では攻撃の宣言だけで、`target` は `none`） -/
   | attack (k : Nat) (target : Option Nat) (neg : List Pos)
+  /-- MTG 式の戦闘で、攻撃されたプレイヤーが、フィールドの `target` 番目のカードでブロックする（`none` ならしない） -/
+  | block (target : Option Nat) (neg : List Pos)
   /-- ターンプレイヤーがフィールドの `k` 番目のカードをタップしてマナを出す -/
   | tap (k : Nat)
   /-- ターンを終え、相手のターンにする -/
@@ -116,7 +122,8 @@ def TurnInfo.prune (t : TurnInfo) (g : State) : TurnInfo :=
   { t with attacked := CardGen.prune t.attacked (g t.tp).field,
            entered := CardGen.prune t.entered (g t.tp).field,
            tapped := CardGen.prune t.tapped (g t.tp).field,
-           oppTapped := CardGen.prune t.oppTapped (g (!t.tp)).field }
+           oppTapped := CardGen.prune t.oppTapped (g (!t.tp)).field,
+           blocked := CardGen.prune t.blocked (g (!t.tp)).field }
 
 /-- 記録 `l` にない（同じカードのうち、記録にない1枚がフィールドにある） -/
 def notIn (l field : List Slot) (sl : Slot) : Bool := decide (l.count sl < field.count sl)
@@ -157,8 +164,33 @@ def TurnInfo.afterTap (t : TurnInfo) (sl : Slot) : TurnInfo :=
 /-- ターン終了のあと、相手のターンの情報（相手のタップしていたカードは起き、自分のは残る） -/
 def TurnInfo.next (t : TurnInfo) : TurnInfo := { tp := !t.tp, count := t.count + 1, oppTapped := t.tapped }
 
-/-- 選んだ動きをしたあとの状態（できない動きなら `none`） -/
-def Match.step? (r : Rules) (m : Match) : TChoice → Option Match
+/-- 相手のフィールド `opp` の `target` 番目のカードでブロックできるか（このターンにまだブロックしておらず、
+攻撃でタップするルールならタップしていない） -/
+def TurnInfo.blockOK (r : Rules) (t : TurnInfo) (opp : List Slot) : Option Nat → Bool
+  | none => true
+  | some j =>
+    match opp[j]? with
+    | some tl => notIn t.blocked opp tl && (!r.attackTaps || notIn t.oppTapped opp tl)
+    | none => false
+
+/-- ブロックのあとのターンの情報 -/
+def TurnInfo.afterBlock (t : TurnInfo) (opp : List Slot) (target : Option Nat) : TurnInfo :=
+  { t with pending := none, blocked := (target.bind (opp[·]?)).toList ++ t.blocked }
+
+/-- 選んだ動きをしたあとの状態（できない動きなら `none`）。ブロックを待っている間は、ブロックしかできない -/
+def Match.step? (r : Rules) (m : Match) (ch : TChoice) : Option Match :=
+  match m.turn.pending, ch with
+  | some k, .block t neg =>
+    if m.turn.blockOK r (m.g (!m.turn.tp)).field t then
+      (m.g.step? r (.attack m.turn.tp k t neg)).map fun g =>
+        ⟨g, (m.turn.afterBlock (m.g (!m.turn.tp)).field t).prune g⟩
+    else none
+  | some _, _ => none
+  | none, ch => step0? r m ch
+where
+  /-- ブロックを待っていないときの1歩 -/
+  step0? (r : Rules) (m : Match) : TChoice → Option Match
+  | .block _ _ => none
   | .place h i j up =>
     match (m.g m.turn.tp).hand[h]? with
     | none => none
@@ -173,7 +205,12 @@ def Match.step? (r : Rules) (m : Match) : TChoice → Option Match
     | none => none
     | some sl =>
       if m.turn.attackOK r (m.g m.turn.tp).field sl then
-        (m.g.step? r (.attack m.turn.tp k t neg)).map fun g => ⟨g, (m.turn.afterAttack r sl).prune g⟩
+        if r.blocking then
+          -- 攻撃の宣言：相手がブロックを選ぶまで待つ
+          if sl.faceUp && r.fights sl && t.isNone then
+            some ⟨m.g, { m.turn.afterAttack r sl with pending := some k }.prune m.g⟩
+          else none
+        else (m.g.step? r (.attack m.turn.tp k t neg)).map fun g => ⟨g, (m.turn.afterAttack r sl).prune g⟩
       else none
   | .tap k =>
     match (m.g m.turn.tp).field[k]? with
@@ -201,6 +238,10 @@ inductive Match.Moved (r : Rules) (m : Match) : TChoice → Match → Prop
       Match.Moved r m (.place h i j up) ⟨g, (m.turn.afterPlace r ⟨i, j, c, up⟩).prune g⟩
   | resolve {p k e apply g} : m.g.step? r (.resolve p k e apply) = some g →
       Match.Moved r m (.resolve p k e apply) ⟨g, m.turn.prune g⟩
+  | declare {k t neg sl} : (m.g m.turn.tp).field[k]? = some sl →
+      Match.Moved r m (.attack k t neg) ⟨m.g, { m.turn.afterAttack r sl with pending := some k }.prune m.g⟩
+  | block {k t neg g} : m.turn.pending = some k → m.g.step? r (.attack m.turn.tp k t neg) = some g →
+      Match.Moved r m (.block t neg) ⟨g, (m.turn.afterBlock (m.g (!m.turn.tp)).field t).prune g⟩
   | attack {k t neg sl g} : (m.g m.turn.tp).field[k]? = some sl →
       m.g.step? r (.attack m.turn.tp k t neg) = some g →
       Match.Moved r m (.attack k t neg) ⟨g, (m.turn.afterAttack r sl).prune g⟩
@@ -209,11 +250,12 @@ inductive Match.Moved (r : Rules) (m : Match) : TChoice → Match → Prop
   | endTurn : Match.Moved r m .endTurn
       ⟨m.g.drawUpTo r (!m.turn.tp) r.drawPerTurn, m.turn.next.prune (m.g.drawUpTo r (!m.turn.tp) r.drawPerTurn)⟩
 
-theorem Match.step?_moved {r : Rules} {m m' : Match} {ch : TChoice} (hs : m.step? r ch = some m') :
+theorem Match.step0?_moved {r : Rules} {m m' : Match} {ch : TChoice} (hs : Match.step?.step0? r m ch = some m') :
     Match.Moved r m ch m' := by
   cases ch with
+  | block t neg => simp [Match.step?.step0?] at hs
   | place h i j up =>
-    simp only [Match.step?] at hs
+    simp only [Match.step?.step0?] at hs
     split at hs
     · cases hs
     · rename_i c hc
@@ -223,20 +265,24 @@ theorem Match.step?_moved {r : Rules} {m m' : Match} {ch : TChoice} (hs : m.step
         exact .place hc hok hg
       · cases hs
   | resolve p k e apply =>
-    simp only [Match.step?] at hs
+    simp only [Match.step?.step0?] at hs
     obtain ⟨g, hg, rfl⟩ := Option.map_eq_some_iff.1 hs
     exact .resolve hg
   | attack k t neg =>
-    simp only [Match.step?] at hs
+    simp only [Match.step?.step0?] at hs
     split at hs
     · cases hs
     · rename_i sl hsl
       split at hs
-      · obtain ⟨g, hg, rfl⟩ := Option.map_eq_some_iff.1 hs
-        exact .attack hsl hg
+      · split at hs
+        · split at hs
+          · cases hs; exact .declare hsl
+          · cases hs
+        · obtain ⟨g, hg, rfl⟩ := Option.map_eq_some_iff.1 hs
+          exact .attack hsl hg
       · cases hs
   | tap k =>
-    simp only [Match.step?] at hs
+    simp only [Match.step?.step0?] at hs
     split at hs
     · cases hs
     · rename_i sl hsl
@@ -244,9 +290,21 @@ theorem Match.step?_moved {r : Rules} {m m' : Match} {ch : TChoice} (hs : m.step
       · cases hs; exact .tap hsl
       · cases hs
   | endTurn =>
-    simp only [Match.step?, Option.some.injEq] at hs
+    simp only [Match.step?.step0?, Option.some.injEq] at hs
     subst hs
     exact .endTurn
+
+theorem Match.step?_moved {r : Rules} {m m' : Match} {ch : TChoice} (hs : m.step? r ch = some m') :
+    Match.Moved r m ch m' := by
+  unfold Match.step? at hs
+  split at hs
+  · rename_i k t neg hk
+    split at hs
+    · obtain ⟨g, hg, rfl⟩ := Option.map_eq_some_iff.1 hs
+      exact .block hk hg
+    · cases hs
+  · cases hs
+  · exact Match.step0?_moved hs
 
 /-! ## ターンのない対戦への引き継ぎ -/
 
@@ -274,6 +332,8 @@ theorem TReachable.reachable {r : Rules} {decks : PlayerId → List Card} {first
     | place _ _ hg => exact ih.step (step?_sound hg)
     | resolve hg => exact ih.step (step?_sound hg)
     | attack _ hg => exact ih.step (step?_sound hg)
+    | declare _ => exact ih
+    | block _ hg => exact ih.step (step?_sound hg)
     | tap _ => exact ih
     | endTurn => exact Reachable.drawUpTo _ _ ih
 
@@ -310,6 +370,8 @@ theorem TReachable.summons_le {r : Rules} {decks : PlayerId → List Card} {firs
       · simpa using ih
     | resolve _ => simpa using ih
     | attack _ _ => simpa [TurnInfo.afterAttack] using ih
+    | declare _ => simpa [TurnInfo.afterAttack] using ih
+    | block _ _ => simpa [TurnInfo.afterBlock] using ih
     | tap _ => simpa [TurnInfo.afterTap] using ih
     | endTurn => simp [TurnInfo.prune, TurnInfo.next]
 
@@ -333,16 +395,18 @@ theorem TReachable.placed_le {r : Rules} {decks : PlayerId → List Card} {first
         split <;> simp <;> omega
     | resolve _ => simpa using ih
     | attack _ _ => simpa [TurnInfo.afterAttack] using ih
+    | declare _ => simpa [TurnInfo.afterAttack] using ih
+    | block _ _ => simpa [TurnInfo.afterBlock] using ih
     | tap _ => simpa [TurnInfo.afterTap] using ih
     | endTurn => simp [TurnInfo.prune, TurnInfo.next]
 
 /-- 記録はどれも、フィールドのカードの一部（同じカードの枚数も含めて） -/
 def TurnInfo.Fits (t : TurnInfo) (g : State) : Prop :=
   BagLe t.attacked (g t.tp).field ∧ BagLe t.entered (g t.tp).field ∧ BagLe t.tapped (g t.tp).field ∧
-    BagLe t.oppTapped (g (!t.tp)).field
+    BagLe t.oppTapped (g (!t.tp)).field ∧ BagLe t.blocked (g (!t.tp)).field
 
 theorem TurnInfo.prune_fits (t : TurnInfo) (g : State) : (t.prune g).Fits g :=
-  ⟨prune_bagLe _ _, prune_bagLe _ _, prune_bagLe _ _, prune_bagLe _ _⟩
+  ⟨prune_bagLe _ _, prune_bagLe _ _, prune_bagLe _ _, prune_bagLe _ _, prune_bagLe _ _⟩
 
 /-- **攻撃・置いた・タップの記録は、いつもフィールドのカードの一部**
 （同じカードの枚数も含めて。だから、フィールドのどのカードも1ターンに1回までしか攻撃できず、
@@ -350,7 +414,7 @@ theorem TurnInfo.prune_fits (t : TurnInfo) (g : State) : (t.prune g).Fits g :=
 theorem TReachable.fits {r : Rules} {decks : PlayerId → List Card} {first : PlayerId} {m : Match}
     (h : TReachable r decks first m) : m.turn.Fits m.g := by
   induction h with
-  | start => refine ⟨?_, ?_, ?_, ?_⟩ <;> intro a <;> simp [Match.start]
+  | start => refine ⟨?_, ?_, ?_, ?_, ?_⟩ <;> intro a <;> simp [Match.start]
   | step ch _ hs _ =>
     cases Match.step?_moved hs <;> exact TurnInfo.prune_fits _ _
 
