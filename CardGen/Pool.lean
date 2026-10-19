@@ -60,6 +60,26 @@ theorem cards_bounce (r : Rules) (sel : Selector) (q : PlayerId) (src : Src) (s 
   · exact .inr (.inr (.inl h))
   · exact .inr (.inr (.inr ⟨sl, hsl, rfl⟩))
 
+theorem cards_counter (r : Rules) (sel : Selector) (q : PlayerId) (src : Src) (s : PState) :
+    ∀ x ∈ (s.counter r sel q src).cards, x ∈ s.cards := by
+  intro x hx
+  simp only [PState.mem_cards, PState.counter, List.mem_append, List.mem_map, List.mem_filter] at hx ⊢
+  rcases hx with h | h | (h | ⟨sl, ⟨hsl, _⟩, rfl⟩) | ⟨sl, ⟨hsl, _⟩, rfl⟩
+  · exact .inl h
+  · exact .inr (.inl h)
+  · exact .inr (.inr (.inl h))
+  · exact .inr (.inr (.inr ⟨sl, hsl, rfl⟩))
+  · exact .inr (.inr (.inr ⟨sl, hsl, rfl⟩))
+
+theorem cards_pump (d : Nat → Int × Int) (s : PState) : ∀ x ∈ (s.pump d).cards, x ∈ s.cards := by
+  have : (s.pump d).field.map (·.card) = s.field.map (·.card) := by
+    have := congrArg (List.map Slot.card) (PState.map_base_pump d s)
+    simpa [List.map_map, Function.comp_def] using this
+  intro x hx
+  simp only [PState.cards, List.mem_append] at hx ⊢
+  rw [this] at hx
+  exact hx
+
 theorem cards_drawN (n : Nat) (s : PState) : ∀ x ∈ (s.drawN n).cards, x ∈ s.cards := by
   intro x hx
   simp only [PState.mem_cards, PState.drawN, List.mem_append] at hx ⊢
@@ -108,27 +128,40 @@ theorem cards_sweep (dead : Nat → Slot → Bool) (s : PState) : ∀ x ∈ (s.s
   · exact .inr (.inr (.inr ⟨y.1, hf y hy, rfl⟩))
   · exact .inr (.inr (.inr ⟨y.1, hf y hy, rfl⟩))
 
+/-- 各プレイヤーの状態を変える -/
+theorem CardsSub.map {g : State} {f : PlayerId → PState → PState} (h : ∀ q, ∀ x ∈ (f q (g q)).cards, x ∈ (g q).cards) :
+    CardsSub g (g.map f) := by
+  intro q x hx; rw [State.map_apply] at hx; exact h q x hx
+
 theorem cardsSub_sweep (r : Rules) (g : State) (neg : List Pos) : CardsSub g (g.sweep r neg) :=
-  fun q => cards_sweep _ (g q)
+  CardsSub.map fun q => cards_sweep _ (g q)
 
 theorem cardsSub_mend (g : State) : CardsSub g g.mend := by
-  intro q x hx
-  simp only [State.mend, PState.cards, List.map_map, List.mem_append] at hx ⊢
+  refine CardsSub.map fun q x hx => ?_
+  simp only [PState.cards, List.map_map, List.mem_append] at hx ⊢
   exact hx
 
 theorem cardsSub_strike (r : Rules) (sel : Selector) (n : Nat) (src : Src) (negS : List (PlayerId × Slot))
     (g : State) : CardsSub g (g.strike r sel n src negS) :=
-  CardsSub.trans (fun q => cards_mark _ (g q)) (cardsSub_sweep _ _ _)
+  have h : CardsSub g (g.strikeMarks r sel n src) := CardsSub.map fun q => cards_mark _ (g q)
+  h.trans (cardsSub_sweep _ _ _)
+
+theorem cardsSub_pumpAll (r : Rules) (sel : Selector) (a d : Int) (src : Src) (negS : List (PlayerId × Slot))
+    (g : State) : CardsSub g (g.pumpAll r sel a d src negS) :=
+  have h : CardsSub g (g.pumpMarks r sel a d src) := CardsSub.map fun q => cards_pump _ (g q)
+  h.trans (cardsSub_sweep _ _ _)
 
 theorem cardsSub_applyAction (r : Rules) (src : Src) (negS : List (PlayerId × Slot)) (g : State) (a : Action) :
     CardsSub g (g.applyAction r src negS a) := by
   cases a with
-  | destroy sel => exact fun q => cards_destroy r sel q src (g q)
-  | bounce sel => exact fun q => cards_bounce r sel q src (g q)
+  | destroy sel => exact CardsSub.map fun q => cards_destroy r sel q src (g q)
+  | bounce sel => exact CardsSub.map fun q => cards_bounce r sel q src (g q)
   | draw n => exact CardsSub.set (cards_drawN n (g src.p))
   | damage n => exact CardsSub.set (cards_damage n (g (!src.p)))
   | heal n => exact CardsSub.set fun _ h => h
   | strike sel n => exact cardsSub_strike r sel n src negS g
+  | pump sel a d => exact cardsSub_pumpAll r sel a d src negS g
+  | counter sel => exact CardsSub.map fun q => cards_counter r sel q src (g q)
 
 theorem cardsSub_foldl (r : Rules) (src : Src) (negS : List (PlayerId × Slot)) (as : List Action) (g : State) :
     CardsSub g (as.foldl (State.applyAction r src negS) g) := by
@@ -180,9 +213,10 @@ theorem cardsSub_battle (r : Rules) (g : State) (neg : List Pos) (p : PlayerId) 
   · exact cardsSub_duel r g neg p k sl t
 
 theorem cardsSub_resolve (r : Rules) (p : PlayerId) (g : State) {k : Nat} {sl : Slot} (as : List Action)
-    (apply : Bool) (neg : List Pos) (hk : (g p).field[k]? = some sl) : CardsSub g (g.resolve r p k sl as apply neg) := by
+    (apply : Bool) (neg : List Pos) (tgt : Option Pos) (hk : (g p).field[k]? = some sl) :
+    CardsSub g (g.resolve r p k sl as apply neg tgt) := by
   let g1 := g.set p { g p with field := (g p).field.eraseIdx k }
-  let g2 := if apply then as.foldl (State.applyAction r ⟨p, r.cellOf p sl⟩ (g.negSlots neg)) g1 else g1
+  let g2 := if apply then as.foldl (State.applyAction r (g.srcOf r p sl tgt) (g.negSlots neg)) g1 else g1
   have h01 : CardsSub g g1 := CardsSub.set fun x hx => by
     simp only [PState.mem_cards] at hx ⊢
     rcases hx with h | h | h | ⟨sl', hsl, rfl⟩
@@ -197,7 +231,7 @@ theorem cardsSub_resolve (r : Rules) (p : PlayerId) (g : State) {k : Nat} {sl : 
   have h02 := h01.trans h12
   have hsl : sl.card ∈ (g p).cards :=
     PState.mem_cards.2 (.inr (.inr (.inr ⟨sl, List.mem_of_getElem? hk, rfl⟩)))
-  have hr : g.resolve r p k sl as apply neg = g2.set p { g2 p with grave := (g2 p).grave ++ [sl.card] } := rfl
+  have hr : g.resolve r p k sl as apply neg tgt = g2.set p { g2 p with grave := (g2 p).grave ++ [sl.card] } := rfl
   rw [hr]
   intro q x hx
   by_cases hq : q = p
@@ -231,10 +265,11 @@ theorem cardsSub_step {r : Rules} {g g' : State} : Step r g g' → CardsSub g g'
       · exact .inr (.inr (.inl h))
       · exact .inr (.inr (.inr ⟨sl, h, rfl⟩))
       · exact .inr (.inl hc)
-  | .resolve _ p k sl as apply neg hk _ => cardsSub_resolve r p g as apply neg hk
+  | .resolve _ p k sl as apply neg tgt hk _ => cardsSub_resolve r p g as apply neg tgt hk
   | .attack _ p k sl t neg _ _ _ _ => cardsSub_battle r g neg p k sl t
   | .combat _ p atk blocks neg _ => cardsSub_combat r g neg p atk blocks
   | .mend _ => cardsSub_mend g
+  | .settle _ neg => cardsSub_sweep r g neg
 
 /-- 到達できる状態のどのカードも、カードの一覧 `pool` にある -/
 def FromPool (pool : List Card) (g : State) : Prop := ∀ q, ∀ x ∈ (g q).cards, x ∈ pool
@@ -272,29 +307,47 @@ def Card.heals (c : Card) : Bool := c.effects.any fun
 /-- ライフが `L` 以下 -/
 def LifeLe (L : Nat) (g : State) : Prop := ∀ q, (g q).life ≤ L
 
+/-- ライフを変えずに各プレイヤーの状態を変える -/
+theorem LifeLe.map {L : Nat} {g : State} {f : PlayerId → PState → PState} (h : LifeLe L g)
+    (hf : ∀ q s, (f q s).life = s.life) : LifeLe L (g.map f) := by
+  intro q; rw [State.map_apply, hf]; exact h q
+
 theorem lifeLe_sweep {L : Nat} (r : Rules) {g : State} (h : LifeLe L g) (neg : List Pos) :
-    LifeLe L (g.sweep r neg) := fun q => h q
+    LifeLe L (g.sweep r neg) := h.map fun _ _ => rfl
 
 theorem lifeLe_mark {L : Nat} {g g' : State} (h : LifeLe L g) (he : ∀ q, (g' q).life = (g q).life) : LifeLe L g' :=
   fun q => (he q) ▸ h q
 
+theorem lifeLe_strike {L : Nat} (r : Rules) {g : State} (h : LifeLe L g) (sel : Selector) (n : Nat) (src : Src)
+    (negS : List (PlayerId × Slot)) : LifeLe L (g.strike r sel n src negS) :=
+  have h1 : LifeLe L (g.strikeMarks r sel n src) := h.map fun _ _ => rfl
+  lifeLe_sweep r h1 _
+
+theorem lifeLe_pumpAll {L : Nat} (r : Rules) {g : State} (h : LifeLe L g) (sel : Selector) (a d : Int) (src : Src)
+    (negS : List (PlayerId × Slot)) : LifeLe L (g.pumpAll r sel a d src negS) :=
+  have h1 : LifeLe L (g.pumpMarks r sel a d src) := h.map fun _ _ => rfl
+  lifeLe_sweep r h1 _
+
 theorem lifeLe_applyAction {L : Nat} (r : Rules) (src : Src) (negS : List (PlayerId × Slot)) {g : State}
     (h : LifeLe L g) (a : Action) (ha : a.isHeal = false) : LifeLe L (g.applyAction r src negS a) := by
   obtain ⟨p, c⟩ := src
-  intro q
   cases a with
-  | destroy sel => exact h q
-  | bounce sel => exact h q
+  | destroy sel => exact h.map fun _ _ => rfl
+  | bounce sel => exact h.map fun _ _ => rfl
+  | strike sel n => exact lifeLe_strike r h sel n _ negS
+  | pump sel a d => exact lifeLe_pumpAll r h sel a d _ negS
+  | counter sel => exact h.map fun _ _ => rfl
+  | heal n => simp [Action.isHeal] at ha
   | draw n =>
+    intro q
     by_cases hq : q = p
     · subst hq; simpa [State.applyAction, PState.drawN] using h q
     · simp only [State.applyAction, State.set_other _ _ hq]; exact h q
   | damage n =>
+    intro q
     by_cases hq : q = !p
     · subst hq; simp only [State.applyAction, State.set_same, PState.damage]; have := h (!p); omega
     · simp only [State.applyAction, State.set_other _ _ hq]; exact h q
-  | heal n => simp [Action.isHeal] at ha
-  | strike sel n => exact h q
 
 theorem lifeLe_foldl {L : Nat} (r : Rules) (p : Src) (negS : List (PlayerId × Slot)) (as : List Action)
     (has : as.any Action.isHeal = false) :
@@ -372,8 +425,9 @@ theorem Reachable.life_le {r : Rules} {decks : PlayerId → List Card} {pool : L
     | place p c i z up _ _ _ _ _ => exact lifeLe_set ih (Nat.le_refl _)
     | attack p k sl t neg _ _ _ _ => exact lifeLe_battle r ih neg p k sl t
     | combat p atk blocks neg _ => exact lifeLe_combat r ih neg p atk blocks
-    | mend => exact fun q => ih q
-    | resolve p k sl as apply neg hk hact =>
+    | mend => exact ih.map fun _ _ => rfl
+    | settle neg => exact lifeLe_sweep r ih neg
+    | resolve p k sl as apply neg tgt hk hact =>
       have hcard : sl.card ∈ pool := (hg'.fromPool hpool).field (List.mem_of_getElem? hk)
       have hno : sl.card.heals = false := by
         have := List.all_eq_true.1 hheal _ hcard
@@ -385,7 +439,7 @@ theorem Reachable.life_le {r : Rules} {decks : PlayerId → List Card} {pool : L
       let g1 := g.set p { g p with field := (g p).field.eraseIdx k }
       have h1 : LifeLe r.life g1 := lifeLe_set ih (Nat.le_refl _)
       have h2 : LifeLe r.life
-          (if apply then as.foldl (State.applyAction r ⟨p, r.cellOf p sl⟩ (g.negSlots neg)) g1 else g1) := by
+          (if apply then as.foldl (State.applyAction r (g.srcOf r p sl tgt) (g.negSlots neg)) g1 else g1) := by
         split
         · exact lifeLe_foldl r _ _ as has h1
         · exact h1

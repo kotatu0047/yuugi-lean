@@ -14,17 +14,25 @@ namespace CardGen
         public bool FaceUp;
         /// <summary>受けているダメージ（ターンの終わりに 0 に戻る）</summary>
         public int Damage;
+        /// <summary>ターンの終わりまでの攻撃力・守備力の変化</summary>
+        public int AtkBonus, DefBonus;
         /// <summary>同じカードを見分ける鍵（ダメージが変わっても同じ。無効の判定が、適用された順番を覚えるのに使う）</summary>
         public readonly object Key;
-        public Slot(int zone, int cell, Card card, bool faceUp, int damage = 0) : this(zone, cell, card, faceUp, damage, new object()) { }
-        Slot(int zone, int cell, Card card, bool faceUp, int damage, object key)
-        { Zone = zone; Cell = cell; Card = card; FaceUp = faceUp; Damage = damage; Key = key; }
+        public Slot(int zone, int cell, Card card, bool faceUp, int damage = 0, int atkBonus = 0, int defBonus = 0)
+            : this(zone, cell, card, faceUp, damage, atkBonus, defBonus, new object()) { }
+        Slot(int zone, int cell, Card card, bool faceUp, int damage, int atkBonus, int defBonus, object key)
+        { Zone = zone; Cell = cell; Card = card; FaceUp = faceUp; Damage = damage; AtkBonus = atkBonus; DefBonus = defBonus; Key = key; }
+
+        /// <summary>ダメージとターンの終わりまでの変化だけ変えたもの（同じカード）</summary>
+        public Slot With(int damage, int atkBonus, int defBonus) =>
+            damage == Damage && atkBonus == AtkBonus && defBonus == DefBonus ? this
+                : new Slot(Zone, Cell, Card, FaceUp, damage, atkBonus, defBonus, Key);
 
         /// <summary>ダメージだけ変えたもの（同じカード）</summary>
-        public Slot WithDamage(int damage) => damage == Damage ? this : new Slot(Zone, Cell, Card, FaceUp, damage, Key);
+        public Slot WithDamage(int damage) => With(damage, AtkBonus, DefBonus);
 
-        /// <summary>Slot.base：ダメージを除いたもの</summary>
-        public Slot Base() => WithDamage(0);
+        /// <summary>Slot.base：ダメージとターンの終わりまでの変化を除いたもの</summary>
+        public Slot Base() => With(0, 0, 0);
 
         /// <summary>ダメージを除いて同じか（ゾーン・マス・カード・表裏）</summary>
         public bool SameBase(Slot b) => Zone == b.Zone && Cell == b.Cell && Card.Name == b.Card.Name && FaceUp == b.FaceUp;
@@ -35,7 +43,8 @@ namespace CardGen
             var c = r.CellOf(owner, Zone, Cell);
             var adj = src.Cell.HasValue && c.HasValue && src.Cell.Value.Adjacent(c.Value);
             var col = src.Cell.HasValue && c.HasValue && src.Cell.Value.Col == c.Value.Col;
-            return new View(Card.Type, Card.Tags, owner == src.Player, FaceUp, false, adj, col);
+            var tgt = src.Target is (bool, Slot) t && t.Item1 == owner && t.Item2.SameBase(this);
+            return new View(Card.Type, Card.Tags, owner == src.Player, FaceUp, false, adj, col, tgt);
         }
     }
 
@@ -44,7 +53,9 @@ namespace CardGen
     {
         public readonly bool Player;
         public readonly Cell? Cell;
-        public Src(bool player, Cell? cell) { Player = player; Cell = cell; }
+        /// <summary>解決するときに選んだ対象（プレイヤーとカード）</summary>
+        public readonly (bool, Slot)? Target;
+        public Src(bool player, Cell? cell, (bool, Slot)? target = null) { Player = player; Cell = cell; Target = target; }
     }
 
     /// <summary>1人分の状態</summary>
@@ -115,6 +126,24 @@ namespace CardGen
         {
             var n = s.With();
             n.Field = s.Field.Select((sl, i) => sl.WithDamage(sl.Damage + d(i))).ToList();
+            return n;
+        }
+
+        /// <summary>PState.counter：範囲に合う「フィールド上」でないゾーンのカードを、すべて墓地へ送る（打ち消す）</summary>
+        public static PState Counter(this PState s, Rules r, Selector sel, bool owner, Src src)
+        {
+            bool Hit(Slot sl) => !r.OnFieldZone(sl.Zone) && sel.Matches(sl.ViewFor(r, owner, src));
+            var n = s.With();
+            n.Field = s.Field.Where(sl => !Hit(sl)).ToList();
+            n.Grave.AddRange(s.Field.Where(Hit).Select(sl => sl.Card));
+            return n;
+        }
+
+        /// <summary>PState.pump：フィールドの i 番目のカードの攻撃力・守備力を、ターンの終わりまで d(i) だけ変える</summary>
+        public static PState Pump(this PState s, System.Func<int, (int, int)> d)
+        {
+            var n = s.With();
+            n.Field = s.Field.Select((sl, i) => sl.With(sl.Damage, sl.AtkBonus + d(i).Item1, sl.DefBonus + d(i).Item2)).ToList();
             return n;
         }
 

@@ -4,14 +4,15 @@
 //   はどこにもつながない
 //   ルール ──▶ ゾーン（上から順に Rules.zones の順番）
 //   カード ──▶ 効果（「発動」「無効（永続）」「攻撃力の変化（永続）」「守備力の変化（永続）」）
-//   発動 ──▶ 動き（「破壊」「手札に戻す」「ドロー」「ダメージ」「回復」「カードへのダメージ」。上から順に行う）
-//   破壊・手札に戻す・カードへのダメージ・無効・攻撃力の変化・守備力の変化 ──▶ 範囲（ちょうど1つ）
+//   発動 ──▶ 動き（「破壊」「手札に戻す」「ドロー」「ダメージ」「回復」「カードへのダメージ」「ターンの終わりまでの変化」
+//            「打ち消す」。上から順に行う）
+//   破壊・手札に戻す・カードへのダメージ・ターンの終わりまでの変化・打ち消す・無効・攻撃力の変化・守備力の変化 ──▶ 範囲（ちょうど1つ）
 using System.Collections.Generic;
 using System.Linq;
 
 namespace CardGen
 {
-    public enum NodeKind { Rules, Zone, Card, Activate, Negate, Destroy, Bounce, Draw, Selector, Damage, Heal, Boost, Axioms, Sets, Toughen, Strike }
+    public enum NodeKind { Rules, Zone, Card, Activate, Negate, Destroy, Bounce, Draw, Selector, Damage, Heal, Boost, Axioms, Sets, Toughen, Strike, Pump, Counter }
 
     /// <summary>公理：すべてのゲームに共通の前提（中間表現には書かず、Lean のモデルが前提にする）</summary>
     public static class Axioms
@@ -68,6 +69,8 @@ namespace CardGen
         public string ManaColor = "";
         public List<string> ManaChoice = new List<string>();
         public bool Trample;
+        public bool Flying;
+        public bool Reach;
     }
 
     public sealed class Node
@@ -84,6 +87,8 @@ namespace CardGen
         public int DrawCount = 1;
         /// <summary>ダメージ・回復の量、攻撃力・守備力の変化の量（Damage・Heal・Strike・Boost・Toughen のノード）</summary>
         public int Amount = 500;
+        /// <summary>ターンの終わりまでの守備力の変化の量（Pump のノード。攻撃力は Amount）</summary>
+        public int Amount2 = 500;
 
         public static Node Make(int id, NodeKind kind, float x, float y)
         {
@@ -114,6 +119,8 @@ namespace CardGen
             NodeKind.Boost => "攻撃力の変化（永続）",
             NodeKind.Toughen => "守備力の変化（永続）",
             NodeKind.Strike => "カードへのダメージ",
+            NodeKind.Pump => "ターンの終わりまでの変化",
+            NodeKind.Counter => "打ち消す",
             NodeKind.Axioms => "公理",
             NodeKind.Sets => "集合",
             _ => "範囲",
@@ -122,7 +129,7 @@ namespace CardGen
         /// <summary>動き（発動の下につなぐノード）か</summary>
         public static bool IsAction(NodeKind k) =>
             k == NodeKind.Destroy || k == NodeKind.Bounce || k == NodeKind.Draw || k == NodeKind.Damage || k == NodeKind.Heal ||
-            k == NodeKind.Strike;
+            k == NodeKind.Strike || k == NodeKind.Pump || k == NodeKind.Counter;
 
         /// <summary>カードの下につなぐ効果のノードか</summary>
         public static bool IsEffect(NodeKind k) =>
@@ -131,7 +138,7 @@ namespace CardGen
         /// <summary>範囲を1つつなぐノードか</summary>
         public static bool TakesSelector(NodeKind k) =>
             k == NodeKind.Destroy || k == NodeKind.Bounce || k == NodeKind.Negate || k == NodeKind.Boost ||
-            k == NodeKind.Toughen || k == NodeKind.Strike;
+            k == NodeKind.Toughen || k == NodeKind.Strike || k == NodeKind.Pump || k == NodeKind.Counter;
 
         /// <summary>右側（つなぎ元）の丸を持つか</summary>
         public static bool HasOutput(NodeKind k) =>
@@ -295,7 +302,8 @@ namespace CardGen
                 var card = new Card { Name = c.Card.Name, Type = c.Card.Type, Tags = c.Card.Tags.ToList(),
                                       Attack = c.Card.Attack, Defense = c.Card.Defense, Cost = c.Card.Cost, Mana = c.Card.Mana,
                                       ColorCost = c.Card.ColorCost.ToList(), ManaColor = c.Card.ManaColor,
-                                      ManaChoice = c.Card.ManaChoice.ToList(), Trample = c.Card.Trample };
+                                      ManaChoice = c.Card.ManaChoice.ToList(), Trample = c.Card.Trample,
+                                      Flying = c.Card.Flying, Reach = c.Card.Reach };
                 Selector SelectorOf(Node n, string what)
                 {
                     var s = Children(n).FirstOrDefault();
@@ -332,6 +340,18 @@ namespace CardGen
                         {
                             var st = SelectorOf(a, "カードへのダメージ");
                             if (st != null) actions.Add(new Strike(st, a.Amount));
+                            continue;
+                        }
+                        if (a.Kind == NodeKind.Pump)
+                        {
+                            var st = SelectorOf(a, "ターンの終わりまでの変化");
+                            if (st != null) actions.Add(new Pump(st, a.Amount, a.Amount2));
+                            continue;
+                        }
+                        if (a.Kind == NodeKind.Counter)
+                        {
+                            var st = SelectorOf(a, "打ち消す動き");
+                            if (st != null) actions.Add(new Counter(st));
                             continue;
                         }
                         var s = SelectorOf(a, a.Kind == NodeKind.Destroy ? "破壊" : "手札に戻す動き");
@@ -419,7 +439,8 @@ namespace CardGen
                 var cn = Add(NodeKind.Card, colCard, y);
                 cn.Card = new CardData { Name = c.Name, Type = c.Type, Tags = c.Tags.ToList(), Attack = c.Attack, Defense = c.Defense,
                                      Cost = c.Cost, Mana = c.Mana, ColorCost = c.ColorCost.ToList(), ManaColor = c.ManaColor,
-                                     ManaChoice = c.ManaChoice.ToList(), Trample = c.Trample };
+                                     ManaChoice = c.ManaChoice.ToList(), Trample = c.Trample,
+                                     Flying = c.Flying, Reach = c.Reach };
                 float ey = y;
                 foreach (var e in c.Effects)
                 {
@@ -468,9 +489,20 @@ namespace CardGen
                             case Destroy _:
                             case Bounce _:
                             case Strike _:
-                                var target = a is Destroy de ? de.Target : a is Bounce bou ? bou.Target : ((Strike)a).Target;
-                                var xn = Add(a is Destroy ? NodeKind.Destroy : a is Bounce ? NodeKind.Bounce : NodeKind.Strike, colAction, ay);
+                            case Pump _:
+                            case Counter _:
+                                var target = a switch
+                                {
+                                    Destroy de => de.Target, Bounce bou => bou.Target, Strike sk0 => sk0.Target,
+                                    Pump pu0 => pu0.Target, _ => ((Counter)a).Target,
+                                };
+                                var xn = Add(a switch
+                                {
+                                    Destroy _ => NodeKind.Destroy, Bounce _ => NodeKind.Bounce, Strike _ => NodeKind.Strike,
+                                    Pump _ => NodeKind.Pump, _ => NodeKind.Counter,
+                                }, colAction, ay);
                                 if (a is Strike sk) xn.Amount = sk.Amount;
+                                if (a is Pump pu) { xn.Amount = pu.Attack; xn.Amount2 = pu.Defense; }
                                 doc.Edges.Add(new Edge(an.Id, xn.Id));
                                 var sn = Add(NodeKind.Selector, colSelector, ay);
                                 sn.Selector = target;

@@ -93,7 +93,7 @@ def jobStdin (rest : List String) : IO UInt32 := do
 def main (args : List String) : IO UInt32 := do
   match args with
   | "--vectors" :: out :: _ =>
-    IO.FS.writeFile out (vectors.pretty ++ "\n")
+    IO.FS.writeFile out ((vectors ()).pretty ++ "\n")
     return 0
   | "--job" :: gamePath :: claimPath :: rest =>
     let g ← IO.ofExcept (Game.parse (← IO.FS.readFile gamePath))

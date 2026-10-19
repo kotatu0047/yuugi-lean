@@ -464,6 +464,8 @@ namespace CardGen.App
                     Int("攻撃力", n.Card.Attack, v => n.Card.Attack = v);
                     Int("守備力", n.Card.Defense, v => n.Card.Defense = v);
                     Toggle("トランプル（MTG 式の戦闘で、余ったダメージを相手に）", n.Card.Trample, v => n.Card.Trample = v);
+                    Toggle("飛行（飛行か到達を持つカードでしかブロックできない）", n.Card.Flying, v => n.Card.Flying = v);
+                    Toggle("到達（飛行を持つカードもブロックできる）", n.Card.Reach, v => n.Card.Reach = v);
                     Int("コスト（どの色でも払える分）", n.Card.Cost, v => n.Card.Cost = Math.Max(0, v));
                     if (sets.ManaColors.Count > 0)
                     {
@@ -523,6 +525,16 @@ namespace CardGen.App
                     Hint("つないだ範囲の、戦闘できるカードすべてにダメージを与えます。ダメージはターンの終わりまで残り、守備力以上のダメージを受けたカードは破壊されます。範囲のノードを1つつなぎます。");
                     Int("ダメージ", n.Amount, v => n.Amount = Math.Max(1, v));
                     break;
+                case NodeKind.Pump:
+                    Hint("つないだ範囲の、戦闘できるカードすべての攻撃力・守備力を、ターンの終わりまで変えます（例：巨大化）。" +
+                         "守備力が受けているダメージ以下になったカードは破壊されます。範囲で「対象を1つ選ぶ」にすると、選んだ1枚だけになります。");
+                    SignedInt("攻撃力の変化", n.Amount, v => n.Amount = v);
+                    SignedInt("守備力の変化", n.Amount2, v => n.Amount2 = v);
+                    break;
+                case NodeKind.Counter:
+                    Hint("つないだ範囲の、「フィールド上」でないゾーンのカード（スタックにある呪文など）を、解決させずに墓地へ送ります（打ち消す）。" +
+                         "範囲の種類は、インスタントやソーサリーなど、「フィールド上」でないゾーンに置く種類にします。");
+                    break;
                 case NodeKind.Damage:
                     Hint("相手のライフを減らします（0 より下がらない）。");
                     Int("ダメージ", n.Amount, v => n.Amount = Math.Max(1, v));
@@ -540,6 +552,9 @@ namespace CardGen.App
                     Toggle("このカード自身を除く", n.Selector.ExcludeSelf, v => n.Selector.ExcludeSelf = v);
                     Choice("マスの関係", new[] { ("条件なし", Near.Any), ("隣のマス", Near.Adjacent), ("同じ縦列", Near.SameColumn) },
                         n.Selector.Near, v => n.Selector.Near = v);
+                    Toggle("対象を1つ選ぶ（発動の動きの範囲だけ）", n.Selector.Target, v => n.Selector.Target = v);
+                    Hint("対象を1つ選ぶ範囲：解決するときに、範囲に合うカードを1枚選び、そのカードだけに行います（ショック・巨大化・対抗呪文など）。" +
+                         "選ばなければ何も起きません。永続効果（無効・攻撃力の変化・守備力の変化）の範囲には使えません。");
                     Hint("マスの関係は、効果を持つカードのマスから見ます（発動した魔法・罠は、置かれていたマス）。「隣」は上下左右、" +
                          "「同じ縦列」は相手の側も含みます。マス目の上にないカードは入りません。無効の範囲にはまだ使えません。");
                     break;

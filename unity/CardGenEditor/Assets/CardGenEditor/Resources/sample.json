@@ -1,4 +1,4 @@
-{"version": 8,
+{"version": 9,
  "rules":
  {"zones":
   [{"role": "plain",
@@ -62,16 +62,19 @@
  [{"type": "魔法",
    "trample": false,
    "tags": [],
+   "reach": false,
    "name": "サンダー・ボルト",
    "manaColor": "",
    "manaChoice": [],
    "mana": 0,
+   "flying": false,
    "effects":
    [{"activated":
      {"actions":
       [{"destroy":
         {"target":
          {"types": ["モンスター"],
+          "target": false,
           "tags": [],
           "side": "opp",
           "near": "any",
@@ -84,16 +87,19 @@
   {"type": "魔法",
    "trample": false,
    "tags": [],
+   "reach": false,
    "name": "ハーピィの羽根帚",
    "manaColor": "",
    "manaChoice": [],
    "mana": 0,
+   "flying": false,
    "effects":
    [{"activated":
      {"actions":
       [{"destroy":
         {"target":
          {"types": ["魔法", "罠"],
+          "target": false,
           "tags": [],
           "side": "opp",
           "near": "any",
@@ -106,14 +112,17 @@
   {"type": "罠",
    "trample": false,
    "tags": [],
+   "reach": false,
    "name": "スキルドレイン",
    "manaColor": "",
    "manaChoice": [],
    "mana": 0,
+   "flying": false,
    "effects":
    [{"negate":
      {"target":
       {"types": ["モンスター"],
+       "target": false,
        "tags": [],
        "side": "both",
        "near": "any",
@@ -126,14 +135,17 @@
   {"type": "罠",
    "trample": false,
    "tags": [],
+   "reach": false,
    "name": "王宮のお触れ",
    "manaColor": "",
    "manaChoice": [],
    "mana": 0,
+   "flying": false,
    "effects":
    [{"negate":
      {"target":
       {"types": ["罠"],
+       "target": false,
        "tags": [],
        "side": "both",
        "near": "any",
@@ -146,14 +158,17 @@
   {"type": "モンスター",
    "trample": false,
    "tags": ["闇属性", "機械族"],
+   "reach": false,
    "name": "人造人間－サイコ・ショッカー",
    "manaColor": "",
    "manaChoice": [],
    "mana": 0,
+   "flying": false,
    "effects":
    [{"negate":
      {"target":
       {"types": ["罠"],
+       "target": false,
        "tags": [],
        "side": "both",
        "near": "any",
@@ -166,14 +181,17 @@
   {"type": "モンスター",
    "trample": false,
    "tags": ["闇属性", "戦士族"],
+   "reach": false,
    "name": "D－HERO Bloo－D",
    "manaColor": "",
    "manaChoice": [],
    "mana": 0,
+   "flying": false,
    "effects":
    [{"negate":
      {"target":
       {"types": ["モンスター"],
+       "target": false,
        "tags": [],
        "side": "opp",
        "near": "any",
@@ -186,16 +204,19 @@
   {"type": "魔法",
    "trample": false,
    "tags": [],
+   "reach": false,
    "name": "一斉送還",
    "manaColor": "",
    "manaChoice": [],
    "mana": 0,
+   "flying": false,
    "effects":
    [{"activated":
      {"actions":
       [{"bounce":
         {"target":
          {"types": ["モンスター"],
+          "target": false,
           "tags": [],
           "side": "opp",
           "near": "any",
@@ -208,10 +229,12 @@
   {"type": "魔法",
    "trample": false,
    "tags": [],
+   "reach": false,
    "name": "二枚引き",
    "manaColor": "",
    "manaChoice": [],
    "mana": 0,
+   "flying": false,
    "effects": [{"activated": {"actions": [{"draw": {"count": 2}}]}}],
    "defense": 0,
    "cost": 0,
@@ -220,10 +243,12 @@
   {"type": "モンスター",
    "trample": false,
    "tags": ["闇属性", "魔法使い族"],
+   "reach": false,
    "name": "ブラック・マジシャン",
    "manaColor": "",
    "manaChoice": [],
    "mana": 0,
+   "flying": false,
    "effects": [],
    "defense": 2100,
    "cost": 0,
@@ -232,14 +257,17 @@
   {"type": "モンスター",
    "trample": false,
    "tags": ["闇属性", "戦士族"],
+   "reach": false,
    "name": "闇の指揮官",
    "manaColor": "",
    "manaChoice": [],
    "mana": 0,
+   "flying": false,
    "effects":
    [{"boost":
      {"target":
       {"types": ["モンスター"],
+       "target": false,
        "tags": ["闇属性"],
        "side": "self",
        "near": "any",
@@ -253,14 +281,17 @@
   {"type": "魔法",
    "trample": false,
    "tags": [],
+   "reach": false,
    "name": "闇の加護",
    "manaColor": "",
    "manaChoice": [],
    "mana": 0,
+   "flying": false,
    "effects":
    [{"boost":
      {"target":
       {"types": ["モンスター"],
+       "target": false,
        "tags": ["闇属性"],
        "side": "self",
        "near": "any",
@@ -274,10 +305,12 @@
   {"type": "魔法",
    "trample": false,
    "tags": [],
+   "reach": false,
    "name": "ファイヤー・ボール",
    "manaColor": "",
    "manaChoice": [],
    "mana": 0,
+   "flying": false,
    "effects": [{"activated": {"actions": [{"damage": {"amount": 500}}]}}],
    "defense": 0,
    "cost": 0,
@@ -286,10 +319,12 @@
   {"type": "魔法",
    "trample": false,
    "tags": [],
+   "reach": false,
    "name": "レッド・ポーション",
    "manaColor": "",
    "manaChoice": [],
    "mana": 0,
+   "flying": false,
    "effects": [{"activated": {"actions": [{"heal": {"amount": 500}}]}}],
    "defense": 0,
    "cost": 0,
@@ -298,16 +333,19 @@
   {"type": "魔法",
    "trample": false,
    "tags": [],
+   "reach": false,
    "name": "縦一閃",
    "manaColor": "",
    "manaChoice": [],
    "mana": 0,
+   "flying": false,
    "effects":
    [{"activated":
      {"actions":
       [{"destroy":
         {"target":
          {"types": ["モンスター", "魔法", "罠"],
+          "target": false,
           "tags": [],
           "side": "opp",
           "near": "sameColumn",
@@ -320,14 +358,17 @@
   {"type": "モンスター",
    "trample": false,
    "tags": ["戦士族"],
+   "reach": false,
    "name": "援護の兵士",
    "manaColor": "",
    "manaChoice": [],
    "mana": 0,
+   "flying": false,
    "effects":
    [{"boost":
      {"target":
       {"types": ["モンスター"],
+       "target": false,
        "tags": [],
        "side": "self",
        "near": "adjacent",

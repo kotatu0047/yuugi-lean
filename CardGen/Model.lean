@@ -43,12 +43,18 @@ structure Slot where
   faceUp : Bool
   /-- 受けているダメージ（MTG 式の戦闘とカードへのダメージで増え、ターンの終わりに 0 に戻る） -/
   damage : Nat := 0
+  /-- ターンの終わりまでの攻撃力の変化 -/
+  atkBonus : Int := 0
+  /-- ターンの終わりまでの守備力の変化 -/
+  defBonus : Int := 0
 deriving Repr, DecidableEq
 
-/-- ダメージを除いた、カードの置き場所・カード・向き -/
-def Slot.base (sl : Slot) : Slot := { sl with damage := 0 }
+/-- ダメージとターンの終わりまでの変化を除いた、カードの置き場所・カード・向き -/
+def Slot.base (sl : Slot) : Slot := { sl with damage := 0, atkBonus := 0, defBonus := 0 }
 
 @[simp] theorem Slot.base_damage (sl : Slot) (n : Nat) : Slot.base { sl with damage := n } = sl.base := rfl
+@[simp] theorem Slot.base_bonus (sl : Slot) (a d : Int) :
+    Slot.base { sl with atkBonus := a, defBonus := d } = sl.base := rfl
 @[simp] theorem Slot.base_base (sl : Slot) : sl.base.base = sl.base := rfl
 @[simp] theorem Slot.base_zone (sl : Slot) : sl.base.zone = sl.zone := rfl
 @[simp] theorem Slot.base_cell (sl : Slot) : sl.base.cell = sl.cell := rfl
@@ -70,12 +76,27 @@ abbrev PlayerId := Bool
 /-- 対戦の状態 -/
 abbrev State := PlayerId → PState
 
-def State.set (g : State) (p : PlayerId) (s : PState) : State :=
-  fun q => if q = p then s else g q
+/-- 2人分の状態から盤面を作る（`true` のプレイヤーが `a`）。引数はそのとき計算され、盤面は計算済みの値を持つ
+（前の盤面を参照する関数を積み重ねて、読むたびに計算し直さないように、インライン展開しない） -/
+@[noinline] def State.of (a b : PState) : State := fun q => if q then a else b
 
-@[simp] theorem State.set_same (g : State) (p s) : g.set p s p = s := by simp [State.set]
+@[simp] theorem State.of_true (a b : PState) : State.of a b true = a := rfl
+@[simp] theorem State.of_false (a b : PState) : State.of a b false = b := rfl
+
+/-- `p` の状態を `s` にする -/
+def State.set (g : State) (p : PlayerId) (s : PState) : State :=
+  if p then State.of s (g false) else State.of (g true) s
+
+/-- 各プレイヤーの状態を `f` で変える -/
+def State.map (f : PlayerId → PState → PState) (g : State) : State :=
+  State.of (f true (g true)) (f false (g false))
+
+@[simp] theorem State.map_apply (f : PlayerId → PState → PState) (g : State) (q : PlayerId) :
+    State.map f g q = f q (g q) := by cases q <;> rfl
+
+@[simp] theorem State.set_same (g : State) (p s) : g.set p s p = s := by cases p <;> rfl
 @[simp] theorem State.set_other (g : State) {p q : PlayerId} (s) (h : q ≠ p) : g.set p s q = g q := by
-  simp [State.set, h]
+  cases p <;> cases q <;> first | rfl | exact absurd rfl h
 
 /-- 1人分のカードの枚数 -/
 def PState.size (s : PState) : Nat := s.deck.length + s.hand.length + s.grave.length + s.field.length
@@ -93,10 +114,11 @@ def Rules.cellOf (r : Rules) (q : PlayerId) (sl : Slot) : Option Cell :=
   | some z => (z.cells[sl.cell]?).map fun c => if q then c else c.flip
   | none => none
 
-/-- 効果を出したもの：効果の持ち主と、効果を持つカードのマス -/
+/-- 効果を出したもの：効果の持ち主と、効果を持つカードのマスと、解決するときに選んだ対象（プレイヤーとカード） -/
 structure Src where
   p : PlayerId
   cell : Option Cell
+  tgt : Option (PlayerId × Slot) := none
 deriving Repr, DecidableEq
 
 def Cell.adjacentOpt : Option Cell → Option Cell → Bool
@@ -111,7 +133,8 @@ def Cell.sameColumnOpt : Option Cell → Option Cell → Bool
 def Slot.view (r : Rules) (sl : Slot) (q : PlayerId) (src : Src) : View :=
   let c := r.cellOf q sl
   { type := sl.card.type, tags := sl.card.tags, mine := q == src.p, faceUp := sl.faceUp, isSelf := false,
-    adjacent := Cell.adjacentOpt src.cell c, sameColumn := Cell.sameColumnOpt src.cell c }
+    adjacent := Cell.adjacentOpt src.cell c, sameColumn := Cell.sameColumnOpt src.cell c,
+    isTarget := src.tgt == some (q, sl.base) }
 
 /-- `q` のフィールド上の、範囲に合うカードをすべて破壊して墓地へ送る -/
 def PState.destroy (r : Rules) (sel : Selector) (q : PlayerId) (src : Src) (s : PState) : PState :=
@@ -124,6 +147,12 @@ def PState.bounce (r : Rules) (sel : Selector) (q : PlayerId) (src : Src) (s : P
   let hit := fun sl : Slot => r.onFieldZone sl.zone && sel.matches (sl.view r q src)
   { s with field := s.field.filter (fun sl => !hit sl),
            hand := s.hand ++ (s.field.filter hit).map (·.card) }
+
+/-- `q` の、範囲に合う「フィールド上」でないゾーンのカード（スタックの呪文など）を、すべて墓地へ送る（打ち消す） -/
+def PState.counter (r : Rules) (sel : Selector) (q : PlayerId) (src : Src) (s : PState) : PState :=
+  let hit := fun sl : Slot => !r.onFieldZone sl.zone && sel.matches (sl.view r q src)
+  { s with field := s.field.filter (fun sl => !hit sl),
+           grave := s.grave ++ (s.field.filter hit).map (·.card) }
 
 /-- デッキから `n` 枚引く（足りなければある分だけ） -/
 def PState.drawN (n : Nat) (s : PState) : PState :=
@@ -155,7 +184,7 @@ def modFrom (r : Rules) (pick : Effect → Option (Selector × Int)) (neg : List
     (src.card.effects.map fun e =>
       match pick e with
       | some (sel, n) =>
-        if sel.matches { tsl.view r t.1 ⟨q, r.cellOf q src⟩ with isSelf := (q, j) == t } then n else 0
+        if sel.matches { tsl.view r t.1 ⟨q, r.cellOf q src, none⟩ with isSelf := (q, j) == t } then n else 0
       | none => 0).sum
   else 0
 
@@ -169,12 +198,12 @@ def State.modSide (r : Rules) (g : State) (pick : Effect → Option (Selector ×
 
 /-- 位置 `t` のカード `tsl` の攻撃力 -/
 def State.atkOf (r : Rules) (g : State) (neg : List Pos) (t : Pos) (tsl : Slot) : Nat :=
-  (Int.ofNat tsl.card.attack + g.modSide r Effect.atkMod neg t tsl true +
+  (Int.ofNat tsl.card.attack + tsl.atkBonus + g.modSide r Effect.atkMod neg t tsl true +
     g.modSide r Effect.atkMod neg t tsl false).toNat
 
 /-- 位置 `t` のカード `tsl` の守備力 -/
 def State.defOf (r : Rules) (g : State) (neg : List Pos) (t : Pos) (tsl : Slot) : Nat :=
-  (Int.ofNat tsl.card.defense + g.modSide r Effect.defMod neg t tsl true +
+  (Int.ofNat tsl.card.defense + tsl.defBonus + g.modSide r Effect.defMod neg t tsl true +
     g.modSide r Effect.defMod neg t tsl false).toNat
 
 /-- 戦闘できる「フィールド上」のカードか -/
@@ -191,15 +220,22 @@ def PState.sweep (dead : Nat → Slot → Bool) (s : PState) : PState :=
   { s with field := (s.field.zipIdx.filter fun x => !dead x.2 x.1).map (·.1),
            grave := s.grave ++ (s.field.zipIdx.filter fun x => dead x.2 x.1).map (·.1.card) }
 
-/-- 位置 `(q, i)` のカード `sl` が、守備力以上のダメージを受けている戦闘できるカードか -/
+/-- 位置 `(q, i)` のカード `sl` が、守備力以上のダメージを受けている戦闘できるカードか
+（MTG 式の戦闘では、守備力が 0 の戦闘できるカードも） -/
 def State.lethal (r : Rules) (g : State) (neg : List Pos) (q : PlayerId) (i : Nat) (sl : Slot) : Bool :=
-  r.fights sl && decide (0 < sl.damage) && decide (g.defOf r neg (q, i) sl ≤ sl.damage)
+  r.fights sl && ((decide (0 < sl.damage) && decide (g.defOf r neg (q, i) sl ≤ sl.damage)) ||
+    (r.blocking && g.defOf r neg (q, i) sl == 0))
 
 /-- 守備力以上のダメージを受けている戦闘できるカードを、すべて破壊する -/
-def State.sweep (r : Rules) (g : State) (neg : List Pos) : State := fun q => (g q).sweep (g.lethal r neg q)
+def State.sweep (r : Rules) (g : State) (neg : List Pos) : State := g.map fun q s => s.sweep (g.lethal r neg q)
 
-/-- どのカードのダメージも 0 に戻す -/
-def State.mend (g : State) : State := fun q => { g q with field := (g q).field.map Slot.base }
+/-- どのカードのダメージとターンの終わりまでの変化も 0 に戻す -/
+def State.mend (g : State) : State := g.map fun _ s => { s with field := s.field.map Slot.base }
+
+/-- フィールドの `i` 番目のカードの攻撃力・守備力を、ターンの終わりまで `d i` だけ変える -/
+def PState.pump (d : Nat → Int × Int) (s : PState) : PState :=
+  { s with field := s.field.mapIdx fun i sl =>
+      { sl with atkBonus := sl.atkBonus + (d i).1, defBonus := sl.defBonus + (d i).2 } }
 
 /-- `negS`（無効になっているカード）の、今の盤面での位置 -/
 def State.negAt (g : State) (negS : List (PlayerId × Slot)) : List Pos :=
@@ -207,34 +243,58 @@ def State.negAt (g : State) (negS : List (PlayerId × Slot)) : List Pos :=
     ((List.range (g q).field.length).filter fun i =>
       ((g q).field[i]?.map fun sl => negS.contains (q, sl.base)).getD false).map (q, ·)
 
+/-- 範囲に合う戦闘できるカードすべてに `n` のダメージを加えた盤面（破壊する前） -/
+def State.strikeMarks (r : Rules) (sel : Selector) (n : Nat) (src : Src) (g : State) : State :=
+  g.map fun q s => s.mark fun i =>
+    match s.field[i]? with
+    | some sl => if r.fights sl && sel.matches (sl.view r q src) then n else 0
+    | none => 0
+
 /-- 効果を出したもの `src` の「カードへのダメージ」：範囲に合う戦闘できるカードすべてに `n` のダメージ -/
 def State.strike (r : Rules) (sel : Selector) (n : Nat) (src : Src) (negS : List (PlayerId × Slot)) (g : State) :
     State :=
-  let g1 : State := fun q => (g q).mark fun i =>
-    match (g q).field[i]? with
-    | some sl => if r.fights sl && sel.matches (sl.view r q src) then n else 0
-    | none => 0
+  let g1 := g.strikeMarks r sel n src
+  g1.sweep r (g1.negAt negS)
+
+/-- 範囲に合う戦闘できるカードすべての攻撃力・守備力を変えた盤面（破壊する前） -/
+def State.pumpMarks (r : Rules) (sel : Selector) (a d : Int) (src : Src) (g : State) : State :=
+  g.map fun q s => s.pump fun i =>
+    match s.field[i]? with
+    | some sl => if r.fights sl && sel.matches (sl.view r q src) then (a, d) else (0, 0)
+    | none => (0, 0)
+
+/-- 効果を出したもの `src` の「ターンの終わりまでの変化」：範囲に合う戦闘できるカードすべての攻撃力・守備力を変える -/
+def State.pumpAll (r : Rules) (sel : Selector) (a d : Int) (src : Src) (negS : List (PlayerId × Slot)) (g : State) :
+    State :=
+  let g1 := g.pumpMarks r sel a d src
   g1.sweep r (g1.negAt negS)
 
 /-- 効果を出したもの `src`（持ち主 `src.p`）の効果の動きを1つ行う。`negS`：効果が無効になっているカード -/
 def State.applyAction (r : Rules) (src : Src) (negS : List (PlayerId × Slot)) (g : State) : Action → State
-  | .destroy sel => fun q => (g q).destroy r sel q src
-  | .bounce sel => fun q => (g q).bounce r sel q src
+  | .destroy sel => g.map fun q s => s.destroy r sel q src
+  | .bounce sel => g.map fun q s => s.bounce r sel q src
   | .draw n => g.set src.p ((g src.p).drawN n)
   | .damage n => g.set (!src.p) ((g (!src.p)).damage n)
   | .heal n => g.set src.p { g src.p with life := (g src.p).life + n }
   | .strike sel n => g.strike r sel n src negS
+  | .pump sel a d => g.pumpAll r sel a d src negS
+  | .counter sel => g.map fun q s => s.counter r sel q src
 
 /-- 位置の一覧 `neg` の、盤面 `g` のカード -/
 def State.negSlots (g : State) (neg : List Pos) : List (PlayerId × Slot) :=
   neg.filterMap fun (q, i) => ((g q).field[i]?).map fun sl => (q, sl.base)
 
+/-- `p` のフィールドのカード `sl` が効果を出すときの `Src`。`tgt`：選んだ対象の位置（解決する前の盤面で） -/
+def State.srcOf (r : Rules) (g : State) (p : PlayerId) (sl : Slot) (tgt : Option Pos) : Src :=
+  ⟨p, r.cellOf p sl, tgt.bind fun (q, i) => ((g q).field[i]?).map fun t => (q, t.base)⟩
+
 /-- プレイヤー `p` が、フィールドの `k` 番目のカード `sl` の効果（動き `as`）を発動して解決したあとの状態。
-マスの関係は、カードが置かれていたマスから見る。`neg`：効果が無効になっているカードの位置（解決する前の盤面で） -/
+マスの関係は、カードが置かれていたマスから見る。`neg`：効果が無効になっているカードの位置（解決する前の盤面で）。
+`tgt`：対象を選ぶ範囲で選んだカードの位置（解決する前の盤面で） -/
 def State.resolve (r : Rules) (p : PlayerId) (g : State) (k : Nat) (sl : Slot) (as : List Action)
-    (apply : Bool) (neg : List Pos := []) : State :=
+    (apply : Bool) (neg : List Pos := []) (tgt : Option Pos := none) : State :=
   let g1 := g.set p { g p with field := (g p).field.eraseIdx k }
-  let g2 := if apply then as.foldl (State.applyAction r ⟨p, r.cellOf p sl⟩ (g.negSlots neg)) g1 else g1
+  let g2 := if apply then as.foldl (State.applyAction r (g.srcOf r p sl tgt) (g.negSlots neg)) g1 else g1
   g2.set p { g2 p with grave := (g2 p).grave ++ [sl.card] }
 
 /-! ## 戦闘 -/
@@ -335,10 +395,11 @@ inductive Step (r : Rules) : State → State → Prop
   | place (g : State) (p : PlayerId) (c : Card) (i j : Nat) (z : Zone) (up : Bool) :
       c ∈ (g p).hand → r.zones[i]? = some z → z.role = .plain → z.admits.contains c.type → j < z.count →
       (z.capacity = .one → ∀ sl ∈ (g p).field, ¬(sl.zone = i ∧ sl.cell = j)) →
-      Step r g (g.set p { g p with hand := (g p).hand.erase c, field := (g p).field ++ [⟨i, j, c, up, 0⟩] })
-  | resolve (g : State) (p : PlayerId) (k : Nat) (sl : Slot) (as : List Action) (apply : Bool) (neg : List Pos) :
+      Step r g (g.set p { g p with hand := (g p).hand.erase c, field := (g p).field ++ [⟨i, j, c, up, 0, 0, 0⟩] })
+  | resolve (g : State) (p : PlayerId) (k : Nat) (sl : Slot) (as : List Action) (apply : Bool) (neg : List Pos)
+      (tgt : Option Pos) :
       (g p).field[k]? = some sl → .activated as ∈ sl.card.effects →
-      Step r g (g.resolve r p k sl as apply neg)
+      Step r g (g.resolve r p k sl as apply neg tgt)
   | attack (g : State) (p : PlayerId) (k : Nat) (sl : Slot) (target : Option Nat) (neg : List Pos) :
       (g p).field[k]? = some sl → sl.faceUp → r.fights sl →
       (match target with
@@ -348,6 +409,8 @@ inductive Step (r : Rules) : State → State → Prop
   | combat (g : State) (p : PlayerId) (atk : List Nat) (blocks : List (Nat × Nat)) (neg : List Pos) :
       g.combatOK r p atk blocks → Step r g (g.combat r neg p atk blocks)
   | mend (g : State) : Step r g g.mend
+  /-- 状態の確認：守備力以上のダメージを受けている（MTG 式の戦闘では、守備力が 0 の）戦闘できるカードを破壊する -/
+  | settle (g : State) (neg : List Pos) : Step r g (g.sweep r neg)
 
 /-- ゲーム開始時の状態：それぞれのデッキから初期手札を引いた状態 -/
 def start (r : Rules) (decks : PlayerId → List Card) : State :=

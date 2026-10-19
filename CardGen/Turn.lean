@@ -28,7 +28,10 @@ import CardGen.Pool
   出したマナで置ける（`cast`）。それ以外のカードは、攻撃の途中やスタックが空でないときには置けない
 - スタック（`Rules.stack`）：「フィールド上」でないゾーンに置いた、発動する効果を持つカード（呪文）は、スタックに積まれ、
   一番上のものしか解決できない。スタックが空になるまで、攻撃・ブロック・ターン終了はできない
-- ターンの終わりに、どのカードのダメージも消える。ターンの最初に引く枚数が足りなければ、そのプレイヤーの負け
+- 飛行を持つカードの攻撃は、飛行か到達を持つカードでしかブロックできない
+- 状態の確認（`settle`）：どちらのプレイヤーもいつでも、守備力以上のダメージを受けている（MTG 式の戦闘では守備力が 0 の）
+  戦闘できるカードを破壊させられる（テストプレイは動きのたびに自動で行う）
+- ターンの終わりに、どのカードのダメージとターンの終わりまでの変化も消える。ターンの最初に引く枚数が足りなければ、そのプレイヤーの負け
 - ライフのルールがあって、どちらかのライフが 0 になったときと、デッキ切れのときは、対戦が終わる（それ以上動けない）
 
 **ターンのある対戦の盤面は、どれもターンのないモデルで到達できる盤面**（`TReachable.reachable`）。
@@ -116,7 +119,7 @@ inductive TChoice
   /-- ターンプレイヤーでない方が、手札の `hand` 番目のインスタントを置く。`pay`：払うマナ -/
   | cast (hand : Nat) (zone : Nat) (cell : Nat) (up : Bool) (pay : List String := [])
   /-- `p` がフィールドの `k` 番目のカードの `eff` 番目の効果を発動して解決する（どちらのターンでもよい） -/
-  | resolve (p : PlayerId) (k : Nat) (eff : Nat) (apply : Bool) (neg : List Pos := [])
+  | resolve (p : PlayerId) (k : Nat) (eff : Nat) (apply : Bool) (neg : List Pos := []) (tgt : Option Pos := none)
   /-- ターンプレイヤーがフィールドの `k` 番目のカードで攻撃する（MTG 式の戦闘では攻撃の宣言だけで、`target` は `none`） -/
   | attack (k : Nat) (target : Option Nat) (neg : List Pos)
   /-- MTG 式の戦闘で、攻撃されたプレイヤーがブロックを選ぶ：`(j, a)` はフィールドの `j` 番目のカードで、
@@ -128,6 +131,8 @@ inductive TChoice
   | oppTap (k : Nat) (color : String := "")
   /-- ターンを終え、相手のターンにする -/
   | endTurn
+  /-- 状態の確認（どちらのプレイヤーでも、いつでも） -/
+  | settle (neg : List Pos)
 deriving Repr, DecidableEq
 
 /-- `n` 枚引く（デッキが足りなければある分だけ） -/
@@ -271,8 +276,11 @@ def TurnInfo.blockOK (r : Rules) (t : TurnInfo) (opp : List Slot) (blocks : List
   let bs := blockers opp blocks
   t.stack.isEmpty && !t.attackers.isEmpty && decide (blocks.map (·.1)).Nodup && bs.length == blocks.length &&
   blocks.all (fun b => decide (b.2 < t.attackers.length)) &&
-  bs.all fun b => decide (bs.count b + t.blocked.count b ≤ (opp.map Slot.base).count b) &&
-    (!r.attackTaps || decide (bs.count b + t.oppTapped.count b ≤ (opp.map Slot.base).count b))
+  (bs.all fun b => decide (bs.count b + t.blocked.count b ≤ (opp.map Slot.base).count b) &&
+    (!r.attackTaps || decide (bs.count b + t.oppTapped.count b ≤ (opp.map Slot.base).count b))) &&
+  blocks.all fun b => match t.attackers[b.2]?, opp[b.1]? with
+    | some a, some tl => !a.card.flying || tl.card.flying || tl.card.reach
+    | _, _ => false
 
 /-- ブロックのあとのターンの情報 -/
 def TurnInfo.afterBlock (t : TurnInfo) (opp : List Slot) (blocks : List (Nat × Nat)) : TurnInfo :=
@@ -300,8 +308,8 @@ def TurnInfo.pop (r : Rules) (t : TurnInfo) : TurnInfo :=
 def Match.over (r : Rules) (m : Match) : Bool :=
   m.turn.decked.isSome || (decide (0 < r.life) && ((m.g true).life == 0 || (m.g false).life == 0))
 
-/-- 選んだ動きをしたあとの状態（できない動きなら `none`） -/
-def Match.step? (r : Rules) (m : Match) (ch : TChoice) : Option Match :=
+/-- 選んだ動きをしたあとの状態（できない動きなら `none`）。盤面を計算済みの値にする前のもの -/
+def Match.step0? (r : Rules) (m : Match) (ch : TChoice) : Option Match :=
   if m.over r then none else
   let tp := m.turn.tp
   match ch with
@@ -309,20 +317,21 @@ def Match.step? (r : Rules) (m : Match) (ch : TChoice) : Option Match :=
     match (m.g tp).hand[h]? with
     | none => none
     | some c =>
-      if m.turn.placeOK r ⟨i, j, c, up, 0⟩ pay then
-        (m.g.step? r (.place tp h i j up)).map fun g => ⟨g, (m.turn.afterPlace r ⟨i, j, c, up, 0⟩ pay).prune g⟩
+      if m.turn.placeOK r ⟨i, j, c, up, 0, 0, 0⟩ pay then
+        (m.g.step? r (.place tp h i j up)).map fun g => ⟨g, (m.turn.afterPlace r ⟨i, j, c, up, 0, 0, 0⟩ pay).prune g⟩
       else none
   | .cast h i j up pay =>
     match (m.g (!tp)).hand[h]? with
     | none => none
     | some c =>
-      if m.turn.castOK r ⟨i, j, c, up, 0⟩ pay then
-        (m.g.step? r (.place (!tp) h i j up)).map fun g => ⟨g, (m.turn.afterCast r ⟨i, j, c, up, 0⟩ pay).prune g⟩
+      if m.turn.castOK r ⟨i, j, c, up, 0, 0, 0⟩ pay then
+        (m.g.step? r (.place (!tp) h i j up)).map fun g => ⟨g, (m.turn.afterCast r ⟨i, j, c, up, 0, 0, 0⟩ pay).prune g⟩
       else none
-  | .resolve p k e apply neg =>
+  | .resolve p k e apply neg tgt =>
     if m.turn.topOK r m.g p k then
-      (m.g.step? r (.resolve p k e apply neg)).map fun g => ⟨g, (m.turn.pop r).prune g⟩
+      (m.g.step? r (.resolve p k e apply neg tgt)).map fun g => ⟨g, (m.turn.pop r).prune g⟩
     else none
+  | .settle neg => some ⟨m.g.sweep r neg, m.turn.prune (m.g.sweep r neg)⟩
   | .attack k t neg =>
     match (m.g tp).field[k]? with
     | none => none
@@ -366,6 +375,12 @@ def Match.step? (r : Rules) (m : Match) (ch : TChoice) : Option Match :=
         decked := if (g1 (!tp)).deck.length < r.drawPerTurn then some (!tp) else none }.prune g⟩
     else none
 
+/-- 選んだ動きをしたあとの状態（できない動きなら `none`）。盤面は計算済みの値にする（`State.fresh`） -/
+def Match.step? (r : Rules) (m : Match) (ch : TChoice) : Option Match :=
+  match m.step0? r ch with
+  | some m' => some ⟨State.of (m'.g true) (m'.g false), m'.turn⟩
+  | none => none
+
 /-- 開始時の状態から、`step?` を繰り返して到達できる -/
 inductive TReachable (r : Rules) (decks : PlayerId → List Card) (first : PlayerId) : Match → Prop
   | start : TReachable r decks first (Match.start r decks first)
@@ -376,14 +391,15 @@ inductive TReachable (r : Rules) (decks : PlayerId → List Card) (first : Playe
 /-- 1歩のあとの盤面は、ターンのないモデルで、もとの盤面から到達できる盤面（`Step` の0回以上の繰り返し）。
 ターンの情報は、ある記録をその盤面に合わせたもの -/
 inductive Match.Moved (r : Rules) (m : Match) : TChoice → Match → Prop
-  | place {h i j up pay c g} : (m.g m.turn.tp).hand[h]? = some c → m.turn.placeOK r ⟨i, j, c, up, 0⟩ pay →
+  | place {h i j up pay c g} : (m.g m.turn.tp).hand[h]? = some c → m.turn.placeOK r ⟨i, j, c, up, 0, 0, 0⟩ pay →
       m.g.step? r (.place m.turn.tp h i j up) = some g →
-      Match.Moved r m (.place h i j up pay) ⟨g, (m.turn.afterPlace r ⟨i, j, c, up, 0⟩ pay).prune g⟩
-  | cast {h i j up pay c g} : (m.g (!m.turn.tp)).hand[h]? = some c → m.turn.castOK r ⟨i, j, c, up, 0⟩ pay →
+      Match.Moved r m (.place h i j up pay) ⟨g, (m.turn.afterPlace r ⟨i, j, c, up, 0, 0, 0⟩ pay).prune g⟩
+  | cast {h i j up pay c g} : (m.g (!m.turn.tp)).hand[h]? = some c → m.turn.castOK r ⟨i, j, c, up, 0, 0, 0⟩ pay →
       m.g.step? r (.place (!m.turn.tp) h i j up) = some g →
-      Match.Moved r m (.cast h i j up pay) ⟨g, (m.turn.afterCast r ⟨i, j, c, up, 0⟩ pay).prune g⟩
-  | resolve {p k e apply neg g} : m.g.step? r (.resolve p k e apply neg) = some g →
-      Match.Moved r m (.resolve p k e apply neg) ⟨g, (m.turn.pop r).prune g⟩
+      Match.Moved r m (.cast h i j up pay) ⟨g, (m.turn.afterCast r ⟨i, j, c, up, 0, 0, 0⟩ pay).prune g⟩
+  | resolve {p k e apply neg tgt g} : m.g.step? r (.resolve p k e apply neg tgt) = some g →
+      Match.Moved r m (.resolve p k e apply neg tgt) ⟨g, (m.turn.pop r).prune g⟩
+  | settle {neg} : Match.Moved r m (.settle neg) ⟨m.g.sweep r neg, m.turn.prune (m.g.sweep r neg)⟩
   | declare {k t neg sl} : (m.g m.turn.tp).field[k]? = some sl →
       Match.Moved r m (.attack k t neg)
         ⟨m.g, { m.turn.afterAttack r sl with attackers := m.turn.attackers ++ [sl.base] }.prune m.g⟩
@@ -401,9 +417,9 @@ inductive Match.Moved (r : Rules) (m : Match) : TChoice → Match → Prop
       ⟨m.g.mend.drawUpTo r (!m.turn.tp) r.drawPerTurn,
        { m.turn.next with decked := d }.prune (m.g.mend.drawUpTo r (!m.turn.tp) r.drawPerTurn)⟩
 
-theorem Match.step?_moved {r : Rules} {m m' : Match} {ch : TChoice} (hs : m.step? r ch = some m') :
+theorem Match.step0?_moved {r : Rules} {m m' : Match} {ch : TChoice} (hs : m.step0? r ch = some m') :
     Match.Moved r m ch m' := by
-  unfold Match.step? at hs
+  unfold Match.step0? at hs
   split at hs
   · cases hs
   cases ch with
@@ -427,12 +443,15 @@ theorem Match.step?_moved {r : Rules} {m m' : Match} {ch : TChoice} (hs : m.step
         obtain ⟨g, hg, rfl⟩ := Option.map_eq_some_iff.1 hs
         exact .cast hc hok hg
       · cases hs
-  | resolve p k e apply neg =>
+  | resolve p k e apply neg tgt =>
     simp only at hs
     split at hs
     · obtain ⟨g, hg, rfl⟩ := Option.map_eq_some_iff.1 hs
       exact .resolve hg
     · cases hs
+  | settle neg =>
+    simp only [Option.some.injEq] at hs
+    subst hs; exact .settle
   | attack k t neg =>
     simp only at hs
     split at hs
@@ -480,6 +499,18 @@ theorem Match.step?_moved {r : Rules} {m m' : Match} {ch : TChoice} (hs : m.step
     · cases hs; exact .endTurn
     · cases hs
 
+theorem Match.step?_moved {r : Rules} {m m' : Match} {ch : TChoice} (hs : m.step? r ch = some m') :
+    Match.Moved r m ch m' := by
+  unfold Match.step? at hs
+  split at hs
+  · rename_i m0 h0
+    cases hs
+    have : (⟨State.of (m0.g true) (m0.g false), m0.turn⟩ : Match) = m0 := by
+      cases m0; simp only [Match.mk.injEq, and_true]; exact State.fresh_eq _
+    rw [this]
+    exact Match.step0?_moved h0
+  · cases hs
+
 /-! ## ターンのない対戦への引き継ぎ -/
 
 theorem Reachable.drawUpTo {r : Rules} {decks : PlayerId → List Card} (p : PlayerId) :
@@ -506,6 +537,7 @@ theorem TReachable.reachable {r : Rules} {decks : PlayerId → List Card} {first
     | place _ _ hg => exact ih.step (step?_sound hg)
     | cast _ _ hg => exact ih.step (step?_sound hg)
     | resolve hg => exact ih.step (step?_sound hg)
+    | settle => exact ih.step (.settle _ _)
     | attack _ hg => exact ih.step (step?_sound hg)
     | declare _ => exact ih
     | block hg => exact ih.step (step?_sound hg)
@@ -562,6 +594,7 @@ theorem TReachable.summons_le {r : Rules} {decks : PlayerId → List Card} {firs
       · simpa using ih
     | cast _ _ _ => simpa [TurnInfo.afterCast] using ih
     | resolve _ => simpa using ih
+    | settle => simpa using ih
     | attack _ _ => simpa [TurnInfo.afterAttack] using ih
     | declare _ => simpa [TurnInfo.afterAttack] using ih
     | block _ => simpa [TurnInfo.afterBlock] using ih
@@ -589,6 +622,7 @@ theorem TReachable.placed_le {r : Rules} {decks : PlayerId → List Card} {first
         split <;> simp <;> omega
     | cast _ _ _ => simpa [TurnInfo.afterCast] using ih
     | resolve _ => simpa using ih
+    | settle => simpa using ih
     | attack _ _ => simpa [TurnInfo.afterAttack] using ih
     | declare _ => simpa [TurnInfo.afterAttack] using ih
     | block _ => simpa [TurnInfo.afterBlock] using ih
@@ -673,6 +707,7 @@ theorem TReachable.mana_balance {r : Rules} {decks : PlayerId → List Card} {fi
         TurnInfo.afterCast]
       omega
     | resolve _ => simpa using ih
+    | settle => simpa using ih
     | attack _ _ => simpa [TurnInfo.afterAttack] using ih
     | declare _ => simpa [TurnInfo.afterAttack] using ih
     | block _ => simpa [TurnInfo.afterBlock] using ih

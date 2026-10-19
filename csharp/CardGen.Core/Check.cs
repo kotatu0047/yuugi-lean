@@ -29,8 +29,18 @@ namespace CardGen
                 .Concat(st.Amount == 0 ? new[] { $"{where}：カードへのダメージが0です" } : new string[0])
                 .Concat(st.Target.Types.Any(t => r.Fighters.Contains(t)) ? new string[0]
                     : new[] { $"{where}：カードへのダメージの範囲に、戦闘できる種類のカードがありません" }),
+            Pump pu => Selector(r, $"{where}のターンの終わりまでの変化", pu.Target)
+                .Concat(pu.Attack == 0 && pu.Defense == 0 ? new[] { $"{where}：ターンの終わりまでの変化が攻撃力・守備力とも0です" } : new string[0])
+                .Concat(pu.Target.Types.Any(t => r.Fighters.Contains(t)) ? new string[0]
+                    : new[] { $"{where}：ターンの終わりまでの変化の範囲に、戦闘できる種類のカードがありません" }),
+            Counter co => Selector(r, $"{where}の打ち消し", co.Target)
+                .Concat(co.Target.Types.Any(t => r.Zones.Any(z => z.Role == ZoneRole.Plain && !z.OnField && z.Admits.Contains(t))) ? new string[0]
+                    : new[] { $"{where}：打ち消す範囲の種類を、「フィールド上」でないゾーンに置けません" }),
             _ => Enumerable.Empty<string>(),
         };
+
+        static IEnumerable<string> NoTarget(string where, Selector s) =>
+            s.Target ? new[] { $"{where}：永続効果の範囲では、対象を選べません" } : new string[0];
 
         static IEnumerable<string> Effect(Rules r, string where, Effect e)
         {
@@ -42,16 +52,19 @@ namespace CardGen
                     break;
                 case Negate n:
                     foreach (var m in Selector(r, $"{where}の無効", n.Target)) yield return m;
+                    foreach (var m in NoTarget($"{where}の無効", n.Target)) yield return m;
                     if (n.Target.Near != Near.Any) yield return $"{where}：無効の範囲には、マスの関係（隣・同じ縦列）はまだ使えません";
                     break;
                 case Boost b:
                     foreach (var m in Selector(r, $"{where}の攻撃力の変化", b.Target)) yield return m;
+                    foreach (var m in NoTarget($"{where}の攻撃力の変化", b.Target)) yield return m;
                     if (b.Amount == 0) yield return $"{where}：攻撃力の変化が0です";
                     if (!b.Target.Types.Any(t => r.Fighters.Contains(t)))
                         yield return $"{where}：攻撃力を変える範囲に、戦闘できる種類のカードがありません";
                     break;
                 case Toughen tg:
                     foreach (var m in Selector(r, $"{where}の守備力の変化", tg.Target)) yield return m;
+                    foreach (var m in NoTarget($"{where}の守備力の変化", tg.Target)) yield return m;
                     if (tg.Amount == 0) yield return $"{where}：守備力の変化が0です";
                     if (!tg.Target.Types.Any(t => r.Fighters.Contains(t)))
                         yield return $"{where}：守備力を変える範囲に、戦闘できる種類のカードがありません";

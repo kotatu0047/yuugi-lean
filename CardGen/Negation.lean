@@ -295,7 +295,7 @@ theorem mayNegate_of_instRel {insts : List Inst} {y x : Nat} (h : instRel insts 
     | none => simp [hs] at hm
     | some s =>
       simp only [hs, Selector.matches, Inst.viewFrom, Bool.and_eq_true] at hm
-      simp only [hm.1.1.1.1.1, hm.1.1.1.1.2, Bool.and_self]
+      simp only [hm.1.1.1.1.1.1, hm.1.1.1.1.1.2, Bool.and_self]
   · simp at h
 
 /-- カードの順位付けの確認：`c` が `d` を無効にしうるなら `c` の順位は `d` より小さい -/

@@ -148,12 +148,14 @@ namespace CardGen
         public readonly bool Adjacent;
         /// <summary>効果を持つカードと同じ縦列にあるか</summary>
         public readonly bool SameColumn;
+        /// <summary>解決するときに選んだ対象か</summary>
+        public readonly bool IsTarget;
 
         public View(string type, IReadOnlyList<string> tags, bool mine, bool faceUp, bool isSelf,
-            bool adjacent = false, bool sameColumn = false)
+            bool adjacent = false, bool sameColumn = false, bool isTarget = false)
         {
             Type = type; Tags = tags; Mine = mine; FaceUp = faceUp; IsSelf = isSelf;
-            Adjacent = adjacent; SameColumn = sameColumn;
+            Adjacent = adjacent; SameColumn = sameColumn; IsTarget = isTarget;
         }
     }
 
@@ -167,6 +169,8 @@ namespace CardGen
         public bool ExcludeSelf;
         /// <summary>効果を持つカードのマスとの関係</summary>
         public Near Near;
+        /// <summary>対象を1つ選ぶ（解決するときに選んだカードだけに行う）</summary>
+        public bool Target;
 
         static bool SideMatches(Side side, bool mine) =>
             side == Side.Self ? mine : side == Side.Opp ? !mine : true;
@@ -175,7 +179,7 @@ namespace CardGen
         public bool Matches(View v) =>
             Types.Contains(v.Type) && Tags.All(t => v.Tags.Contains(t)) && SideMatches(Side, v.Mine) &&
             (!FaceUpOnly || v.FaceUp) && !(ExcludeSelf && v.IsSelf) &&
-            (Near == Near.Any || (Near == Near.Adjacent ? v.Adjacent : v.SameColumn));
+            (Near == Near.Any || (Near == Near.Adjacent ? v.Adjacent : v.SameColumn)) && (!Target || v.IsTarget);
     }
 
     /// <summary>効果が解決したときの動き</summary>
@@ -222,6 +226,22 @@ namespace CardGen
         public Selector Target;
         public int Amount;
         public Strike(Selector target, int amount) { Target = target; Amount = amount; }
+    }
+
+    /// <summary>範囲に合う、戦闘できるカードすべての攻撃力・守備力を、ターンの終わりまで変える</summary>
+    public sealed class Pump : Action
+    {
+        public Selector Target;
+        public int Attack;
+        public int Defense;
+        public Pump(Selector target, int attack, int defense) { Target = target; Attack = attack; Defense = defense; }
+    }
+
+    /// <summary>範囲に合う、「フィールド上」でないゾーンのカード（スタックの呪文など）を墓地へ送る（打ち消す）</summary>
+    public sealed class Counter : Action
+    {
+        public Selector Target;
+        public Counter(Selector target) { Target = target; }
     }
 
     /// <summary>カードの効果</summary>
@@ -278,12 +298,16 @@ namespace CardGen
         public List<string> ManaChoice = new List<string>();
         /// <summary>トランプル（MTG 式の戦闘で、ブロックしたカードを破壊できるだけのダメージを与え、残りを相手に与える）</summary>
         public bool Trample;
+        /// <summary>飛行（飛行か到達を持つカードでしかブロックできない）</summary>
+        public bool Flying;
+        /// <summary>到達（飛行を持つカードもブロックできる）</summary>
+        public bool Reach;
     }
 
     /// <summary>エディタが出力する中間表現の全体</summary>
     public sealed class Game
     {
-        public const int CurrentVersion = 8;
+        public const int CurrentVersion = 9;
         public int Version = CurrentVersion;
         public Rules Rules = new Rules();
         public List<Card> Cards = new List<Card>();

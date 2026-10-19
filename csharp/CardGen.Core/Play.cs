@@ -4,7 +4,7 @@ using System.Linq;
 
 namespace CardGen
 {
-    public enum ChoiceKind { Draw, Place, Resolve, Attack, Combat, Mend }
+    public enum ChoiceKind { Draw, Place, Resolve, Attack, Combat, Mend, Settle }
 
     /// <summary>プレイヤーが選ぶ動き（Choice）</summary>
     public sealed class Choice
@@ -22,13 +22,17 @@ namespace CardGen
         public List<int> Attackers = new List<int>();
         /// <summary>MTG 式の戦闘：(ブロックするカードの位置, Attackers の何番目の攻撃をブロックするか)</summary>
         public List<(int blocker, int attacker)> Blocks = new List<(int, int)>();
+        /// <summary>解決するときに選んだ対象の位置（解決する前の盤面で）</summary>
+        public (bool player, int index)? Tgt;
 
         public static Choice Draw(bool p) => new Choice { Kind = ChoiceKind.Draw, Player = p };
         public static Choice Place(bool p, int hand, int zone, int cell, bool faceUp) =>
             new Choice { Kind = ChoiceKind.Place, Player = p, Hand = hand, Zone = zone, Cell = cell, FaceUp = faceUp };
-        public static Choice Resolve(bool p, int field, int effect, bool apply, List<(bool, int)> neg = null) =>
+        public static Choice Resolve(bool p, int field, int effect, bool apply, List<(bool, int)> neg = null,
+            (bool, int)? tgt = null) =>
             new Choice { Kind = ChoiceKind.Resolve, Player = p, Field = field, Effect = effect, Apply = apply,
-                         Neg = neg ?? new List<(bool, int)>() };
+                         Neg = neg ?? new List<(bool, int)>(), Tgt = tgt };
+        public static Choice Settle(List<(bool, int)> neg) => new Choice { Kind = ChoiceKind.Settle, Neg = neg };
         public static Choice Combat(bool p, List<int> attackers, List<(int, int)> blocks, List<(bool, int)> neg) =>
             new Choice { Kind = ChoiceKind.Combat, Player = p, Attackers = attackers, Blocks = blocks, Neg = neg };
         public static Choice Mend() => new Choice { Kind = ChoiceKind.Mend };
@@ -136,15 +140,16 @@ namespace CardGen
 
         /// <summary>State.atkOf：位置 t のカード tsl の攻撃力（元の攻撃力に、無効でない「攻撃力を変える」効果を足す。0 未満は 0）</summary>
         public int AtkOf(Rules r, List<(bool, int)> neg, (bool p, int i) t, Slot tsl) =>
-            (int)System.Math.Max(0, tsl.Card.Attack + ModSum(r, false, neg, t, tsl));
+            (int)System.Math.Max(0, tsl.Card.Attack + tsl.AtkBonus + ModSum(r, false, neg, t, tsl));
 
         /// <summary>State.defOf：位置 t のカード tsl の守備力（元の守備力に、無効でない「守備力を変える」効果を足す。0 未満は 0）</summary>
         public int DefOf(Rules r, List<(bool, int)> neg, (bool p, int i) t, Slot tsl) =>
-            (int)System.Math.Max(0, tsl.Card.Defense + ModSum(r, true, neg, t, tsl));
+            (int)System.Math.Max(0, tsl.Card.Defense + tsl.DefBonus + ModSum(r, true, neg, t, tsl));
 
         /// <summary>State.lethal：守備力以上のダメージを受けている戦闘できるカードか</summary>
         public bool Lethal(Rules r, List<(bool, int)> neg, bool q, int i, Slot sl) =>
-            Fights(r, sl) && sl.Damage > 0 && DefOf(r, neg, (q, i), sl) <= sl.Damage;
+            Fights(r, sl) && ((sl.Damage > 0 && DefOf(r, neg, (q, i), sl) <= sl.Damage) ||
+                              (r.Blocking && DefOf(r, neg, (q, i), sl) == 0));
 
         /// <summary>State.sweep：守備力以上のダメージを受けている戦闘できるカードを、すべて破壊する</summary>
         public MatchState Sweep(Rules r, List<(bool, int)> neg) => new MatchState
@@ -185,6 +190,18 @@ namespace CardGen
             {
                 var sl = Get(q).Field[i];
                 return Fights(r, sl) && sel.Matches(sl.ViewFor(r, q, src)) ? n : 0;
+            });
+            var g1 = new MatchState { P1 = M(true), P2 = M(false) };
+            return g1.Sweep(r, g1.NegAt(negS));
+        }
+
+        /// <summary>State.pumpAll：範囲に合う戦闘できるカードすべての攻撃力・守備力を、ターンの終わりまで変える</summary>
+        public MatchState PumpAll(Rules r, Selector sel, int a, int d, Src src, List<(bool, Slot)> negS)
+        {
+            PState M(bool q) => Get(q).Pump(i =>
+            {
+                var sl = Get(q).Field[i];
+                return Fights(r, sl) && sel.Matches(sl.ViewFor(r, q, src)) ? (a, d) : (0, 0);
             });
             var g1 = new MatchState { P1 = M(true), P2 = M(false) };
             return g1.Sweep(r, g1.NegAt(negS));
@@ -332,6 +349,8 @@ namespace CardGen
                     return CombatOK(r, p, ch.Attackers, ch.Blocks) ? Combat(r, ch.Neg, p, ch.Attackers, ch.Blocks) : null;
                 case ChoiceKind.Mend:
                     return Mend();
+                case ChoiceKind.Settle:
+                    return Sweep(r, ch.Neg);
                 default:
                 {
                     if (ch.Field < 0 || ch.Field >= s.Field.Count) return null;
@@ -340,7 +359,10 @@ namespace CardGen
                     var n1 = Copy(s);
                     n1.Field.RemoveAt(ch.Field);
                     var g = With(p, n1);
-                    var src = new Src(p, r.CellOf(p, sl.Zone, sl.Cell));
+                    // State.srcOf：選んだ対象（解決する前の盤面の位置）のカード
+                    (bool, Slot)? tgt = null;
+                    if (ch.Tgt is (bool tq, int ti) && ti >= 0 && ti < Get(tq).Field.Count) tgt = (tq, Get(tq).Field[ti].Base());
+                    var src = new Src(p, r.CellOf(p, sl.Zone, sl.Cell), tgt);
                     var negS = NegSlots(ch.Neg);
                     if (ch.Apply)
                         foreach (var a in act.Actions)
@@ -352,6 +374,8 @@ namespace CardGen
                                 Damage dm => g.With(!p, g.Get(!p).Damage(dm.Amount)),
                                 Heal h => g.With(p, g.Get(p).With(life: g.Get(p).Life + h.Amount)),
                                 Strike st => g.Strike(r, st.Target, st.Amount, src, negS),
+                                Pump pu => g.PumpAll(r, pu.Target, pu.Attack, pu.Defense, src, negS),
+                                Counter co => new MatchState { P1 = g.P1.Counter(r, co.Target, true, src), P2 = g.P2.Counter(r, co.Target, false, src) },
                                 _ => g,
                             };
                     var last = Copy(g.Get(p));

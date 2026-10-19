@@ -38,6 +38,6 @@ cd csharp/CardGen.Tests && dotnet test           # C# の差分テスト
 tools/unity-build.sh                             # Unity のエディタをビルド（Windows 側で）
 ```
 
-中間表現は版 8（`CardGen/中間表現.md`）。
+中間表現は版 9（`CardGen/中間表現.md`）。
 
 `sorry` はなく、証明が使う公理は Lean 標準のもの（`propext`・`Classical.choice`・`Quot.sound`）だけ。

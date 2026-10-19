@@ -26,6 +26,8 @@ JSON との相互変換は Lean の自動導出による（`Option` 以外のフ
 カードの `colorCost`・`manaColor`）を加えた。版 7 で、タグの集合（`tagSets`）を加えた。版 8 で、
 インスタント（ルールの `instants`）とスタック（`stack`）、カードへのダメージ（動きの `strike`）、守備力の変化
 （効果の `toughen`）、2色以上から選べるマナ（カードの `manaChoice`）、トランプル（カードの `trample`）を加えた。
+版 9 で、対象を1つ選ぶ範囲（範囲の指定の `target`）、ターンの終わりまでの攻撃力・守備力の変化（動きの `pump`）、
+呪文を打ち消す動き（`counter`）、飛行と到達（カードの `flying`・`reach`）を加えた。
 
 マスの並びは、縦と横の2本の序列で表す。盤面全体（2人分）は `gridSize`×`gridSize`（49×49。
 前提の「最大 50×50」に収まり、中心のマスがあるように奇数にした）のマス目で、マスは（列, 行）で表し、
@@ -167,6 +169,8 @@ structure Selector where
   excludeSelf : Bool
   /-- 効果を持つカードのマスとの関係（どちらかがマス目の上になければ、関係は成り立たない） -/
   near : Near := .any
+  /-- 対象を1つ選ぶ（解決するときに、範囲に合うカードを1枚選び、そのカードだけに行う。永続効果の範囲には使えない） -/
+  target : Bool := false
 deriving Repr, DecidableEq, FromJson, ToJson
 
 /-- 効果が解決したときの動き -/
@@ -184,6 +188,11 @@ inductive Action
   /-- 範囲に合う、戦闘できるカードすべてに `amount` のダメージを与える（ダメージはターンの終わりまで残り、
   守備力以上のダメージを受けたカードは破壊される） -/
   | strike (target : Selector) (amount : Nat)
+  /-- 範囲に合う、戦闘できるカードすべての攻撃力・守備力を、ターンの終わりまで変える（例：巨大化）。
+  守備力が受けているダメージ以下になったカードは破壊される -/
+  | pump (target : Selector) (attack : Int) (defense : Int)
+  /-- 範囲に合う、「フィールド上」でないゾーンのカード（スタックにある呪文など）を、解決させずに墓地へ送る（打ち消す） -/
+  | counter (target : Selector)
 deriving Repr, DecidableEq, FromJson, ToJson
 
 /-- カードの効果 -/
@@ -220,6 +229,10 @@ structure Card where
   manaChoice : List String := []
   /-- トランプル（MTG 式の戦闘で、ブロックしたカードを破壊できるだけのダメージを与え、残りを相手に与える） -/
   trample : Bool := false
+  /-- 飛行（MTG 式の戦闘で、飛行か到達を持つカードでしかブロックできない） -/
+  flying : Bool := false
+  /-- 到達（飛行を持つカードもブロックできる） -/
+  reach : Bool := false
 deriving Repr, DecidableEq, FromJson, ToJson
 
 instance : Inhabited Card := ⟨{ name := "", type := "", tags := [], effects := [] }⟩
@@ -233,7 +246,7 @@ structure Game where
 deriving Repr, DecidableEq, FromJson, ToJson
 
 /-- 現在の形式の版 -/
-def currentVersion : Nat := 8
+def currentVersion : Nat := 9
 
 /-! ## 範囲の指定の意味
 
@@ -252,6 +265,8 @@ structure View where
   adjacent : Bool := false
   /-- 効果を持つカードと同じ縦列にあるか -/
   sameColumn : Bool := false
+  /-- 解決するときに選んだ対象か -/
+  isTarget : Bool := false
 deriving Repr, DecidableEq
 
 def Side.matches : Side → Bool → Bool
@@ -266,7 +281,7 @@ def Near.matches : Near → View → Bool
 
 def Selector.matches (s : Selector) (v : View) : Bool :=
   s.types.contains v.type && s.tags.all v.tags.contains && s.side.matches v.mine &&
-    (!s.faceUpOnly || v.faceUp) && !(s.excludeSelf && v.isSelf) && s.near.matches v
+    (!s.faceUpOnly || v.faceUp) && !(s.excludeSelf && v.isSelf) && s.near.matches v && (!s.target || v.isTarget)
 
 /-! ## 形式の検査
 
@@ -302,17 +317,28 @@ def Action.check (r : Rules) (where_ : String) : Action → List String
       (if n = 0 then [s!"{where_}：カードへのダメージが0です"] else []) ++
       (if s.types.any r.fighters.contains then [] else
         [s!"{where_}：カードへのダメージの範囲に、戦闘できる種類のカードがありません"])
+  | .pump s a d => s.check r s!"{where_}のターンの終わりまでの変化" ++
+      (if a = 0 ∧ d = 0 then [s!"{where_}：ターンの終わりまでの変化が攻撃力・守備力とも0です"] else []) ++
+      (if s.types.any r.fighters.contains then [] else
+        [s!"{where_}：ターンの終わりまでの変化の範囲に、戦闘できる種類のカードがありません"])
+  | .counter s => s.check r s!"{where_}の打ち消し" ++
+      (if s.types.any (fun t => r.zones.any fun z => z.role == .plain && !z.onField && z.admits.contains t) then [] else
+        [s!"{where_}：打ち消す範囲の種類を、「フィールド上」でないゾーンに置けません"])
+
+/-- 永続効果の範囲で対象を選ぼうとしていれば誤り -/
+def Selector.noTarget (where_ : String) (s : Selector) : List String :=
+  if s.target then [s!"{where_}：永続効果の範囲では、対象を選べません"] else []
 
 def Effect.check (r : Rules) (where_ : String) : Effect → List String
   | .activated as => (if as.isEmpty then [s!"{where_}：発動する効果に動きがありません"] else []) ++
       as.flatMap (·.check r where_)
-  | .negate s => s.check r s!"{where_}の無効" ++
+  | .negate s => s.check r s!"{where_}の無効" ++ s.noTarget s!"{where_}の無効" ++
       (if s.near != .any then [s!"{where_}：無効の範囲には、マスの関係（隣・同じ縦列）はまだ使えません"] else [])
-  | .boost s n => s.check r s!"{where_}の攻撃力の変化" ++
+  | .boost s n => s.check r s!"{where_}の攻撃力の変化" ++ s.noTarget s!"{where_}の攻撃力の変化" ++
       (if n = 0 then [s!"{where_}：攻撃力の変化が0です"] else []) ++
       (if s.types.any r.fighters.contains then [] else
         [s!"{where_}：攻撃力を変える範囲に、戦闘できる種類のカードがありません"])
-  | .toughen s n => s.check r s!"{where_}の守備力の変化" ++
+  | .toughen s n => s.check r s!"{where_}の守備力の変化" ++ s.noTarget s!"{where_}の守備力の変化" ++
       (if n = 0 then [s!"{where_}：守備力の変化が0です"] else []) ++
       (if s.types.any r.fighters.contains then [] else
         [s!"{where_}：守備力を変える範囲に、戦闘できる種類のカードがありません"])

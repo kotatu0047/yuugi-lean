@@ -177,7 +177,8 @@ namespace CardGen
             return Stack.Count == 0 && Attackers.Count > 0 && js.Distinct().Count() == js.Count && bs.Count == blocks.Count &&
                    blocks.All(b => b.a >= 0 && b.a < Attackers.Count) &&
                    bs.All(b => CountOf(bs, b) + CountOf(Blocked, b) <= CountOf(opp, b) &&
-                               (!r.AttackTaps || CountOf(bs, b) + CountOf(OppTapped, b) <= CountOf(opp, b)));
+                               (!r.AttackTaps || CountOf(bs, b) + CountOf(OppTapped, b) <= CountOf(opp, b))) &&
+                   blocks.All(b => !Attackers[b.a].Card.Flying || opp[b.j].Card.Flying || opp[b.j].Card.Reach);
         }
 
         /// <summary>locate：記録のカードの、フィールドでの位置（同じカードが複数あれば、まだ選んでいない前のものから）</summary>
@@ -206,7 +207,7 @@ namespace CardGen
             !NotIn(owner == Tp ? Tapped : OppTapped, field, sl);
     }
 
-    public enum TChoiceKind { Place, Cast, Resolve, Attack, Block, Tap, OppTap, EndTurn }
+    public enum TChoiceKind { Place, Cast, Resolve, Attack, Block, Tap, OppTap, EndTurn, Settle }
 
     /// <summary>ターンのある対戦の動き（TChoice）</summary>
     public sealed class TChoice
@@ -224,6 +225,8 @@ namespace CardGen
         public string Color = "";
         /// <summary>ブロック：(ブロックするカードの位置, 何番目に宣言された攻撃をブロックするか)</summary>
         public List<(int blocker, int attacker)> Blocks = new List<(int, int)>();
+        /// <summary>解決するときに選んだ対象の位置</summary>
+        public (bool player, int index)? Tgt;
 
         public static TChoice Place(int hand, int zone, int cell, bool faceUp, List<string> pay = null) =>
             new TChoice { Kind = TChoiceKind.Place, Hand = hand, Zone = zone, Cell = cell, FaceUp = faceUp,
@@ -231,9 +234,11 @@ namespace CardGen
         public static TChoice Cast(int hand, int zone, int cell, bool faceUp, List<string> pay = null) =>
             new TChoice { Kind = TChoiceKind.Cast, Hand = hand, Zone = zone, Cell = cell, FaceUp = faceUp,
                           Pay = pay ?? new List<string>() };
-        public static TChoice Resolve(bool p, int field, int effect, bool apply, List<(bool, int)> neg = null) =>
+        public static TChoice Resolve(bool p, int field, int effect, bool apply, List<(bool, int)> neg = null,
+            (bool, int)? tgt = null) =>
             new TChoice { Kind = TChoiceKind.Resolve, Player = p, Field = field, Effect = effect, Apply = apply,
-                          Neg = neg ?? new List<(bool, int)>() };
+                          Neg = neg ?? new List<(bool, int)>(), Tgt = tgt };
+        public static TChoice Settle(List<(bool, int)> neg) => new TChoice { Kind = TChoiceKind.Settle, Neg = neg };
         public static TChoice Attack(int field, int? target, List<(bool, int)> neg) =>
             new TChoice { Kind = TChoiceKind.Attack, Field = field, Target = target, Neg = neg };
         public static TChoice Block(List<(int, int)> blocks, List<(bool, int)> neg) =>
@@ -318,7 +323,7 @@ namespace CardGen
                 case TChoiceKind.Resolve:
                 {
                     if (!Turn.TopOK(r, G, ch.Player, ch.Field)) return null;
-                    var g = G.Step(r, Choice.Resolve(ch.Player, ch.Field, ch.Effect, ch.Apply, ch.Neg));
+                    var g = G.Step(r, Choice.Resolve(ch.Player, ch.Field, ch.Effect, ch.Apply, ch.Neg, ch.Tgt));
                     if (g == null) return null;
                     var t = Turn.Copy();
                     if (r.Stack && t.Stack.Count > 0) t.Stack.RemoveAt(0);
@@ -372,6 +377,11 @@ namespace CardGen
                     else { t.OppPool.AddRange(o); t.OppTapped.Insert(0, sl.Base()); }
                     t.Made += o.Count;
                     return Next(G, t);
+                }
+                case TChoiceKind.Settle:
+                {
+                    var g = G.Sweep(r, ch.Neg);
+                    return Next(g, Turn);
                 }
                 default:
                 {

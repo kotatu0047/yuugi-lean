@@ -60,6 +60,7 @@ namespace CardGen
                 FaceUpOnly = Bool(o, "faceUpOnly"),
                 ExcludeSelf = Bool(o, "excludeSelf"),
                 Near = Enum(o, "near", ("any", Near.Any), ("adjacent", Near.Adjacent), ("sameColumn", Near.SameColumn)),
+                Target = Bool(o, "target"),
             };
         }
 
@@ -80,6 +81,8 @@ namespace CardGen
                 "damage" => new Damage(Int(o, "amount")),
                 "heal" => new Heal(Int(o, "amount")),
                 "strike" => new Strike(ParseSelector(Field(o, "target")), Int(o, "amount")),
+                "pump" => new Pump(ParseSelector(Field(o, "target")), Int(o, "attack"), Int(o, "defense")),
+                "counter" => new Counter(ParseSelector(Field(o, "target"))),
                 _ => throw new FormatException($"動き「{k}」は使えません"),
             };
         }
@@ -114,6 +117,8 @@ namespace CardGen
                 ManaColor = Str(o, "manaColor"),
                 ManaChoice = Strs(o, "manaChoice"),
                 Trample = Bool(o, "trample"),
+                Flying = Bool(o, "flying"),
+                Reach = Bool(o, "reach"),
             };
         }
 
@@ -184,14 +189,15 @@ namespace CardGen
         /// 版 2 → 3 はターンのルールを既定の値で加え、版 3 → 4 はゾーンのマスの位置を空（マス目の上にない）、
         /// 範囲の指定のマスの関係を「条件なし」にする。版 4 → 5 はマナ・タップ・置ける枚数の上限・召喚酔いを
         /// 使わない値（コスト 0、マナ 0、上限なし、攻撃でタップしない、召喚酔いなし）で加える。版 5 → 6 は色のマナを使わない値、
-        /// 版 6 → 7 はタグの集合を空、版 7 → 8 はインスタントなし・スタックなし・選べるマナの色なし・トランプルなしにする。
+        /// 版 6 → 7 はタグの集合を空、版 7 → 8 はインスタントなし・スタックなし・選べるマナの色なし・トランプルなしにする。版 8 → 9 は対象を選ばない範囲と、
+        /// 飛行・到達なしにする。
         /// 上げたときは true。版が分からない・新しすぎるときは何もしない
         /// </summary>
         public static bool Upgrade(JObject o)
         {
             if (o["version"]?.Type != JTokenType.Integer || !(o["rules"] is JObject r)) return false;
             var v = (int)o["version"];
-            if (v < 2 || v > 7) return false;
+            if (v < 2 || v > 8) return false;
             if (v == 2)
             {
                 if (r["summonsPerTurn"] == null) r["summonsPerTurn"] = 1;
@@ -222,6 +228,11 @@ namespace CardGen
                     if (c["manaColor"] == null) c["manaColor"] = "";
                     if (c["manaChoice"] == null) c["manaChoice"] = new JArray();
                     if (c["trample"] == null) c["trample"] = false;
+                    if (c["flying"] == null) c["flying"] = false;
+                    if (c["reach"] == null) c["reach"] = false;
+                    // 範囲の指定（"side" を持つオブジェクト）の、対象を選ぶか
+                    foreach (var sel in c.Descendants().OfType<JObject>().Where(x => x["side"] != null && x["types"] != null).ToList())
+                        if (sel["target"] == null) sel["target"] = false;
                 }
             o["version"] = Game.CurrentVersion;
             return true;
@@ -237,6 +248,7 @@ namespace CardGen
             ["faceUpOnly"] = s.FaceUpOnly,
             ["excludeSelf"] = s.ExcludeSelf,
             ["near"] = s.Near == Near.Adjacent ? "adjacent" : s.Near == Near.SameColumn ? "sameColumn" : "any",
+            ["target"] = s.Target,
         };
 
         static JObject ToJson(Action a) => a switch
@@ -247,6 +259,8 @@ namespace CardGen
             Damage d => new JObject { ["damage"] = new JObject { ["amount"] = d.Amount } },
             Heal h => new JObject { ["heal"] = new JObject { ["amount"] = h.Amount } },
             Strike st => new JObject { ["strike"] = new JObject { ["target"] = ToJson(st.Target), ["amount"] = st.Amount } },
+            Pump pu => new JObject { ["pump"] = new JObject { ["target"] = ToJson(pu.Target), ["attack"] = pu.Attack, ["defense"] = pu.Defense } },
+            Counter co => new JObject { ["counter"] = new JObject { ["target"] = ToJson(co.Target) } },
             _ => throw new ArgumentException("未知の動き"),
         };
 
@@ -273,6 +287,8 @@ namespace CardGen
             ["manaColor"] = c.ManaColor,
             ["manaChoice"] = new JArray(c.ManaChoice),
             ["trample"] = c.Trample,
+            ["flying"] = c.Flying,
+            ["reach"] = c.Reach,
         };
 
         static JObject ToJson(Zone z) => new JObject

@@ -30,6 +30,8 @@ namespace CardGen.App
             NodeKind.Boost => new Color(0.25f, 0.55f, 0.55f),
             NodeKind.Toughen => new Color(0.25f, 0.45f, 0.65f),
             NodeKind.Strike => new Color(0.80f, 0.45f, 0.30f),
+            NodeKind.Pump => new Color(0.45f, 0.65f, 0.30f),
+            NodeKind.Counter => new Color(0.35f, 0.40f, 0.75f),
             NodeKind.Damage => new Color(0.80f, 0.35f, 0.50f),
             NodeKind.Heal => new Color(0.35f, 0.65f, 0.35f),
             NodeKind.Axioms => new Color(0.35f, 0.38f, 0.45f),
@@ -151,7 +153,7 @@ namespace CardGen.App
             NodeKind.Card =>
                 $"種類：{(n.Card.Type.Length == 0 ? "（未設定）" : n.Card.Type)}" + (n.Card.Tags.Count > 0 ? $"\nタグ：{List(n.Card.Tags)}" : "") +
                 (n.Card.Attack > 0 || n.Card.Defense > 0 ? $"\n攻撃力 {n.Card.Attack}・守備力 {n.Card.Defense}" : "") +
-                (n.Card.Trample ? "・トランプル" : "") +
+                (n.Card.Trample ? "・トランプル" : "") + (n.Card.Flying ? "・飛行" : "") + (n.Card.Reach ? "・到達" : "") +
                 (n.Card.Mana > 0 ? $"\nタップで{(n.Card.ManaChoice.Count > 0 ? string.Join("か", n.Card.ManaChoice) : n.Card.ManaColor == "" ? "無色" : n.Card.ManaColor)}マナ {n.Card.Mana}" : "") +
                 (n.Card.Cost > 0 || n.Card.ColorCost.Count > 0 ? $"\nコスト {(n.Card.Cost > 0 ? n.Card.Cost.ToString() : "")}{(n.Card.Cost > 0 && n.Card.ColorCost.Count > 0 ? "＋" : "")}{string.Concat(n.Card.ColorCost)}" : ""),
             NodeKind.Axioms => "編集できません\n" + string.Join("\n", Axioms.Lines.Select((l, i) => $"{i + 1}. {l}")),
@@ -167,6 +169,8 @@ namespace CardGen.App
             NodeKind.Boost => $"表側表示で存在する限り、つないだ範囲のカードの攻撃力を {(n.Amount >= 0 ? "+" : "")}{n.Amount}",
             NodeKind.Toughen => $"表側表示で存在する限り、つないだ範囲のカードの守備力を {(n.Amount >= 0 ? "+" : "")}{n.Amount}",
             NodeKind.Strike => $"つないだ範囲の戦闘できるカードすべてに {n.Amount} のダメージ（ターンの終わりまで残る）",
+            NodeKind.Pump => $"つないだ範囲の戦闘できるカードの攻撃力 {(n.Amount >= 0 ? "+" : "")}{n.Amount}・守備力 {(n.Amount2 >= 0 ? "+" : "")}{n.Amount2}（ターンの終わりまで）",
+            NodeKind.Counter => "つないだ範囲の、フィールド上でないカード（スタックの呪文など）を打ち消す",
             NodeKind.Damage => $"相手に {n.Amount} のダメージを与える",
             NodeKind.Heal => $"発動したプレイヤーのライフを {n.Amount} 回復する",
             _ => SelectorSummary(n.Selector),
@@ -180,6 +184,7 @@ namespace CardGen.App
             if (s.ExcludeSelf) parts += "\nこのカード自身を除く";
             if (s.Near == Near.Adjacent) parts = "隣のマスの" + parts;
             if (s.Near == Near.SameColumn) parts = "同じ縦列の" + parts;
+            if (s.Target) parts = "対象1枚：" + parts;
             return parts;
         }
     }

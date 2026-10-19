@@ -19,9 +19,14 @@ import CardGen.Sample
   インスタントとソーサリーはスタックに積まれ、後に置いたものから解決する。スタックが空になるまで、ほかのことはできない
 - ライブラリーから引けなければ負け
 
-実際の MTG との違い（このプロトタイプで表せないもの）：対象を選ぶ効果（ここでは範囲に合うものすべて）、
-ターンの終わりまでの効果（巨大化など）、呪文を打ち消す効果、トランプル以外の能力（飛行など）、優先権の順番
-（ここではどちらのプレイヤーも、いつでもインスタントを置ける）、守備力が 0 以下になったときの破壊。
+- 対象を1つ選ぶ効果（ショック・巨大化・対抗呪文）は、解決するときに範囲に合うカードを1枚選ぶ
+- 巨大化は、ターンの終わりまで攻撃力・守備力を変える。対抗呪文は、スタックにある呪文を打ち消す
+- 飛行を持つクリーチャー（風のドレイク）は、飛行か到達（巨大蜘蛛）を持つクリーチャーでしかブロックできない
+- 守備力が 0 になったクリーチャーは、状態の確認で破壊される
+
+実際の MTG との違い（このプロトタイプで表せないもの）：プレイヤーを対象に選ぶこと（稲妻は相手にだけダメージを与える）、
+対象は唱えるときではなく解決するときに選ぶこと、優先権の順番（ここではどちらのプレイヤーも、いつでもインスタントを置ける）、
+飛行・到達・トランプル以外の能力。
 
 同じ内容の JSON が `CardGen/mtg.json` にある。
 -/
@@ -88,6 +93,28 @@ def knight : Card :=
   { name := "白騎士", type := creature, tags := ["白", "騎士"], effects := [], attack := 2, defense := 2,
     colorCost := ["白", "白"] }
 
+/-- 飛行を持つ -/
+def drake : Card :=
+  { name := "風のドレイク", type := creature, tags := ["青"], effects := [], attack := 2, defense := 2,
+    cost := 2, colorCost := ["青"], flying := true }
+/-- 到達を持つ -/
+def spider : Card :=
+  { name := "巨大蜘蛛", type := creature, tags := ["緑"], effects := [], attack := 2, defense := 4,
+    cost := 3, colorCost := ["緑"], reach := true }
+
+/-- 対象を1つ選ぶ範囲 -/
+def target (types : List TypeName) (side : Side) : Selector := { sel types side with target := true }
+
+def shock : Card :=
+  { name := "ショック", type := instant, tags := ["赤"], effects := [.activated [.strike (target [creature] .both) 2]],
+    colorCost := ["赤"] }
+def growth : Card :=
+  { name := "巨大化", type := instant, tags := ["緑"], effects := [.activated [.pump (target [creature] .both) 3 3]],
+    colorCost := ["緑"] }
+def counterspell : Card :=
+  { name := "対抗呪文", type := instant, tags := ["青"], effects := [.activated [.counter (target [instant, sorcery] .opp)]],
+    colorCost := ["青", "青"] }
+
 def bolt : Card :=
   { name := "稲妻", type := instant, tags := ["赤"], effects := [.activated [.damage 3]], colorCost := ["赤"] }
 def pyroclasm : Card :=
@@ -113,8 +140,8 @@ def silence : Card :=
 def game : Game where
   version := currentVersion
   rules := rules
-  cards := [mountain, forest, plains, island, karplusan, goblin, bear, giant, rhino, knight, bolt, pyroclasm, wrath,
-            unsummon, divination, salve, anthem, silence]
+  cards := [mountain, forest, plains, island, karplusan, goblin, bear, giant, rhino, knight, drake, spider, bolt, shock,
+            growth, counterspell, pyroclasm, wrath, unsummon, divination, salve, anthem, silence]
 
 /-! ## 検査 -/
 
@@ -135,6 +162,9 @@ def game : Game where
 #guard ((report (toJson game).compress).claims.map (·.text)).contains "「土地」を置けるのは、1ターンに 1 枚まで"
 #guard ((report (toJson game).compress).claims.map (·.theorem)).contains "CardGen.TReachable.spent_le"
 
+-- 形式の検査：永続効果の範囲では対象を選べない。打ち消す範囲は「フィールド上」でないゾーンに置ける種類
+#guard !({ game with cards := [{ anthem with effects := [.boost (target [creature] .self) 1] }] }).WellFormed
+#guard !({ game with cards := [{ counterspell with effects := [.activated [.counter (target [creature] .opp)]] }] }).WellFormed
 -- 形式の検査：選べるマナの色と、カードへのダメージ
 #guard !({ game with cards := [{ karplusan with manaChoice := ["赤", "紫"] }] }).WellFormed
 #guard !({ game with cards := [{ karplusan with manaColor := "赤" }] }).WellFormed
@@ -202,7 +232,7 @@ def toAttack : List TChoice := turn1 ++ [.endTurn] ++ turn1 ++ [.endTurn, .attac
 
 /-! ## 戦闘のダメージ -/
 
-def slot (i : Nat) (c : Card) (damage : Nat := 0) : Slot := ⟨0, i, c, true, damage⟩
+def slot (i : Nat) (c : Card) (damage : Nat := 0) : Slot := ⟨0, i, c, true, damage, 0, 0⟩
 
 def board (mine opp : List Slot) : State := fun p =>
   { deck := [], hand := [], grave := [], life := 20, field := if p then mine else opp }
@@ -241,6 +271,46 @@ def board (mine opp : List Slot) : State := fun p =>
   | none => false
 -- ダメージを消す
 #guard ((board [slot 0 giant 2] []).mend true).field == [slot 0 giant]
+
+/-! ## 対象・ターンの終わりまでの変化・打ち消し・飛行 -/
+
+-- ショック（対象を1つ選ぶ）：ゴブリンの先兵2体のうち、選んだ1体だけに 2 点
+#guard match (board [⟨1, 0, shock, true, 0, 0, 0⟩] [slot 0 goblin, slot 1 goblin]).step? rules
+    (.resolve true 0 0 true [] (some (false, 1))) with
+  | some g => (g false).field == [slot 0 goblin] && (g true).grave == [shock]
+  | none => false
+-- 対象を選ばなければ何も起きない
+#guard match (board [⟨1, 0, shock, true, 0, 0, 0⟩] [slot 0 goblin, slot 1 goblin]).step? rules
+    (.resolve true 0 0 true []) with
+  | some g => (g false).field.length == 2
+  | none => false
+-- 巨大化：熊は 5/5 になり、ブロックした丘巨人（3/3）を破壊して残る。ターンの終わりに元に戻る
+def grown : Option State :=
+  (board [slot 0 bear, ⟨1, 0, growth, true, 0, 0, 0⟩] [slot 0 giant]).step? rules (.resolve true 1 0 true [] (some (true, 0)))
+#guard match grown with
+  | some g => g.atkOf rules [] (true, 0) (slot 0 bear) == 2 &&
+      ((g true).field.head?.map fun sl => g.atkOf rules [] (true, 0) sl) == some 5
+  | none => false
+#guard match grown.bind (·.step? rules (.combat true [0] [(0, 0)] [])) with
+  | some g => (g false).field.isEmpty && (g true).field.length == 1 && ((g true).field.head?.map (·.damage)) == some 3 &&
+      ((g.mend true).field.head?.map (·.base)) == some (slot 0 bear)
+  | none => false
+-- 対抗呪文：相手のスタックの紅蓮地獄を、解決させずに墓地へ送る
+#guard match (board [⟨1, 0, pyroclasm, true, 0, 0, 0⟩] [⟨1, 0, counterspell, true, 0, 0, 0⟩]).step? rules
+    (.resolve false 0 0 true [] (some (true, 0))) with
+  | some g => (g true).field.isEmpty && (g true).grave == [pyroclasm] && (g false).grave == [counterspell]
+  | none => false
+-- 飛行：風のドレイクの攻撃は、灰色熊ではブロックできず、到達を持つ巨大蜘蛛ならブロックできる
+def flyer : Match := ⟨board [slot 0 drake] [slot 0 bear, slot 1 spider], { tp := true, count := 3 }⟩
+#guard (Match.run rules flyer [.attack 0 none [], .block [(0, 0)] []]).isNone
+#guard (Match.run rules flyer [.attack 0 none [], .block [(1, 0)] []]).isSome
+-- 守備力が 0 になったクリーチャーは、状態の確認で破壊される
+#guard match (board [{ slot 0 goblin with defBonus := -1 }] []).step? rules (.settle []) with
+  | some g => (g true).field.isEmpty && (g true).grave == [goblin]
+  | none => false
+#guard match (board [slot 0 goblin] []).step? rules (.settle []) with
+  | some g => (g true).field.length == 1
+  | none => false
 
 /-! ## インスタントとスタック -/
 

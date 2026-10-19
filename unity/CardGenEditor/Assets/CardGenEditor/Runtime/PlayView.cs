@@ -47,6 +47,8 @@ namespace CardGen.App
         List<string> customPay;
         // MTG 式の戦闘で、守る側が割り当てたブロック（ブロックするカードの位置 → 何番目の攻撃か）
         readonly Dictionary<int, int> blockPlan = new Dictionary<int, int>();
+        // 対象を選んでいる発動（プレイヤー・フィールドの位置・効果の番号・説明）
+        (bool p, int k, int e, string what)? targeting;
 
         readonly VisualElement boards;
         readonly VisualElement side;
@@ -223,12 +225,13 @@ namespace CardGen.App
 
         /// <summary>
         /// 動作確認用の場面（MTG 風の見本のカードを使う）。"combat"：自分がゴブリンの先兵と丘巨人で攻撃を宣言し、
-        /// 相手が灰色熊2体で丘巨人をブロックしようとしている。"stack"：自分が紅蓮地獄を唱え、相手が稲妻で応答した
+        /// 相手が灰色熊2体で丘巨人をブロックしようとしている。"stack"：自分が紅蓮地獄を唱え、相手が稲妻で応答した。
+        /// "target"：自分がショックを唱え、解決するときに対象を選ぶ
         /// </summary>
         public void Scenario(string name)
         {
             var c = game.Cards.GroupBy(x => x.Name).ToDictionary(g => g.Key, g => g.First());
-            string[] need = { "山", "森", "丘巨人", "ゴブリンの先兵", "灰色熊", "紅蓮地獄", "稲妻", "カープルーザンの森" };
+            string[] need = { "山", "森", "丘巨人", "ゴブリンの先兵", "灰色熊", "紅蓮地獄", "稲妻", "カープルーザンの森", "ショック", "風のドレイク" };
             if (need.Any(n => !c.ContainsKey(n))) { log.Add("（場面を作れません：MTG 風の見本のカードがありません）"); Render(); return; }
             PState P(string[] field, string[] hand) => new PState
             {
@@ -254,6 +257,23 @@ namespace CardGen.App
                 blockPlan[2] = 1;
                 blockPlan[3] = 1;
                 log.Add("場面：自分がゴブリンの先兵と丘巨人で攻撃を宣言し、相手が灰色熊2体で丘巨人をブロックしようとしている");
+            }
+            else if (name == "target")
+            {
+                match = new Match
+                {
+                    G = new MatchState
+                    {
+                        P1 = P(new[] { "山", "山", "丘巨人" }, new[] { "ショック" }),
+                        P2 = P(new[] { "森", "灰色熊", "ゴブリンの先兵", "風のドレイク" }, new[] { "稲妻" }),
+                    },
+                    Turn = new TurnInfo { Tp = true, Count = 5 },
+                };
+                foreach (var ch in new[] { TChoice.Tap(0), TChoice.Place(0, 1, 0, true, new List<string> { "赤" }) })
+                    match = match.Step(game.Rules, ch) ?? match;
+                var k = state.P1.Field.Count - 1;
+                targeting = (true, k, 0, "自分：ショック を解決");
+                log.Add("場面：自分がショックを唱え、解決するときに対象を選ぶ");
             }
             else
             {
@@ -311,10 +331,95 @@ namespace CardGen.App
             if (next == null) { log.Add($"（できません）{message}"); Render(); return; }
             match = next;
             if (ch.Kind == TChoiceKind.Block) blockPlan.Clear();
+            targeting = null;
             log.Add(message);
             judge.Sync(state, game.Rules, turn);
+            Settle();
             ClearSelection();
             Render();
+        }
+
+        /// <summary>
+        /// 状態の確認：守備力以上のダメージを受けている（MTG 式の戦闘では守備力が 0 の）戦闘できるカードがあれば、
+        /// 今の無効の状態で破壊する（ターンの終わりまでの変化や、守備力を上げる効果がなくなったときなど）
+        /// </summary>
+        void Settle()
+        {
+            var neg = NegList(NegationStatus(out _));
+            var next = match.Step(game.Rules, TChoice.Settle(neg));
+            if (next == null) return;
+            var gone = new[] { true, false }.SelectMany(q => state.Get(q).Field
+                .Where(x => !next.G.Get(q).Field.Any(y => y.Key == x.Key)).Select(x => $"{Who(q)}の{x.Card.Name}")).ToList();
+            if (gone.Count == 0) return;
+            match = next;
+            log.Add($"状態の確認：{string.Join("・", gone)}を破壊（守備力以上のダメージ）");
+            judge.Sync(state, game.Rules, turn);
+        }
+
+        /// <summary>対象を選ぶ範囲を持つ動きか</summary>
+        static Selector TargetSel(Action a) => a switch
+        {
+            Destroy d when d.Target.Target => d.Target,
+            Bounce b when b.Target.Target => b.Target,
+            Strike s when s.Target.Target => s.Target,
+            Pump pu when pu.Target.Target => pu.Target,
+            Counter c when c.Target.Target => c.Target,
+            _ => null,
+        };
+
+        /// <summary>p のフィールドの k 番目のカードの効果 act で、対象に選べるカードの位置（どれかの動きの範囲に合うもの）</summary>
+        List<(bool, int)> TargetsFor(bool p, int k, Activated act)
+        {
+            var r = game.Rules;
+            var me = state.Get(p).Field[k];
+            var l = new List<(bool, int)>();
+            foreach (var q in new[] { true, false })
+            {
+                var f = state.Get(q).Field;
+                for (int i = 0; i < f.Count; i++)
+                {
+                    if (q == p && i == k) continue;
+                    var sl = f[i];
+                    var src = new Src(p, r.CellOf(p, me.Zone, me.Cell), (q, sl.Base()));
+                    var hit = act.Actions.Any(a =>
+                    {
+                        var sel = TargetSel(a);
+                        if (sel == null || !sel.Matches(sl.ViewFor(r, q, src))) return false;
+                        return a is Counter ? !r.OnFieldZone(sl.Zone)
+                            : a is Strike || a is Pump ? MatchState.Fights(r, sl) : r.OnFieldZone(sl.Zone);
+                    });
+                    if (hit) l.Add((q, i));
+                }
+            }
+            return l;
+        }
+
+        /// <summary>発動する：対象を選ぶ範囲があれば、対象を選ぶ場面にする</summary>
+        void StartResolve(bool p, int k, int e, bool apply, List<(bool, int)> negs, string message)
+        {
+            var act = (Activated)state.Get(p).Field[k].Card.Effects[e];
+            if (apply && act.Actions.Any(a => TargetSel(a) != null)) { targeting = (p, k, e, message); Render(); return; }
+            Do(TChoice.Resolve(p, k, e, apply, negs), message);
+        }
+
+        /// <summary>対象を選ぶ欄</summary>
+        void TargetPanel(Dictionary<(bool, int), string> neg)
+        {
+            if (!(targeting is (bool p, int k, int e, string message))) return;
+            var f = state.Get(p).Field;
+            if (k >= f.Count || !(f[k].Card.Effects[e] is Activated act)) { targeting = null; return; }
+            Section($"対象を選ぶ（{f[k].Card.Name}）");
+            var negs = NegList(neg);
+            foreach (var (q, i) in TargetsFor(p, k, act))
+            {
+                var sl = state.Get(q).Field[i];
+                int qi = i;
+                bool qq = q;
+                ActionButton($"{Who(q)}の{sl.Card.Name}を対象にする",
+                    () => Do(TChoice.Resolve(p, k, e, true, negs, (qq, qi)), $"{message}：対象は{Who(qq)}の{sl.Card.Name}"));
+            }
+            ActionButton("対象を選ばずに解決する（対象を選ぶ動きは何も起きない）", () => Do(TChoice.Resolve(p, k, e, true, negs), message + "（対象なし）"));
+            ActionButton("やめる", () => { targeting = null; Render(); });
         }
 
         /// <summary>マナの色の表示名（"" は無色）</summary>
@@ -422,6 +527,9 @@ namespace CardGen.App
             Damage dm => $"相手に{dm.Amount}ダメージ",
             Heal h => $"ライフを{h.Amount}回復",
             Strike st => NodeView.SelectorSummary(st.Target).Replace("\n", "・") + $"に{st.Amount}ダメージ",
+            Pump pu => NodeView.SelectorSummary(pu.Target).Replace("\n", "・") +
+                       $"をターンの終わりまで {(pu.Attack >= 0 ? "+" : "")}{pu.Attack}/{(pu.Defense >= 0 ? "+" : "")}{pu.Defense}",
+            Counter co => NodeView.SelectorSummary(co.Target).Replace("\n", "・") + "を打ち消す",
             _ => "",
         };
 
@@ -569,6 +677,8 @@ namespace CardGen.App
                 stats = $"攻 {atk}" + (atk != sl.Card.Attack ? $"（元 {sl.Card.Attack}）" : "") +
                         $"・守 {def}" + (def != sl.Card.Defense ? $"（元 {sl.Card.Defense}）" : "");
                 if (sl.Card.Trample) stats += "・トランプル";
+                if (sl.Card.Flying) stats += "・飛行";
+                if (sl.Card.Reach) stats += "・到達";
                 if (sl.Damage > 0) stats += $"\nダメージ {sl.Damage}（残り {Math.Max(0, def - sl.Damage)}）";
             }
             var f = state.Get(p).Field;
@@ -743,9 +853,11 @@ namespace CardGen.App
                 name.style.width = 150;
                 row.Add(name);
                 int jj = j;
-                if (!match.Turn.BlockOK(game.Rules, of, new List<(int, int)> { (jj, 0) }))
+                if (!Enumerable.Range(0, atk.Count).Any(a => match.Turn.BlockOK(game.Rules, of, new List<(int, int)> { (jj, a) })))
                 {
-                    row.Add(Text(match.Turn.IsTapped(o, of, tl) ? "タップしているのでブロックできません" : "このターンにもうブロックしました", 11, Quiet));
+                    row.Add(Text(match.Turn.IsTapped(o, of, tl) ? "タップしているのでブロックできません"
+                        : match.Turn.Blocked.Any(x => TurnInfo.SameSlot(x, tl)) ? "このターンにもうブロックしました"
+                        : "飛行を持つ攻撃は、飛行か到達を持つカードでしかブロックできません", 11, Quiet));
                     side.Add(row);
                     continue;
                 }
@@ -759,7 +871,8 @@ namespace CardGen.App
                     row.Add(b);
                 }
                 Opt("ブロックしない", null);
-                for (int a = 0; a < atk.Count; a++) Opt($"攻撃 {a + 1} を止める", a);
+                for (int a = 0; a < atk.Count; a++)
+                    if (match.Turn.BlockOK(game.Rules, of, new List<(int, int)> { (jj, a) })) Opt($"攻撃 {a + 1} を止める", a);
                 side.Add(row);
             }
             // 割り当てたブロックで戦闘したときの結果（C# の対戦エンジンで計算した予告）
@@ -808,7 +921,7 @@ namespace CardGen.App
                 int ei = e;
                 if (status != "無効")
                     ActionButton($"一番上を解決する：{top.Card.Name}（{what}）",
-                        () => Do(TChoice.Resolve(tq, k, ei, true, NegList(neg)), $"{Who(tq)}：{top.Card.Name} を解決（{what}）"));
+                        () => StartResolve(tq, k, ei, true, NegList(neg), $"{Who(tq)}：{top.Card.Name} を解決（{what}）"));
                 if (status != "有効")
                     ActionButton($"一番上を、無効にされた状態で解決する（{top.Card.Name}。何も起きない）",
                         () => Do(TChoice.Resolve(tq, k, ei, false, NegList(neg)), $"{Who(tq)}：{top.Card.Name} を解決したが無効"));
@@ -906,6 +1019,7 @@ namespace CardGen.App
             }
             if (judge.Choices != null)
                 side.Add(Text("無効の判定で、プレイヤーが選ぶ場面です（下の「無効の状態」から選んでください）", 12, Warn, true));
+            TargetPanel(neg);
             StackPanel(neg);
             if (match.Turn.Attackers.Count > 0)
                 BlockPanel(neg);
@@ -985,7 +1099,7 @@ namespace CardGen.App
                         int ei = e;
                         var negs = NegList(neg);
                         if (st != "無効")
-                            ActionButton($"発動する（{what}）", () => Do(TChoice.Resolve(selPlayer, selField, ei, true, negs), $"{Who(selPlayer)}：{sl.Card.Name} を発動（{what}）"));
+                            ActionButton($"発動する（{what}）", () => StartResolve(selPlayer, selField, ei, true, negs, $"{Who(selPlayer)}：{sl.Card.Name} を発動（{what}）"));
                         if (st != "有効")
                             ActionButton("無効にされた状態で解決する（何も起きない）", () => Do(TChoice.Resolve(selPlayer, selField, ei, false, negs), $"{Who(selPlayer)}：{sl.Card.Name} を発動したが無効"));
                     }

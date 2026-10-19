@@ -8,7 +8,7 @@ namespace CardGen
 #guard_msgs in
 #eval show IO Unit from do
   let s ← IO.FS.readFile "csharp/vectors.json"
-  unless s == vectors.pretty ++ "\n" do
+  unless s == (vectors ()).pretty ++ "\n" do
     throw (IO.userError "csharp/vectors.json が古いです。lake exe cardgen --vectors csharp/vectors.json で書き出し直してください")
 
 end CardGen

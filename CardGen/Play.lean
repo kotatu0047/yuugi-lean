@@ -19,7 +19,7 @@ inductive Choice
   | place (p : PlayerId) (hand : Nat) (zone : Nat) (cell : Nat) (up : Bool)
   /-- `p` がフィールドの `k` 番目のカードの `eff` 番目の効果を発動して解決する（`apply`：無効にされていないか。
   `neg`：効果が無効になっているカードの位置。守備力の計算に使う） -/
-  | resolve (p : PlayerId) (k : Nat) (eff : Nat) (apply : Bool) (neg : List Pos := [])
+  | resolve (p : PlayerId) (k : Nat) (eff : Nat) (apply : Bool) (neg : List Pos := []) (tgt : Option Pos := none)
   /-- `p` がフィールドの `k` 番目のカードで、相手のフィールドの `target` 番目のカード（`none` なら直接）を攻撃する。
   `neg`：効果が無効になっているカードの位置（攻撃力の計算に使う） -/
   | attack (p : PlayerId) (k : Nat) (target : Option Nat) (neg : List Pos)
@@ -28,6 +28,8 @@ inductive Choice
   | combat (p : PlayerId) (atk : List Nat) (blocks : List (Nat × Nat)) (neg : List Pos)
   /-- どのカードのダメージも 0 に戻す -/
   | mend
+  /-- 状態の確認（守備力以上のダメージを受けている戦闘できるカードを破壊する） -/
+  | settle (neg : List Pos)
 deriving Repr, DecidableEq
 
 /-- 攻撃の対象として選べるか（`none` は直接攻撃：相手に戦闘できるカードがないとき） -/
@@ -44,8 +46,8 @@ def State.freeCell (r : Rules) (g : State) (p : PlayerId) (i : Nat) : Nat :=
     else 0
   | none => 0
 
-/-- 選んだ動きをしたあとの状態（できない動きなら `none`） -/
-def State.step? (r : Rules) (g : State) : Choice → Option State
+/-- 選んだ動きをしたあとの状態（できない動きなら `none`）。計算済みの値にする前のもの -/
+def State.step0? (r : Rules) (g : State) : Choice → Option State
   | .draw p =>
     match (g p).deck with
     | c :: d => some (g.set p { g p with deck := d, hand := (g p).hand ++ [c] })
@@ -55,11 +57,11 @@ def State.step? (r : Rules) (g : State) : Choice → Option State
     let z ← r.zones[i]?
     guard (z.role == .plain && z.admits.contains c.type && decide (j < z.count) &&
       (z.capacity != .one || (g p).field.all (fun sl => !(sl.zone == i && sl.cell == j))))
-    return g.set p { g p with hand := (g p).hand.erase c, field := (g p).field ++ [⟨i, j, c, up, 0⟩] }
-  | .resolve p k e apply neg => do
+    return g.set p { g p with hand := (g p).hand.erase c, field := (g p).field ++ [⟨i, j, c, up, 0, 0, 0⟩] }
+  | .resolve p k e apply neg tgt => do
     let sl ← (g p).field[k]?
     match sl.card.effects[e]? with
-    | some (.activated as) => some (g.resolve r p k sl as apply neg)
+    | some (.activated as) => some (g.resolve r p k sl as apply neg tgt)
     | _ => none
   | .attack p k t neg => do
     let sl ← (g p).field[k]?
@@ -67,17 +69,30 @@ def State.step? (r : Rules) (g : State) : Choice → Option State
     return g.battle r neg p k sl t
   | .combat p atk blocks neg => if g.combatOK r p atk blocks then some (g.combat r neg p atk blocks) else none
   | .mend => some g.mend
+  | .settle neg => some (g.sweep r neg)
 
-/-- **`step?` で進めた状態は、`Step` で進めた状態** -/
-theorem step?_sound {r : Rules} {g g' : State} {ch : Choice} (h : g.step? r ch = some g') : Step r g g' := by
+/-- 盤面を、2人分の計算済みの値から作り直す（値は `g` と同じ）。実行時に、前の盤面を参照する関数が積み重なって
+読むたびに計算し直すことがないようにする -/
+def State.fresh (g : State) : State := State.of (g true) (g false)
+
+theorem State.fresh_eq (g : State) : g.fresh = g := by
+  funext q; cases q <;> rfl
+
+/-- 選んだ動きをしたあとの状態（できない動きなら `none`） -/
+def State.step? (r : Rules) (g : State) (ch : Choice) : Option State :=
+  match g.step0? r ch with
+  | some g' => some (State.of (g' true) (g' false))
+  | none => none
+
+theorem step0?_sound {r : Rules} {g g' : State} {ch : Choice} (h : g.step0? r ch = some g') : Step r g g' := by
   cases ch with
   | draw p =>
-    simp only [State.step?] at h
+    simp only [State.step0?] at h
     split at h
     · rename_i c d hd; cases h; exact .draw g p c d hd
     · cases h
   | place p hi i j up =>
-    simp only [State.step?, Option.bind_eq_bind] at h
+    simp only [State.step0?, Option.bind_eq_bind] at h
     cases hc : (g p).hand[hi]? with
     | none => simp [hc] at h
     | some c =>
@@ -102,8 +117,8 @@ theorem step?_sound {r : Rules} {g g' : State} {ch : Choice} (h : g.step? r ch =
         · rw [Bool.not_eq_true] at hg
           simp only [hg, guard] at h
           cases h
-  | resolve p k e apply neg =>
-    simp only [State.step?, Option.bind_eq_bind] at h
+  | resolve p k e apply neg tgt =>
+    simp only [State.step0?, Option.bind_eq_bind] at h
     cases hk : (g p).field[k]? with
     | none => simp [hk] at h
     | some sl =>
@@ -111,10 +126,10 @@ theorem step?_sound {r : Rules} {g g' : State} {ch : Choice} (h : g.step? r ch =
       split at h
       · rename_i as he
         cases h
-        exact .resolve g p k sl as apply neg hk (List.mem_of_getElem? he)
+        exact .resolve g p k sl as apply neg tgt hk (List.mem_of_getElem? he)
       · cases h
   | attack p k t neg =>
-    simp only [State.step?, Option.bind_eq_bind] at h
+    simp only [State.step0?, Option.bind_eq_bind] at h
     cases hk : (g p).field[k]? with
     | none => simp [hk] at h
     | some sl =>
@@ -136,13 +151,27 @@ theorem step?_sound {r : Rules} {g g' : State} {ch : Choice} (h : g.step? r ch =
         simp only [hg, guard] at h
         cases h
   | combat p atk blocks neg =>
-    simp only [State.step?] at h
+    simp only [State.step0?] at h
     split at h
     · rename_i hok; cases h; exact .combat g p atk blocks neg hok
     · cases h
   | mend =>
-    simp only [State.step?, Option.some.injEq] at h
+    simp only [State.step0?, Option.some.injEq] at h
     subst h; exact .mend g
+  | settle neg =>
+    simp only [State.step0?, Option.some.injEq] at h
+    subst h; exact .settle g neg
+
+/-- **`step?` で進めた状態は、`Step` で進めた状態** -/
+theorem step?_sound {r : Rules} {g g' : State} {ch : Choice} (h : g.step? r ch = some g') : Step r g g' := by
+  unfold State.step? at h
+  split at h
+  · rename_i g0 h0
+    cases h
+    have : State.of (g0 true) (g0 false) = g0 := State.fresh_eq g0
+    rw [this]
+    exact step0?_sound h0
+  · cases h
 
 /-- `step?` で動きを続けて到達した状態も `Reachable` -/
 theorem Reachable.steps? {r : Rules} {decks : PlayerId → List Card} {g : State} (h : Reachable r decks g) :

@@ -15,13 +15,17 @@ public class DifferentialTests
         ((JArray)V["cards"]).Select(IrJson.ParseCard).ToDictionary(c => c.Name);
 
     static View ParseView(JToken t) => new View((string)t["type"], t["tags"].Select(x => (string)x).ToList(),
-        (bool)t["mine"], (bool)t["faceUp"], (bool)t["isSelf"], (bool)t["adjacent"], (bool)t["sameColumn"]);
+        (bool)t["mine"], (bool)t["faceUp"], (bool)t["isSelf"], (bool)t["adjacent"], (bool)t["sameColumn"], (bool)t["isTarget"]);
 
     static Slot ParseSlot(JToken x) =>
-        new Slot((int)x["zone"], (int)x["cell"], Cards[(string)x["card"]], (bool)x["faceUp"], (int)x["damage"]);
+        new Slot((int)x["zone"], (int)x["cell"], Cards[(string)x["card"]], (bool)x["faceUp"], (int)x["damage"],
+            (int)x["atkBonus"], (int)x["defBonus"]);
 
     static JObject SlotJson(Slot sl) => new JObject
-        { ["zone"] = sl.Zone, ["cell"] = sl.Cell, ["card"] = sl.Card.Name, ["faceUp"] = sl.FaceUp, ["damage"] = sl.Damage };
+    {
+        ["zone"] = sl.Zone, ["cell"] = sl.Cell, ["card"] = sl.Card.Name, ["faceUp"] = sl.FaceUp, ["damage"] = sl.Damage,
+        ["atkBonus"] = sl.AtkBonus, ["defBonus"] = sl.DefBonus,
+    };
 
     static PState ParseState(JToken t) => new PState
     {
@@ -75,8 +79,10 @@ public class DifferentialTests
         {
             var src = c["src"];
             var cell = src["cell"].Type == JTokenType.Null ? (Cell?)null : new Cell((int)src["cell"]["col"], (int)src["cell"]["row"]);
+            var tgt = src["tgt"].Type == JTokenType.Null ? ((bool, Slot)?)null
+                : ((bool)src["tgt"]["player"], ParseSlot(src["tgt"]["slot"]));
             var result = ParseState(c["state"]).Destroy(R, IrJson.ParseSelector(c["selector"]), (bool)c["owner"],
-                new Src((bool)src["player"], cell));
+                new Src((bool)src["player"], cell, tgt));
             Assert.True(JToken.DeepEquals(c["expected"], StateJson(result)), $"不一致：{c}");
         }
     }
@@ -123,8 +129,11 @@ public class DifferentialTests
         "combat" => Choice.Combat((bool)c["player"], c["attackers"].Select(x => (int)x).ToList(), ParseBlocks(c["blocks"]),
             ParseNeg(c["neg"])),
         "mend" => Choice.Mend(),
-        _ => Choice.Resolve((bool)c["player"], (int)c["field"], (int)c["effect"], (bool)c["apply"], ParseNeg(c["neg"])),
+        "settle" => Choice.Settle(ParseNeg(c["neg"])),
+        _ => Choice.Resolve((bool)c["player"], (int)c["field"], (int)c["effect"], (bool)c["apply"], ParseNeg(c["neg"]), ParseTgt(c["tgt"])),
     };
+
+    static (bool, int)? ParseTgt(JToken t) => t.Type == JTokenType.Null ? ((bool, int)?)null : ((bool)t[0], (int)t[1]);
 
     static List<(bool, int)> ParseNeg(JToken t) => t.Select(x => ((bool)x[0], (int)x[1])).ToList();
 
@@ -203,7 +212,9 @@ public class DifferentialTests
             c["pay"].Select(x => (string)x).ToList()),
         "cast" => TChoice.Cast((int)c["hand"], (int)c["zone"], (int)c["cell"], (bool)c["faceUp"],
             c["pay"].Select(x => (string)x).ToList()),
-        "resolve" => TChoice.Resolve((bool)c["player"], (int)c["field"], (int)c["effect"], (bool)c["apply"], ParseNeg(c["neg"])),
+        "resolve" => TChoice.Resolve((bool)c["player"], (int)c["field"], (int)c["effect"], (bool)c["apply"], ParseNeg(c["neg"]),
+            ParseTgt(c["tgt"])),
+        "settle" => TChoice.Settle(ParseNeg(c["neg"])),
         "attack" => TChoice.Attack((int)c["field"],
             c["target"].Type == JTokenType.Null ? (int?)null : (int)c["target"], ParseNeg(c["neg"])),
         "tap" => TChoice.Tap((int)c["field"], (string)c["color"]),
@@ -337,9 +348,31 @@ public class DifferentialTests
         Assert.True(JToken.DeepEquals(src, IrJson.ToJson(g)));
     }
 
+    /// <summary>版 9 で加えたもの（範囲の対象・飛行・到達）を除く（遊戯王の見本はどれも使っていない）</summary>
+    static JObject WithoutTargets(JObject o)
+    {
+        o["version"] = 8;
+        foreach (var c in o["cards"]) { ((JObject)c).Remove("flying"); ((JObject)c).Remove("reach"); }
+        foreach (var p in ((JArray)o["cards"]).Descendants().OfType<JProperty>().Where(p => p.Name == "target" && p.Value.Type == JTokenType.Boolean).ToList())
+            p.Remove();
+        return o;
+    }
+
+    [Fact]
+    public void Version_8_is_upgraded()
+    {
+        var src = (JObject)JToken.Parse(File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "sample.json")));
+        var o = WithoutTargets((JObject)src.DeepClone());
+        Assert.Throws<FormatException>(() => IrJson.ParseGame(o.DeepClone()));
+        Assert.True(IrJson.Upgrade(o));
+        Assert.True(JToken.DeepEquals(src, o));
+        Assert.False(IrJson.Upgrade(o));
+    }
+
     /// <summary>版 8 で加えたもの（インスタント・スタック・選べるマナの色）を除く（遊戯王の見本はどれも使っていない）</summary>
     static JObject WithoutInstants(JObject o)
     {
+        o = WithoutTargets(o);
         o["version"] = 7;
         ((JObject)o["rules"]).Remove("instants");
         ((JObject)o["rules"]).Remove("stack");

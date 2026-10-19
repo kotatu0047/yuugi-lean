@@ -56,20 +56,23 @@ def Rand.selector : Rand Selector := do
   let types ← if ts.isEmpty then (do return [← Rand.pick vecTypes]) else pure ts
   return { types, tags := ← Rand.subset vecTags, side := ← Rand.pick [.self, .opp, .both],
            faceUpOnly := ← Rand.bool, excludeSelf := ← Rand.bool,
-           near := ← Rand.pick [.any, .any, .adjacent, .sameColumn] }
+           near := ← Rand.pick [.any, .any, .adjacent, .sameColumn], target := (← Rand.next 4) == 0 }
 
 def Rand.view : Rand View := do
   return { type := ← Rand.pick vecTypes, tags := ← Rand.subset vecTags, mine := ← Rand.bool,
-           faceUp := ← Rand.bool, isSelf := ← Rand.bool, adjacent := ← Rand.bool, sameColumn := ← Rand.bool }
+           faceUp := ← Rand.bool, isSelf := ← Rand.bool, adjacent := ← Rand.bool, sameColumn := ← Rand.bool,
+           isTarget := ← Rand.bool }
 
 def viewJson (v : View) : Json :=
   json% {type: $(v.type), tags: $(v.tags), mine: $(v.mine), faceUp: $(v.faceUp), isSelf: $(v.isSelf),
-         adjacent: $(v.adjacent), sameColumn: $(v.sameColumn)}
+         adjacent: $(v.adjacent), sameColumn: $(v.sameColumn), isTarget: $(v.isTarget)}
 
 def slotJson (sl : Slot) : Json :=
-  json% {zone: $(sl.zone), cell: $(sl.cell), card: $(sl.card.name), faceUp: $(sl.faceUp), damage: $(sl.damage)}
+  json% {zone: $(sl.zone), cell: $(sl.cell), card: $(sl.card.name), faceUp: $(sl.faceUp), damage: $(sl.damage),
+         atkBonus: $(sl.atkBonus), defBonus: $(sl.defBonus)}
 
-def srcJson (s : Src) : Json := json% {player: $(s.p), cell: $(toJson s.cell)}
+def srcJson (s : Src) : Json :=
+  json% {player: $(s.p), cell: $(toJson s.cell), tgt: $(s.tgt.map fun (q, sl) => json% {player: $(q), slot: $(slotJson sl)})}
 
 def pstateJson (s : PState) : Json :=
   json% {deck: $(s.deck.map (·.name)), hand: $(s.hand.map (·.name)), grave: $(s.grave.map (·.name)),
@@ -84,6 +87,13 @@ def verdictName : Verdict → String
 /-- カードへのダメージの魔法（モンスターすべてに 1500） -/
 def vecStrike : Card :=
   { name := "地割れの雨", type := "魔法", tags := [], effects := [.activated [.strike (Sample.sel ["モンスター"] .both) 1500]] }
+/-- 対象を選んでターンの終わりまで攻撃力・守備力を変える魔法 -/
+def vecPump : Card :=
+  { name := "一時の力", type := "魔法", tags := [],
+    effects := [.activated [.pump { Sample.sel ["モンスター"] .both with target := true } 800 (-1000)]] }
+/-- 対象を選んで「フィールド上」でないゾーンの魔法を打ち消す罠 -/
+def vecCounter : Card :=
+  { name := "打ち消しの罠", type := "罠", tags := [], effects := [.activated [.counter { Sample.sel ["魔法", "罠"] .opp with target := true }]] }
 /-- 守備力を変える魔法（自分のモンスターの守備力 +500） -/
 def vecToughen : Card :=
   { name := "守りの加護", type := "魔法", tags := [], effects := [.toughen (Sample.sel ["モンスター"] .self) 500] }
@@ -92,12 +102,12 @@ def vecToughen : Card :=
 ターンのある対戦のマナを試すため、半分ほどにコスト（どの色でも1・赤・緑）を、3枚に1枚ほどにタップで出る1マナを付ける
 （その3枚に1枚は、赤か緑を選んで出す） -/
 def vecCards : List Card :=
-  (Sample.game.cards ++ [Sample.spellBreaker, Sample.selfNegator, vecStrike, vecToughen]).mapIdx fun i c =>
+  (Sample.game.cards ++ [Sample.spellBreaker, Sample.selfNegator, vecStrike, vecToughen, vecPump, vecCounter]).mapIdx fun i c =>
     { c with cost := if i % 6 == 3 then 1 else 0, mana := if i % 3 == 0 then 1 + i % 2 else 0,
              manaColor := if i % 3 == 0 && i % 9 / 3 != 2 then ["赤", "緑"][i % 9 / 3]! else "",
              manaChoice := if i % 3 == 0 && i % 9 / 3 == 2 then ["赤", "緑"] else [],
              colorCost := if i % 6 == 1 then ["赤"] else if i % 6 == 2 then ["緑"] else [],
-             trample := i % 5 == 0 }
+             trample := i % 5 == 0, flying := i % 4 == 3, reach := i % 7 == 2 }
 
 /-- フィールドのカード：ゾーンは見本の 4 つと存在しない番号、マスは 0〜5。ときどきダメージを受けている -/
 def Rand.slot (zones : Nat) : Rand Slot := do
@@ -107,13 +117,15 @@ def Rand.slot (zones : Nat) : Rand Slot := do
   let up ← Rand.bool
   let hurt ← Rand.next 3
   let d ← Rand.next 5
-  return ⟨zone, cell, card, up, if hurt == 0 then d * 500 else 0⟩
+  let bonus ← Rand.next 4
+  return ⟨zone, cell, card, up, if hurt == 0 then d * 500 else 0, if bonus == 0 then 300 else 0,
+    if bonus == 1 then -500 else 0⟩
 
 /-- 効果を出したもの（マスは見本のマス目の上か、マス目の外か） -/
 def Rand.src : Rand Src := do
   let cells := Sample.rules.allCells
   let c ← Rand.pick cells
-  return ⟨← Rand.bool, if (← Rand.next 4) == 0 then none else some c⟩
+  return ⟨← Rand.bool, if (← Rand.next 4) == 0 then none else some c, none⟩
 
 /-- 形式の検査のテスト：見本と、1か所ずつ間違えたもの -/
 def checkCases : List Game :=
@@ -153,6 +165,9 @@ def checkCases : List Game :=
     { g with cards := [{ Sample.fireball with effects := [.activated [.damage 0, .heal 0]] }] },
     { g with cards := [{ Sample.darkBlessing with effects := [.boost (Sample.sel ["魔法"] .self) 0] }] },
     { g with cards := [{ Sample.darkBlessing with effects := [.toughen (Sample.sel ["魔法"] .self) 0] }] },
+    { g with cards := [{ Sample.darkBlessing with effects := [.toughen { Sample.sel ["モンスター"] .self with target := true } 100] }] },
+    { g with cards := [{ Sample.fireball with effects := [.activated [.pump (Sample.sel ["魔法"] .opp) 0 0,
+                                                                     .counter (Sample.sel ["モンスター"] .opp)]] }] },
     { g with cards := [{ Sample.fireball with effects := [.activated [.strike (Sample.sel ["魔法"] .opp) 0]] }] },
     { g with rules := { r with instants := ["罠", "儀式"] } },
     { g with rules := { r with manaColors := ["赤"] },
@@ -166,15 +181,26 @@ def stateJson (g : State) : Json := json% [$(pstateJson (g true)), $(pstateJson 
 
 def negJson (neg : List Pos) : Json := toJson (neg.map fun (q, j) => json% [$(q), $(j)])
 
+def tgtJson (t : Option Pos) : Json := match t with
+  | some (q, j) => json% [$(q), $(j)]
+  | none => Json.null
+
+/-- 対象の位置を1つ選ぶ（選ばないことも、ないカードの位置も混ぜる） -/
+def Rand.tgt (g : State) : Rand (Option Pos) := do
+  if (← Rand.next 4) == 0 then return none
+  let q ← Rand.bool
+  return some (q, ← Rand.next ((g q).field.length + 1))
+
 def choiceJson : Choice → Json
   | .draw p => json% {kind: "draw", player: $(p)}
   | .place p h z c up => json% {kind: "place", player: $(p), hand: $(h), zone: $(z), cell: $(c), faceUp: $(up)}
-  | .resolve p k e apply neg => json% {kind: "resolve", player: $(p), field: $(k), effect: $(e), apply: $(apply),
-      neg: $(negJson neg)}
+  | .resolve p k e apply neg tgt => json% {kind: "resolve", player: $(p), field: $(k), effect: $(e), apply: $(apply),
+      neg: $(negJson neg), tgt: $(tgtJson tgt)}
   | .attack p k t neg => json% {kind: "attack", player: $(p), field: $(k), target: $(t), neg: $(negJson neg)}
   | .combat p atk blocks neg => json% {kind: "combat", player: $(p), attackers: $(atk),
       blocks: $(blocks.map fun (j, a) => json% [$(j), $(a)]), neg: $(negJson neg)}
   | .mend => json% {kind: "mend"}
+  | .settle neg => json% {kind: "settle", neg: $(negJson neg)}
 
 /-- フィールドのカードの位置からいくつか選ぶ（ないカードの位置も混ぜる） -/
 def Rand.negs (g : State) : Rand (List Pos) := do
@@ -187,7 +213,9 @@ def Rand.choice (g : State) : Rand Choice := do
   match ← Rand.next 6 with
   | 0 => return .draw p
   | 5 =>
-    if (← Rand.next 6) == 0 then return .mend else
+    if (← Rand.next 6) == 0 then
+      let negs ← Rand.negs g
+      return (if ← Rand.bool then .mend else .settle negs)
     -- MTG 式の戦闘：攻撃するカードと、ブロックの組み合わせ
     let n := (g p).field.length
     let atk ← Rand.list ((← Rand.next 3) + 1) (Rand.next (n + 1))
@@ -219,7 +247,7 @@ def Rand.choice (g : State) : Rand Choice := do
     let k ← if n == 0 then pure 0 else do
       let spells := (List.range n).filter fun i => ((g p).field[i]?.map (·.card.type == "魔法")).getD false
       if spells.isEmpty || (← Rand.next 4) == 0 then Rand.next (n + 1) else Rand.pick spells
-    return .resolve p k (if (← Rand.next 5) == 0 then 1 else 0) ((← Rand.next 4) != 0) (← Rand.negs g)
+    return .resolve p k (if (← Rand.next 5) == 0 then 1 else 0) ((← Rand.next 4) != 0) (← Rand.negs g) (← Rand.tgt g)
 
 def turnJson (t : TurnInfo) : Json :=
   json% {tp: $(t.tp), count: $(t.count), summons: $(t.summons), attacked: $(t.attacked.map slotJson),
@@ -232,9 +260,10 @@ def turnJson (t : TurnInfo) : Json :=
 def tchoiceJson : TChoice → Json
   | .place h z c up pay => json% {kind: "place", hand: $(h), zone: $(z), cell: $(c), faceUp: $(up), pay: $(pay)}
   | .cast h z c up pay => json% {kind: "cast", hand: $(h), zone: $(z), cell: $(c), faceUp: $(up), pay: $(pay)}
-  | .resolve p k e apply neg => json% {kind: "resolve", player: $(p), field: $(k), effect: $(e), apply: $(apply),
-      neg: $(negJson neg)}
+  | .resolve p k e apply neg tgt => json% {kind: "resolve", player: $(p), field: $(k), effect: $(e), apply: $(apply),
+      neg: $(negJson neg), tgt: $(tgtJson tgt)}
   | .attack k t neg => json% {kind: "attack", field: $(k), target: $(t), neg: $(negJson neg)}
+  | .settle neg => json% {kind: "settle", neg: $(negJson neg)}
   | .tap k color => json% {kind: "tap", field: $(k), color: $(color)}
   | .oppTap k color => json% {kind: "oppTap", field: $(k), color: $(color)}
   | .block blocks neg => json% {kind: "block", blocks: $(blocks.map fun (j, a) => json% [$(j), $(a)]),
@@ -287,7 +316,7 @@ def Rand.tchoice (r : Rules) (m : Match) : Rand TChoice := do
     if (← Rand.next 3) != 0 then
       let f := (m.g q).field
       let k := ((List.range f.length).find? fun i => (f[i]?.map Slot.base) == some top).getD 0
-      return .resolve q k 0 ((← Rand.next 4) != 0) (← Rand.negs m.g)
+      return .resolve q k 0 ((← Rand.next 4) != 0) (← Rand.negs m.g) (← Rand.tgt m.g)
   -- ブロックを待っているときは、たいていブロックを選ぶ（戦闘できるカードを選びやすくする）
   if !m.turn.attackers.isEmpty && (← Rand.next 3) != 0 then
     let n ← Rand.next 3
@@ -339,9 +368,10 @@ def Rand.tchoice (r : Rules) (m : Match) : Rand TChoice := do
     let k ← if f.isEmpty then pure 0 else do
       let spells := (List.range f.length).filter fun i => ((f[i]?.map (·.card.type == "魔法")).getD false)
       if spells.isEmpty || (← Rand.next 4) == 0 then Rand.next (f.length + 1) else Rand.pick spells
-    return .resolve q k (if (← Rand.next 5) == 0 then 1 else 0) ((← Rand.next 4) != 0) (← Rand.negs m.g)
+    if (← Rand.next 12) == 0 then return .settle (← Rand.negs m.g)
+    return .resolve q k (if (← Rand.next 5) == 0 then 1 else 0) ((← Rand.next 4) != 0) (← Rand.negs m.g) (← Rand.tgt m.g)
 
-def vectors : Json := Id.run do
+def vectors (_ : Unit := ()) : Json := Id.run do
   let (j, _) := (do
     let selector ← Rand.list 300 do
       let s ← Rand.selector
@@ -356,7 +386,14 @@ def vectors : Json := Id.run do
       let s : PState := ⟨deck, hand, grave, field, ← Rand.next 9000⟩
       let sel ← Rand.selector
       let q ← Rand.bool
-      let src ← Rand.src
+      let src0 ← Rand.src
+      -- 対象：ときどきフィールドのカードの1枚を選ぶ
+      let who ← Rand.pick [q, !q]
+      let i ← Rand.next (field.length + 1)
+      let coin ← Rand.next 2
+      let src : Src := match field[i]? with
+        | some t => if coin == 0 then src0 else { src0 with tgt := some (who, t.base) }
+        | none => src0
       return json% {state: $(pstateJson s), selector: $(toJson sel), owner: $(q), src: $(srcJson src),
                     expected: $(pstateJson (s.destroy Sample.rules sel q src))}
     let boards ← Rand.list 150 do

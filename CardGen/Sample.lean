@@ -313,18 +313,18 @@ namespace CardGen.Sample
 /-- 自分：闇の指揮官・ブラック・マジシャン・闇の加護、相手：サイコ・ショッカー・裏側表示の Bloo－D -/
 def battleState : State := fun p =>
   if p then { deck := [], hand := [], grave := [], life := 8000,
-              field := [⟨0, 0, darkCommander, true, 0⟩, ⟨0, 1, blackMagician, true, 0⟩, ⟨1, 0, darkBlessing, true, 0⟩] }
+              field := [⟨0, 0, darkCommander, true, 0, 0, 0⟩, ⟨0, 1, blackMagician, true, 0, 0, 0⟩, ⟨1, 0, darkBlessing, true, 0, 0, 0⟩] }
   else { deck := [], hand := [], grave := [], life := 8000,
-         field := [⟨0, 0, jinzo, true, 0⟩, ⟨0, 1, blooD, false, 0⟩] }
+         field := [⟨0, 0, jinzo, true, 0, 0, 0⟩, ⟨0, 1, blooD, false, 0, 0, 0⟩] }
 
 -- ブラック・マジシャンの攻撃力：2500 ＋ 指揮官 300 ＋ 加護 500
-#guard battleState.atkOf rules [] (true, 1) ⟨0, 1, blackMagician, true, 0⟩ == 3300
+#guard battleState.atkOf rules [] (true, 1) ⟨0, 1, blackMagician, true, 0, 0, 0⟩ == 3300
 -- 指揮官自身には指揮官の効果は及ばない：1600 ＋ 加護 500
-#guard battleState.atkOf rules [] (true, 0) ⟨0, 0, darkCommander, true, 0⟩ == 2100
+#guard battleState.atkOf rules [] (true, 0) ⟨0, 0, darkCommander, true, 0, 0, 0⟩ == 2100
 -- 指揮官の効果が無効（スキルドレインなど）なら 2500 ＋ 500
-#guard battleState.atkOf rules [(true, 0)] (true, 1) ⟨0, 1, blackMagician, true, 0⟩ == 3000
+#guard battleState.atkOf rules [(true, 0)] (true, 1) ⟨0, 1, blackMagician, true, 0, 0, 0⟩ == 3000
 -- サイコ・ショッカーは相手の加護の範囲外（「自分の」闇属性モンスター）：2400 のまま
-#guard battleState.atkOf rules [] (false, 0) ⟨0, 0, jinzo, true, 0⟩ == 2400
+#guard battleState.atkOf rules [] (false, 0) ⟨0, 0, jinzo, true, 0, 0, 0⟩ == 2400
 
 -- ブラック・マジシャン（3300）でサイコ・ショッカー（2400）を攻撃：ショッカーは破壊され、相手は 900 のダメージ
 #guard match battleState.step? rules (.attack true 1 (some 0) []) with
@@ -343,7 +343,7 @@ def battleState : State := fun p =>
 #guard (battleState.step? rules (.attack true 2 (some 0) [])).isNone
 
 -- ファイヤー・ボールのダメージはライフ 0 で止まる
-#guard ((battleState.set false { battleState false with life := 300 }).applyAction rules ⟨true, none⟩ [] (.damage 500) false).life == 0
+#guard ((battleState.set false { battleState false with life := 300 }).applyAction rules ⟨true, none, none⟩ [] (.damage 500) false).life == 0
 
 -- 見本には回復の魔法があるので、ライフの上限の★はない。回復の魔法を除けば★「ライフは最大8000」が出る
 #guard (gameClaims game).isEmpty
@@ -458,20 +458,20 @@ def mana0 : Match :=
 #guard !({ game with rules := { rules with zones := rules.zones.modify 1 fun z => { z with cells := (row 26).take 4 } } }).WellFormed
 
 -- 相手のマスは点対称の位置：自分のモンスターカードゾーンの 0 番目（22, 25）と、相手の 0 番目（26, 23）
-#guard rules.cellOf true ⟨0, 0, jinzo, true, 0⟩ == some ⟨22, 25⟩
-#guard rules.cellOf false ⟨0, 0, jinzo, true, 0⟩ == some ⟨26, 23⟩
+#guard rules.cellOf true ⟨0, 0, jinzo, true, 0, 0, 0⟩ == some ⟨22, 25⟩
+#guard rules.cellOf false ⟨0, 0, jinzo, true, 0, 0, 0⟩ == some ⟨26, 23⟩
 -- デッキ・墓地はマス目の上にない
-#guard rules.cellOf true ⟨2, 0, jinzo, true, 0⟩ == none
+#guard rules.cellOf true ⟨2, 0, jinzo, true, 0, 0, 0⟩ == none
 
 /-- 自分：縦一閃（魔法罠の 2 番目、列 24）・ブラック・マジシャン（モンスターの 2 番目、列 24）・援護の兵士（3 番目、列 25）・
 ブラック・マジシャン（0 番目、列 22）。相手：サイコ・ショッカー（相手の 2 番目＝列 24）・Bloo－D（相手の 0 番目＝列 26）・
 裏側表示のハーピィの羽根帚（相手の魔法罠の 2 番目＝列 24） -/
 def gridState : State := fun p =>
   if p then { deck := [], hand := [jinzo], grave := [], life := 8000,
-              field := [⟨1, 2, columnStrike, true, 0⟩, ⟨0, 2, blackMagician, true, 0⟩, ⟨0, 3, escort, true, 0⟩,
-                        ⟨0, 0, blackMagician, true, 0⟩] }
+              field := [⟨1, 2, columnStrike, true, 0, 0, 0⟩, ⟨0, 2, blackMagician, true, 0, 0, 0⟩, ⟨0, 3, escort, true, 0, 0, 0⟩,
+                        ⟨0, 0, blackMagician, true, 0, 0, 0⟩] }
   else { deck := [], hand := [], grave := [], life := 8000,
-         field := [⟨0, 2, jinzo, true, 0⟩, ⟨0, 0, blooD, true, 0⟩, ⟨1, 2, featherDuster, false, 0⟩] }
+         field := [⟨0, 2, jinzo, true, 0, 0, 0⟩, ⟨0, 0, blooD, true, 0, 0, 0⟩, ⟨1, 2, featherDuster, false, 0, 0, 0⟩] }
 
 -- 縦一閃：同じ縦列（列 24）の相手のショッカーと羽根帚だけを破壊する。自分の側は範囲外
 #guard match gridState.step? rules (.resolve true 0 0 true) with
@@ -479,10 +479,10 @@ def gridState : State := fun p =>
       (g true).field.length == 3
   | none => false
 -- 援護の兵士は隣のマスのブラック・マジシャンだけ攻撃力を上げる（2500 ＋ 400）。離れたマスのものは 2500 のまま
-#guard gridState.atkOf rules [] (true, 1) ⟨0, 2, blackMagician, true, 0⟩ == 2900
-#guard gridState.atkOf rules [] (true, 3) ⟨0, 0, blackMagician, true, 0⟩ == 2500
+#guard gridState.atkOf rules [] (true, 1) ⟨0, 2, blackMagician, true, 0, 0, 0⟩ == 2900
+#guard gridState.atkOf rules [] (true, 3) ⟨0, 0, blackMagician, true, 0, 0, 0⟩ == 2500
 -- 援護の兵士が無効なら上がらない
-#guard gridState.atkOf rules [(true, 2)] (true, 1) ⟨0, 2, blackMagician, true, 0⟩ == 2500
+#guard gridState.atkOf rules [(true, 2)] (true, 1) ⟨0, 2, blackMagician, true, 0, 0, 0⟩ == 2500
 -- 1マス1枚：使っているマス（2 番目）には置けない。空いているマス（1 番目）には置ける。5 番目のマスはない
 #guard (gridState.step? rules (.place true 0 0 2 true)).isNone
 #guard (gridState.step? rules (.place true 0 0 1 true)).isSome
