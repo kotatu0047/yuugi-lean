@@ -163,4 +163,26 @@ public class GraphTests
         var boxes = doc.Nodes.Select(n => (n.X, n.Y)).ToList();
         Assert.Equal(boxes.Count, boxes.Distinct().Count());
     }
+
+    [Fact]
+    public void Test_play_decks_have_lands_in_every_opening_hand()
+    {
+        var game = IrJson.ParseGame(File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "mtg.json")));
+        for (int seed = 1; seed <= 50; seed++)
+        {
+            var rng = new Random(seed);
+            foreach (var deck in new[] { DeckBuilder.Make(game, rng), DeckBuilder.Make(game, rng) })
+            {
+                Assert.Equal(game.Rules.DeckSize, deck.Count);
+                var hand = deck.Take(game.Rules.HandSize).ToList();
+                Assert.InRange(hand.Count(c => c.Mana > 0), 2, 4);
+                Assert.InRange(deck.Count(c => c.Mana > 0), 15, 17);
+                // 土地は1種類に偏らない
+                Assert.True(deck.Where(c => c.Mana > 0).GroupBy(c => c.Name).Count() >= 3);
+            }
+        }
+        // 遊戯王の見本（マナを出すカードがない）は、一覧を繰り返して混ぜる
+        var sample = Sample();
+        Assert.Equal(sample.Rules.DeckSize, DeckBuilder.Make(sample, new Random(1)).Count);
+    }
 }

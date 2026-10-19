@@ -87,25 +87,8 @@ namespace CardGen.App
             Add(sideScroll);
         }
 
-        /// <summary>カードの一覧からデッキを作る（デッキの枚数になるまで繰り返し、混ぜる）</summary>
-        List<Card> MakeDeck(System.Random rng)
-        {
-            // マナを出すカード（土地）があれば、デッキの 4 割ほどをそれにする（マナが足りずに動けなくならないように）
-            var lands = game.Cards.Where(c => c.Mana > 0).ToList();
-            var others = game.Cards.Where(c => c.Mana == 0).ToList();
-            var n = game.Rules.DeckSize;
-            var nl = lands.Count == 0 || others.Count == 0 ? 0 : n * 2 / 5;
-            var d = lands.Count == 0 || others.Count == 0
-                ? Enumerable.Range(0, n).Select(i => game.Cards[i % game.Cards.Count]).ToList()
-                : Enumerable.Range(0, nl).Select(i => lands[i % lands.Count])
-                    .Concat(Enumerable.Range(0, n - nl).Select(i => others[i % others.Count])).ToList();
-            for (int i = d.Count - 1; i > 0; i--)
-            {
-                int j = rng.Next(i + 1);
-                (d[i], d[j]) = (d[j], d[i]);
-            }
-            return d;
-        }
+        /// <summary>カードの一覧から山札を作る（土地は色のコストに合わせて選び、山札全体にむらなく散らす。C# の中核の DeckBuilder）</summary>
+        List<Card> MakeDeck(System.Random rng) => DeckBuilder.Make(game, rng);
 
         public void Start(Game g)
         {
@@ -623,7 +606,7 @@ namespace CardGen.App
             b.Add(Text(c.Type + (faceUp ? "" : "・裏側"), 10, Quiet));
             if (stats != null) b.Add(Text(stats, 10, new Color(0.85f, 0.8f, 0.6f)));
             if (status != null)
-                b.Add(Text(status, 10, status == "有効" ? Good : status == "無効" ? Bad : Warn, true));
+                b.Add(Text(status, 10, status == "有効" || status == "置ける" ? Good : status == "無効" ? Bad : Warn, true));
             return b;
         }
 
@@ -693,7 +676,7 @@ namespace CardGen.App
             {
                 int idx = i;
                 var hc = s.Hand[i];
-                hand.Add(Chip(hc, true, null, selPlayer == p && selHand == idx, () => { selPlayer = p; selHand = idx; selField = -1; customPay = null; Render(); },
+                hand.Add(Chip(hc, true, CanPlaceNow(p, idx) ? "置ける" : null, selPlayer == p && selHand == idx, () => { selPlayer = p; selHand = idx; selField = -1; customPay = null; Render(); },
                     UsesMana ? (hc.Mana > 0 ? ManaText(hc) : $"コスト {CostText(hc)}") : null));
             }
 
@@ -746,6 +729,21 @@ namespace CardGen.App
             var rec = p == turn ? match.Turn.Tapped : match.Turn.OppTapped;
             var before = f.Take(i + 1).Count(x => TurnInfo.SameSlot(x, sl));
             return before <= rec.Count(x => TurnInfo.SameSlot(x, sl));
+        }
+
+        /// <summary>p の手札の h 番目を、今どこかに置けるか（自動の払い方で）</summary>
+        bool CanPlaceNow(bool p, int h)
+        {
+            var c = state.Get(p).Hand[h];
+            var pay = TurnInfo.AutoPay(c, PoolOf(p));
+            if (pay == null) return false;
+            for (int zi = 0; zi < game.Rules.Zones.Count; zi++)
+            {
+                var cell = state.FreeCell(game.Rules, p, zi);
+                var ch = p == turn ? TChoice.Place(h, zi, cell, true, pay) : TChoice.Cast(h, zi, cell, true, pay);
+                if (match.Step(game.Rules, ch) != null) return true;
+            }
+            return false;
         }
 
         /// <summary>空いているマスに置くボタン</summary>
