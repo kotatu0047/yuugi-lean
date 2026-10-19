@@ -119,6 +119,11 @@ namespace CardGen.App
             side.style.borderLeftColor = new Color(0.3f, 0.3f, 0.33f);
             inspector = new Inspector();
             inspector.Sets = () => canvas.Doc.Nodes.FirstOrDefault(x => x.Kind == NodeKind.Sets)?.Sets;
+            inspector.Rename = (k, from, to) =>
+            {
+                canvas.Doc.RenameValue(k, from, to);
+                canvas.Rebuild();
+            };
             inspector.Edited += n => { canvas.RefreshNode(n); OnModelChanged(); };
             var inspScroll = new ScrollView();
             inspScroll.style.height = new Length(42, LengthUnit.Percent);
@@ -213,6 +218,7 @@ namespace CardGen.App
         void SetDoc(GraphDoc doc, string message)
         {
             canvas.SetDoc(doc);
+            claimPanel?.DropUnknown(doc.ToGame(out _));
             inspector.Show(null);
             lastReport = null;
             OnModelChanged();
@@ -314,6 +320,7 @@ namespace CardGen.App
         void OnModelChanged()
         {
             if (lastReport != null) reportStale = true;
+            claimPanel?.SyncChoices();
             Render();
         }
 
@@ -425,6 +432,7 @@ namespace CardGen.App
         //   -cardgen-check                    Lean で検査する
         //   -cardgen-results-end              検査の結果を一番下まで送る
         //   -cardgen-play <手数>              テストプレイを始め、置ける手札を交互に置く
+        //   -cardgen-scenario combat|stack    テストプレイで、戦闘（ブロックの割り当て）かスタックの場面を作る（MTG 風の見本）
         //   -cardgen-claim                    命題の欄の値でジョブを作る（反例探し）
         //   -cardgen-screenshot <パス>        画面を保存して終了する
 
@@ -472,6 +480,8 @@ namespace CardGen.App
                 TogglePlay();
                 var demo = Arg("-cardgen-play");
                 if (demo != null && int.TryParse(demo, out var moves)) playView.Demo(moves);
+                var scene = Arg("-cardgen-scenario");
+                if (scene != null) playView.Scenario(scene);
             }
             if (args.Contains("-cardgen-results-end"))
             {

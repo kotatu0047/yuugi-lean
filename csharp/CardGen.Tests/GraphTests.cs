@@ -114,4 +114,27 @@ public class GraphTests
         Assert.Equal(new[] { "土地" }, g.Rules.CardTypes);
         Assert.Equal("色", g.Rules.TagSets.Single().Name);
     }
+
+    [Fact]
+    public void Renaming_a_value_updates_every_use()
+    {
+        var src = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "mtg.json"));
+        var doc = GraphDoc.FromGame(IrJson.ParseGame(src));
+        doc.RenameValue(SetKind.CardType, "クリーチャー", "生物");
+        doc.RenameValue(SetKind.ManaColor, "赤", "紅");
+        doc.RenameValue(SetKind.Tag, "ゴブリン", "小鬼");
+        var g = doc.ToGame(out var structure);
+        Assert.Empty(structure);
+        Assert.Empty(Check.Game(g));
+        Assert.Contains("生物", g.Rules.CardTypes);
+        Assert.DoesNotContain("クリーチャー", g.Rules.CardTypes);
+        Assert.Equal(new[] { "生物" }, g.Rules.Fighters);
+        Assert.Contains("紅", g.Rules.ManaColors);
+        var goblin = g.Cards.First(c => c.Name == "ゴブリンの先兵");
+        Assert.Equal("生物", goblin.Type);
+        Assert.Equal(new[] { "紅" }, goblin.ColorCost);
+        Assert.Contains("小鬼", goblin.Tags);
+        Assert.Equal(new[] { "紅", "緑" }, g.Cards.First(c => c.Name == "カープルーザンの森").ManaChoice);
+        Assert.Equal("紅", g.Cards.First(c => c.Name == "山").ManaColor);
+    }
 }

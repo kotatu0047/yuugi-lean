@@ -158,6 +158,9 @@ namespace CardGen
         public Edge(int from, int to) { From = from; To = to; }
     }
 
+    /// <summary>集合の種類（値の名前を変えるときに、どこを書き換えるか）</summary>
+    public enum SetKind { CardType, ManaColor, Tag }
+
     public sealed class GraphDoc
     {
         public List<Node> Nodes = new List<Node>();
@@ -191,6 +194,48 @@ namespace CardGen
             if (Node.TakesSelector(a.Kind)) Edges.RemoveAll(e => e.From == from);
             Edges.Add(new Edge(from, to));
             return true;
+        }
+
+        /// <summary>
+        /// 集合の値の名前を変え、それを使っているところ（カード・ゾーン・ルール・範囲）もすべて書き換える。
+        /// 集合のノードの値そのものも書き換える（タグなら、その値を持つタグの集合すべて）
+        /// </summary>
+        public void RenameValue(SetKind kind, string from, string to)
+        {
+            if (from == to || to.Length == 0) return;
+            void R(List<string> l) { for (int i = 0; i < l.Count; i++) if (l[i] == from) l[i] = to; }
+            foreach (var n in Nodes)
+            {
+                switch (kind)
+                {
+                    case SetKind.CardType:
+                        if (n.Sets != null) R(n.Sets.CardTypes);
+                        if (n.Rules != null)
+                        {
+                            R(n.Rules.Fighters);
+                            R(n.Rules.Instants);
+                            foreach (var l in n.Rules.PlaceLimits) R(l.Types);
+                        }
+                        if (n.Zone != null) R(n.Zone.Admits);
+                        if (n.Card != null && n.Card.Type == from) n.Card.Type = to;
+                        if (n.Selector != null) R(n.Selector.Types);
+                        break;
+                    case SetKind.ManaColor:
+                        if (n.Sets != null) R(n.Sets.ManaColors);
+                        if (n.Card != null)
+                        {
+                            R(n.Card.ColorCost);
+                            R(n.Card.ManaChoice);
+                            if (n.Card.ManaColor == from) n.Card.ManaColor = to;
+                        }
+                        break;
+                    case SetKind.Tag:
+                        if (n.Sets != null) foreach (var t in n.Sets.TagSets) R(t.Values);
+                        if (n.Card != null) R(n.Card.Tags);
+                        if (n.Selector != null) R(n.Selector.Tags);
+                        break;
+                }
+            }
         }
 
         public void Remove(int id)

@@ -14,11 +14,17 @@ namespace CardGen
         public bool FaceUp;
         /// <summary>受けているダメージ（ターンの終わりに 0 に戻る）</summary>
         public int Damage;
-        public Slot(int zone, int cell, Card card, bool faceUp, int damage = 0)
-        { Zone = zone; Cell = cell; Card = card; FaceUp = faceUp; Damage = damage; }
+        /// <summary>同じカードを見分ける鍵（ダメージが変わっても同じ。無効の判定が、適用された順番を覚えるのに使う）</summary>
+        public readonly object Key;
+        public Slot(int zone, int cell, Card card, bool faceUp, int damage = 0) : this(zone, cell, card, faceUp, damage, new object()) { }
+        Slot(int zone, int cell, Card card, bool faceUp, int damage, object key)
+        { Zone = zone; Cell = cell; Card = card; FaceUp = faceUp; Damage = damage; Key = key; }
+
+        /// <summary>ダメージだけ変えたもの（同じカード）</summary>
+        public Slot WithDamage(int damage) => damage == Damage ? this : new Slot(Zone, Cell, Card, FaceUp, damage, Key);
 
         /// <summary>Slot.base：ダメージを除いたもの</summary>
-        public Slot Base() => Damage == 0 ? this : new Slot(Zone, Cell, Card, FaceUp);
+        public Slot Base() => WithDamage(0);
 
         /// <summary>ダメージを除いて同じか（ゾーン・マス・カード・表裏）</summary>
         public bool SameBase(Slot b) => Zone == b.Zone && Cell == b.Cell && Card.Name == b.Card.Name && FaceUp == b.FaceUp;
@@ -108,7 +114,7 @@ namespace CardGen
         public static PState Mark(this PState s, System.Func<int, int> d)
         {
             var n = s.With();
-            n.Field = s.Field.Select((sl, i) => new Slot(sl.Zone, sl.Cell, sl.Card, sl.FaceUp, sl.Damage + d(i))).ToList();
+            n.Field = s.Field.Select((sl, i) => sl.WithDamage(sl.Damage + d(i))).ToList();
             return n;
         }
 

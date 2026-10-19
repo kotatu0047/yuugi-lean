@@ -28,6 +28,8 @@ namespace CardGen.App
             NodeKind.Draw => new Color(0.55f, 0.50f, 0.25f),
             NodeKind.Negate => new Color(0.30f, 0.60f, 0.40f),
             NodeKind.Boost => new Color(0.25f, 0.55f, 0.55f),
+            NodeKind.Toughen => new Color(0.25f, 0.45f, 0.65f),
+            NodeKind.Strike => new Color(0.80f, 0.45f, 0.30f),
             NodeKind.Damage => new Color(0.80f, 0.35f, 0.50f),
             NodeKind.Heal => new Color(0.35f, 0.65f, 0.35f),
             NodeKind.Axioms => new Color(0.35f, 0.38f, 0.45f),
@@ -138,6 +140,8 @@ namespace CardGen.App
                 (n.Rules.PlaceLimits.Count > 0 ? $"\n上限：{string.Join("・", n.Rules.PlaceLimits.Select(l => $"{string.Join("+", l.Types)} {l.Count}枚"))}" : "") +
                 (n.Rules.AttackTaps ? "\n攻撃でタップ" : "") + (n.Rules.SummoningSickness ? (n.Rules.AttackTaps ? "・" : "\n") + "召喚酔い" : "") +
                 (n.Rules.Blocking ? "\nMTG 式の戦闘（ブロック）" : "") +
+                (n.Rules.Instants.Count > 0 ? $"\nいつでも置ける：{List(n.Rules.Instants)}" : "") +
+                (n.Rules.Stack ? "\nスタック" : "") +
                 "",
             NodeKind.Zone =>
                 $"{n.Zone.Count}マス・{(n.Zone.Capacity == Capacity.One ? "1枚まで" : "何枚でも")}・" +
@@ -147,7 +151,7 @@ namespace CardGen.App
             NodeKind.Card =>
                 $"種類：{(n.Card.Type.Length == 0 ? "（未設定）" : n.Card.Type)}" + (n.Card.Tags.Count > 0 ? $"\nタグ：{List(n.Card.Tags)}" : "") +
                 (n.Card.Attack > 0 || n.Card.Defense > 0 ? $"\n攻撃力 {n.Card.Attack}・守備力 {n.Card.Defense}" : "") +
-                (n.Card.Mana > 0 ? $"\nタップで{(n.Card.ManaColor == "" ? "無色" : n.Card.ManaColor)}マナ {n.Card.Mana}" : "") +
+                (n.Card.Mana > 0 ? $"\nタップで{(n.Card.ManaChoice.Count > 0 ? string.Join("か", n.Card.ManaChoice) : n.Card.ManaColor == "" ? "無色" : n.Card.ManaColor)}マナ {n.Card.Mana}" : "") +
                 (n.Card.Cost > 0 || n.Card.ColorCost.Count > 0 ? $"\nコスト {(n.Card.Cost > 0 ? n.Card.Cost.ToString() : "")}{(n.Card.Cost > 0 && n.Card.ColorCost.Count > 0 ? "＋" : "")}{string.Concat(n.Card.ColorCost)}" : ""),
             NodeKind.Axioms => "編集できません\n" + string.Join("\n", Axioms.Lines.Select((l, i) => $"{i + 1}. {l}")),
             NodeKind.Sets =>
@@ -160,6 +164,8 @@ namespace CardGen.App
             NodeKind.Draw => $"発動したプレイヤーがカードを {n.DrawCount} 枚引く",
             NodeKind.Negate => "表側表示で存在する限り、つないだ範囲のカードの効果を無効にする",
             NodeKind.Boost => $"表側表示で存在する限り、つないだ範囲のカードの攻撃力を {(n.Amount >= 0 ? "+" : "")}{n.Amount}",
+            NodeKind.Toughen => $"表側表示で存在する限り、つないだ範囲のカードの守備力を {(n.Amount >= 0 ? "+" : "")}{n.Amount}",
+            NodeKind.Strike => $"つないだ範囲の戦闘できるカードすべてに {n.Amount} のダメージ（ターンの終わりまで残る）",
             NodeKind.Damage => $"相手に {n.Amount} のダメージを与える",
             NodeKind.Heal => $"発動したプレイヤーのライフを {n.Amount} 回復する",
             _ => SelectorSummary(n.Selector),

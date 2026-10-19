@@ -150,8 +150,9 @@ namespace CardGen
             Choosing,
         }
 
-        readonly Dictionary<Slot, bool> on = new Dictionary<Slot, bool>();
-        readonly List<Slot> order = new List<Slot>();
+        // カードは Slot.Key で見分ける（ダメージを受けても同じカード）
+        readonly Dictionary<object, bool> on = new Dictionary<object, bool>();
+        readonly List<object> order = new List<object>();
         List<(bool player, int index, Slot slot, Inst inst)> cards = new List<(bool, int, Slot, Inst)>();
         TSys sys = new TSys(new List<Inst>());
 
@@ -165,7 +166,7 @@ namespace CardGen
         /// <summary>選ぶ場面での見通し</summary>
         public TSys.Outlook Outlook { get; private set; }
 
-        public bool IsOn(Slot sl) => on.TryGetValue(sl, out var b) && b;
+        public bool IsOn(Slot sl) => on.TryGetValue(sl.Key, out var b) && b;
 
         /// <summary>
         /// 盤面が変わったあとに判定を進める（tp はターンプレイヤー）。
@@ -175,15 +176,15 @@ namespace CardGen
         {
             Turn = tp;
             cards = state.FieldInsts(r).Select(x => (x.player, x.index, state.Get(x.player).Field[x.index], x.inst)).ToList();
-            var present = new HashSet<Slot>(cards.Select(c => c.Item3));
-            foreach (var sl in on.Keys.Where(sl => !present.Contains(sl)).ToList()) on.Remove(sl);
-            order.RemoveAll(sl => !present.Contains(sl));
+            var present = new HashSet<object>(cards.Select(c => c.Item3.Key));
+            foreach (var k in on.Keys.Where(k => !present.Contains(k)).ToList()) on.Remove(k);
+            order.RemoveAll(k => !present.Contains(k));
             foreach (var c in cards)
-                if (!on.ContainsKey(c.Item3)) { on[c.Item3] = false; order.Add(c.Item3); }
+                if (!on.ContainsKey(c.Item3.Key)) { on[c.Item3.Key] = false; order.Add(c.Item3.Key); }
             sys = new TSys(cards.Select(c => c.Item4).ToList());
-            var index = new Dictionary<Slot, int>();
-            for (int i = 0; i < cards.Count; i++) index[cards[i].Item3] = i;
-            Advance(new TState(cards.Select(c => on[c.Item3]).ToArray(), order.Select(sl => index[sl]).ToArray()));
+            var index = new Dictionary<object, int>();
+            for (int i = 0; i < cards.Count; i++) index[cards[i].Item3.Key] = i;
+            Advance(new TState(cards.Select(c => on[c.Item3.Key]).ToArray(), order.Select(k => index[k]).ToArray()));
         }
 
         /// <summary>選ぶ場面で、選択肢の1つを選ぶ</summary>
@@ -217,9 +218,9 @@ namespace CardGen
                     break;
                 }
             }
-            for (int i = 0; i < cards.Count; i++) on[cards[i].slot] = s.On[i];
+            for (int i = 0; i < cards.Count; i++) on[cards[i].slot.Key] = s.On[i];
             order.Clear();
-            order.AddRange(s.Order.Select(i => cards[i].slot));
+            order.AddRange(s.Order.Select(i => cards[i].slot.Key));
         }
     }
 }

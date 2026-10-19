@@ -19,8 +19,11 @@ namespace CardGen.App
         readonly Func<Game> getGame;
         readonly Func<string> getCommand;
         readonly TextField title = new TextField("文") { value = "自分のフィールド上の闇属性のモンスターは最大5枚" };
-        readonly TextField types = new TextField("カードの種類") { value = "モンスター" };
-        readonly TextField tags = new TextField("タグ（すべて持つ）") { value = "闇属性" };
+        // カードの種類とタグは、集合のノードの値から選ぶ
+        readonly List<string> types = new List<string> { "モンスター" };
+        readonly List<string> tags = new List<string> { "闇属性" };
+        readonly VisualElement typeRow = new VisualElement();
+        readonly VisualElement tagRow = new VisualElement();
         static readonly (string, string)[] Places = { ("フィールド上", "field"), ("手札", "hand"), ("墓地", "grave"), ("デッキ", "deck") };
         readonly DropdownField place = new DropdownField("数える場所", Places.Select(p => p.Item1).ToList(), 0);
         readonly Toggle both = new Toggle("両プレイヤーの合計") { value = false };
@@ -57,8 +60,8 @@ namespace CardGen.App
             Add(hint);
             Add(title);
             Add(place);
-            Add(types);
-            Add(tags);
+            Add(typeRow);
+            Add(tagRow);
             Add(both);
             Add(n);
             var row = new VisualElement();
@@ -71,10 +74,62 @@ namespace CardGen.App
             message.style.marginTop = 4;
             Add(message);
             Add(jobs);
+            SyncChoices();
         }
 
-        static List<string> Split(string s) =>
-            s.Split(new[] { ',', '、', '・', '，' }, StringSplitOptions.RemoveEmptyEntries).Select(x => x.Trim()).Where(x => x.Length > 0).ToList();
+        static readonly Color ChipOn = new Color(0.28f, 0.45f, 0.62f);
+        static readonly Color ChipOff = new Color(0.22f, 0.22f, 0.25f);
+        static readonly Color ChipBad = new Color(0.55f, 0.22f, 0.22f);
+
+        /// <summary>別のゲームを開いたとき：そのゲームの集合にない種類・タグの選択を外す（何も残らなければ最初の種類を選ぶ）</summary>
+        public void DropUnknown(Game g)
+        {
+            types.RemoveAll(t => !g.Rules.CardTypes.Contains(t));
+            if (types.Count == 0 && g.Rules.CardTypes.Count > 0) types.Add(g.Rules.CardTypes[0]);
+            var all = g.Rules.TagSets.SelectMany(t => t.Values).ToList();
+            tags.RemoveAll(t => !all.Contains(t));
+            SyncChoices();
+        }
+
+        /// <summary>選ぶ形の欄（カードの種類・タグ）を、今のゲームの集合に合わせて作り直す</summary>
+        public void SyncChoices()
+        {
+            Game g;
+            try { g = getGame(); } catch { return; }
+            Fill(typeRow, "カードの種類（どれか）", g.Rules.CardTypes, types, "（集合のノードでカードの種類を加えてください）");
+            var tagOptions = g.Rules.TagSets.SelectMany(t => t.Values).Distinct().ToList();
+            Fill(tagRow, "タグ（すべて持つ）", tagOptions, tags, "（タグの集合がありません。タグの条件なし）");
+        }
+
+        void Fill(VisualElement box, string label, List<string> options, List<string> selected, string empty)
+        {
+            box.Clear();
+            var l = new Label(label) { style = { marginTop = 4, color = new Color(0.82f, 0.82f, 0.86f) } };
+            box.Add(l);
+            var row = new VisualElement();
+            row.style.flexDirection = FlexDirection.Row;
+            row.style.flexWrap = Wrap.Wrap;
+            Button Chip(string text, Color bg, System.Action click)
+            {
+                var b = new Button(click) { text = text };
+                b.style.backgroundColor = bg;
+                b.style.borderTopLeftRadius = b.style.borderTopRightRadius = b.style.borderBottomLeftRadius = b.style.borderBottomRightRadius = 10;
+                return b;
+            }
+            foreach (var o in options)
+            {
+                var v = o;
+                row.Add(Chip(o, selected.Contains(o) ? ChipOn : ChipOff, () =>
+                {
+                    if (selected.Contains(v)) selected.Remove(v); else selected.Add(v);
+                    SyncChoices();
+                }));
+            }
+            foreach (var bad in selected.Where(x => !options.Contains(x)).ToList())
+                row.Add(Chip($"{bad}（集合にない）×", ChipBad, () => { selected.Remove(bad); SyncChoices(); }));
+            if (row.childCount == 0) row.Add(new Label(empty) { style = { color = Quiet, fontSize = 11 } });
+            box.Add(row);
+        }
 
         void Say(string s, Color c) { message.text = s; message.style.color = c; }
 
@@ -88,8 +143,8 @@ namespace CardGen.App
                 var claim = new JObject
                 {
                     ["title"] = title.value,
-                    ["types"] = new JArray(Split(types.value)),
-                    ["tags"] = new JArray(Split(tags.value)),
+                    ["types"] = new JArray(types),
+                    ["tags"] = new JArray(tags),
                     ["both"] = both.value,
                     ["n"] = Math.Max(0, n.value),
                     ["place"] = Places[Math.Max(0, place.index)].Item2,

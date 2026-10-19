@@ -15,6 +15,13 @@ namespace CardGen.App
         /// <summary>集合のノードの中身（カードの種類・マナの色・タグの集合）。選ぶ形の入力に使う</summary>
         public Func<SetsData> Sets = () => null;
 
+        /// <summary>集合の値の名前を変える（使っているところもすべて書き換える）</summary>
+        public Action<SetKind, string, string> Rename = (k, a, b) => { };
+
+        // 名前を変えようとしている集合の値（集合のリストと値）
+        List<string> renameList;
+        string renameValue;
+
         static readonly Color ChipOn = new Color(0.28f, 0.45f, 0.62f);
         static readonly Color ChipOff = new Color(0.22f, 0.22f, 0.25f);
         static readonly Color ChipBad = new Color(0.55f, 0.22f, 0.22f);
@@ -183,7 +190,7 @@ namespace CardGen.App
         }
 
         /// <summary>集合1つの編集：値のチップ（×で消す）と、加える欄</summary>
-        void SetEditor(string title, List<string> values, string placeholder, System.Action rename = null, System.Action remove = null,
+        void SetEditor(SetKind kind, string title, List<string> values, string placeholder, System.Action remove = null,
             TextField nameField = null)
         {
             var box = new VisualElement();
@@ -203,10 +210,41 @@ namespace CardGen.App
             foreach (var v in values)
             {
                 var x = v;
-                chips.Add(Chip($"{v}  ×", ChipOn, () => { values.Remove(x); Changed(); Show(node); }));
+                // 値を押すと名前を変える欄が出る。× で消す
+                var editing = renameList == values && renameValue == x;
+                chips.Add(Chip(v, editing ? new Color(0.55f, 0.45f, 0.2f) : ChipOn, () =>
+                {
+                    (renameList, renameValue) = editing ? (null, null) : (values, x);
+                    Show(node);
+                }));
+                var del = Chip("×", ChipOff, () => { values.Remove(x); Changed(); Show(node); });
+                del.style.marginLeft = -4;
+                del.style.marginRight = 8;
+                chips.Add(del);
             }
             if (values.Count == 0) chips.Add(new Label("（まだありません）") { style = { color = new Color(0.6f, 0.6f, 0.65f), fontSize = 11 } });
             box.Add(chips);
+            if (renameList == values && values.Contains(renameValue))
+            {
+                var rrow = Wrap();
+                rrow.style.flexWrap = UnityEngine.UIElements.Wrap.NoWrap;
+                var to = new TextField($"「{renameValue}」の新しい名前") { value = renameValue };
+                to.style.flexGrow = 1;
+                void Apply()
+                {
+                    var nv = to.value.Trim();
+                    if (nv.Length == 0 || nv == renameValue || values.Contains(nv)) return;
+                    Rename(kind, renameValue, nv);
+                    (renameList, renameValue) = (null, null);
+                    Changed();
+                    Show(node);
+                }
+                to.RegisterCallback<KeyDownEvent>(e => { if (e.keyCode == KeyCode.Return || e.keyCode == KeyCode.KeypadEnter) Apply(); });
+                rrow.Add(to);
+                rrow.Add(new Button(Apply) { text = "名前を変える" });
+                box.Add(rrow);
+                box.Add(new Label("使っているカード・ゾーン・ルール・範囲も、まとめて新しい名前に変わります") { style = { fontSize = 10, color = new Color(0.8f, 0.7f, 0.4f) } });
+            }
             var addRow = Wrap();
             addRow.style.flexWrap = UnityEngine.UIElements.Wrap.NoWrap;
             var input = new TextField { value = "" };
@@ -319,8 +357,9 @@ namespace CardGen.App
                     break;
                 case NodeKind.Sets:
                     Hint("ゲームで使う値の集合です。ルール・ゾーン・カード・範囲の種類やタグ、マナの色は、ここから選びます。");
-                    SetEditor("カードの種類", n.Sets.CardTypes, "例：モンスター、魔法、罠（「、」で区切ると、まとめて加えられます）");
-                    SetEditor("マナの色", n.Sets.ManaColors, "例：白、青、黒、赤、緑（色のマナを使わなければ空）");
+                    Hint("値を押すと名前を変えられます（使っているところもまとめて変わります）。× で消します。");
+                    SetEditor(SetKind.CardType, "カードの種類", n.Sets.CardTypes, "例：モンスター、魔法、罠（「、」で区切ると、まとめて加えられます）");
+                    SetEditor(SetKind.ManaColor, "マナの色", n.Sets.ManaColors, "例：白、青、黒、赤、緑（色のマナを使わなければ空）");
                     Add(FieldLabel("タグの集合（属性・種族など）"));
                     Hint("タグの集合を1つでも作ると、カードと範囲のタグは、どれかの集合の値から選びます（集合にないタグは形式の誤り）。");
                     foreach (var ts in n.Sets.TagSets.ToList())
@@ -328,7 +367,7 @@ namespace CardGen.App
                         var t = ts;
                         var nameField = new TextField { value = t.Name, isDelayed = true };
                         nameField.RegisterValueChangedCallback(e => { t.Name = e.newValue.Trim(); Changed(); });
-                        SetEditor(t.Name, t.Values, "値を加える（例：闇属性、光属性）",
+                        SetEditor(SetKind.Tag, t.Name, t.Values, "値を加える（例：闇属性、光属性）",
                             remove: () => { n.Sets.TagSets.Remove(t); Changed(); Show(n); }, nameField: nameField);
                     }
                     var newSet = new Button(() =>
@@ -367,8 +406,14 @@ namespace CardGen.App
                     Toggle("攻撃するとタップする", n.Rules.AttackTaps, v => n.Rules.AttackTaps = v);
                     Toggle("召喚酔い（置いたターンは攻撃・タップできない）", n.Rules.SummoningSickness, v => n.Rules.SummoningSickness = v);
                     Toggle("MTG 式の戦闘（守る側がブロックを選ぶ）", n.Rules.Blocking, v => n.Rules.Blocking = v);
-                    Hint("MTG 式の戦闘：攻撃されたプレイヤーが、ブロックするカードを選びます（選ばなければ攻撃力のダメージ）。" +
-                         "ブロックされたら、攻撃力（パワー）と守備力（タフネス）で互いにダメージを与え、守備力以上のダメージを受けた方を破壊します。");
+                    Hint("MTG 式の戦闘：攻撃するカードを宣言し（何枚でも）、攻撃されたプレイヤーがブロックするカードを選びます" +
+                         "（1枚の攻撃を何枚でブロックしてもよい。選ばなければ攻撃力のダメージ）。ブロックされたら、攻撃力（パワー）と" +
+                         "守備力（タフネス）で互いにダメージを与え、守備力以上のダメージを受けたカードを破壊します。ダメージはターンの終わりまで残ります。");
+                    Picker("いつでも置ける種類（インスタント）", sets.CardTypes, n.Rules.Instants);
+                    Toggle("スタック（呪文は後に置いたものから解決）", n.Rules.Stack, v => n.Rules.Stack = v);
+                    Hint("インスタントは、相手のターンや、攻撃・スタックへの応答としても置けます（相手のターンには、自分のカードをタップして払う）。" +
+                         "スタック：「フィールド上」でないゾーンに置いた、発動する効果を持つカードは、後に置いたものから解決します。" +
+                         "スタックが空でなければ、インスタント以外は置けず、攻撃・ブロック・ターン終了もできません。");
                     Hint("マナ：ターンプレイヤーは、マナを出すカードをタップしてマナを得て、カードのコストを支払って置きます。" +
                          "マナはターンの終わりに消え、タップしたカードは持ち主の次のターンの始めに起きます。");
                     break;
@@ -412,7 +457,7 @@ namespace CardGen.App
                          "（「隣」「同じ縦列」の範囲に入りません）。遊戯王の見本は、モンスターが行 25、魔法・罠が行 26、列 22〜26 です。");
                     break;
                 case NodeKind.Card:
-                    Hint("カード。効果のノード（発動・無効・攻撃力の変化）をつなぎます。");
+                    Hint("カード。効果のノード（発動・無効・攻撃力の変化・守備力の変化）をつなぎます。");
                     Text("名前", n.Card.Name, v => n.Card.Name = v);
                     Pick("種類", sets.CardTypes, n.Card.Type, v => n.Card.Type = v);
                     TagPicker("タグ", n.Card.Tags, v => n.Card.Tags = v);
@@ -444,10 +489,13 @@ namespace CardGen.App
                     }
                     Int("タップで出るマナの量", n.Card.Mana, v => n.Card.Mana = Math.Max(0, v));
                     Pick("タップで出るマナの色", sets.ManaColors, n.Card.ManaColor, v => n.Card.ManaColor = v, noneLabel: "無色");
-                    Hint("マナの色は、集合のノードの「マナの色」から選びます。");
+                    if (sets.ManaColors.Count > 0)
+                        Picker("選べるマナの色（2色以上の土地）", sets.ManaColors, n.Card.ManaChoice);
+                    Hint("マナの色は、集合のノードの「マナの色」から選びます。「選べるマナの色」を選ぶと、タップするたびにその中から1色を選んで出します" +
+                         "（そのときは「タップで出るマナの色」は無色にします）。");
                     break;
                 case NodeKind.Activate:
-                    Hint("発動し、解決したときに、つないだ動き（破壊・手札に戻す・ドロー・ダメージ・回復）を上から順に行います。無効にされていれば何も起きません。");
+                    Hint("発動し、解決したときに、つないだ動き（破壊・手札に戻す・ドロー・ダメージ・回復・カードへのダメージ）を上から順に行います。無効にされていれば何も起きません。");
                     break;
                 case NodeKind.Destroy:
                     Hint("つないだ範囲のカードをすべて破壊し、持ち主の墓地へ送ります。範囲のノードを1つつなぎます。");
@@ -465,6 +513,14 @@ namespace CardGen.App
                 case NodeKind.Boost:
                     Hint("このカードが表側表示でフィールド上に存在し、効果が無効にされていない限り、つないだ範囲のカードの攻撃力を変えます（負の数なら下げる。0 未満にはならない）。範囲のノードを1つつなぎます。");
                     SignedInt("変える量", n.Amount, v => n.Amount = v);
+                    break;
+                case NodeKind.Toughen:
+                    Hint("このカードが表側表示でフィールド上に存在し、効果が無効にされていない限り、つないだ範囲のカードの守備力を変えます（負の数なら下げる。0 未満にはならない）。範囲のノードを1つつなぎます。");
+                    SignedInt("変える量", n.Amount, v => n.Amount = v);
+                    break;
+                case NodeKind.Strike:
+                    Hint("つないだ範囲の、戦闘できるカードすべてにダメージを与えます。ダメージはターンの終わりまで残り、守備力以上のダメージを受けたカードは破壊されます。範囲のノードを1つつなぎます。");
+                    Int("ダメージ", n.Amount, v => n.Amount = Math.Max(1, v));
                     break;
                 case NodeKind.Damage:
                     Hint("相手のライフを減らします（0 より下がらない）。");
