@@ -21,6 +21,7 @@ import CardGen.Negation
 | 攻撃力・守備力を変える範囲に、戦闘できる種類のカードがありません | `modTerm_boost_nonfighter` など（戦闘できるカードには0） |
 | 永続効果の範囲では、対象を選べません | `modTerm_boost_target` など・`Selector.matches_negView_target`（何にも当たらない） |
 | 発動する効果に動きがありません | `State.resolve_nil`（無効にされて解決したのと同じ） |
+| 誘発する効果に動きがありません | `State.fire_nil`（解決しても盤面は変わらない） |
 | カードの種類「…」はルールにありません | `Reachable.type_known`（ゾーンの検査が通れば、そのカードはどの盤面でもフィールドに出ない） |
 | ゾーンのマスの数が0です／置けるカードの種類が空です | `Reachable.zone_used`（そのゾーンにはどの盤面でもカードがない） |
 | マナの色があるのに（選べる色があるのに）、出るマナの量が0です | `manaOut_eq_nil`（タップしてもマナは出ない） |
@@ -197,6 +198,11 @@ theorem State.counter_eq_self {r : Rules} {g : State} (hinv : Inv r g) {sel : Se
 /-- **動きのない発動する効果を解決するのは、無効にされて解決したのと同じ**（カードが墓地へ送られるだけ） -/
 theorem State.resolve_nil (r : Rules) (p : PlayerId) (g : State) (k : Nat) (sl : Slot) (apply : Bool) (neg tgt) :
     g.resolve r p k sl [] apply neg tgt = g.resolve r p k sl [] false neg tgt := by
+  cases apply <;> rfl
+
+/-- **動きのない誘発する効果は、解決しても盤面を変えない** -/
+theorem State.fire_nil (r : Rules) (p : PlayerId) (g : State) (cell : Option Cell) (apply : Bool) (neg tgt) :
+    g.fire r p [] cell apply neg tgt = g := by
   cases apply <;> rfl
 
 /-! ## 永続効果（攻撃力・守備力の変化と無効） -/

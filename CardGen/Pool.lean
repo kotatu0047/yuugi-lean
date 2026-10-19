@@ -269,6 +269,11 @@ theorem cardsSub_step {r : Rules} {g g' : State} : Step r g g' → CardsSub g g'
   | .attack _ p k sl t neg _ _ _ _ => cardsSub_battle r g neg p k sl t
   | .combat _ p atk blocks neg _ => cardsSub_combat r g neg p atk blocks
   | .mend _ => cardsSub_mend g
+  | .trigger _ p _ _ _ as cell apply neg tgt _ _ => by
+      unfold State.fire
+      split
+      · exact cardsSub_foldl r _ _ as g
+      · exact CardsSub.refl g
   | .discard _ p c hc => CardsSub.set fun x hx => by
       simp only [PState.mem_cards, List.mem_append, List.mem_singleton] at hx
       rw [PState.mem_cards]
@@ -311,6 +316,7 @@ def Action.isHeal : Action → Bool
 /-- 「回復」の動きを持つ -/
 def Card.heals (c : Card) : Bool := c.effects.any fun
   | .activated as => as.any Action.isHeal
+  | .triggered _ _ as => as.any Action.isHeal
   | _ => false
 
 /-- ライフが `L` 以下 -/
@@ -454,6 +460,19 @@ theorem Reachable.life_le {r : Rules} {decks : PlayerId → List Card} {pool : L
         · exact lifeLe_foldl r _ _ as has h1
         · exact h1
       exact lifeLe_set h2 (Nat.le_refl _)
+    | trigger p c on opt as cell apply neg tgt hact hc =>
+      have hcard : c ∈ pool := hg'.fromPool hpool p c (PState.mem_cards.2 hc)
+      have hno : c.heals = false := by
+        have := List.all_eq_true.1 hheal _ hcard
+        simpa using this
+      have has : as.any Action.isHeal = false := by
+        unfold Card.heals at hno
+        have := List.any_eq_false.1 hno _ hact
+        simpa using this
+      unfold State.fire
+      split
+      · exact lifeLe_foldl r _ _ as has ih
+      · exact ih
 
 /-! ## カードの一覧によって決まる★ -/
 

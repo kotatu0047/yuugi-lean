@@ -127,6 +127,8 @@ public class DifferentialTests
         }
     }
 
+    static Cell? ParseCell(JToken c) => c == null || c.Type == JTokenType.Null ? (Cell?)null : new Cell((int)c[0], (int)c[1]);
+
     static Inst ParseInst(JToken x) => new Inst(Cards[(string)x["card"]], (bool)x["controller"], (bool)x["faceUp"],
         x["cell"] == null || x["cell"].Type == JTokenType.Null ? (Cell?)null : new Cell((int)x["cell"][0], (int)x["cell"][1]));
 
@@ -141,6 +143,8 @@ public class DifferentialTests
         "mend" => Choice.Mend(),
         "settle" => Choice.Settle(ParseNeg(c["neg"])),
         "discard" => Choice.Discard((bool)c["player"], (int)c["hand"]),
+        "trigger" => Choice.Trigger((bool)c["player"], Cards[(string)c["card"]], (int)c["effect"], ParseCell(c["cell"]),
+            (bool)c["apply"], ParseNeg(c["neg"]), ParseTgt(c["tgt"])),
         _ => Choice.Resolve((bool)c["player"], (int)c["field"], (int)c["effect"], (bool)c["apply"], ParseNeg(c["neg"]), ParseTgt(c["tgt"])),
     };
 
@@ -251,6 +255,7 @@ public class DifferentialTests
         "oppTap" => TChoice.OppTap((int)c["field"], (string)c["color"]),
         "block" => TChoice.Block(ParseBlocks(c["blocks"]), ParseNeg(c["neg"])),
         "discard" => TChoice.Discard((int)c["hand"]),
+        "trigger" => TChoice.Trigger((int)c["index"], (bool)c["skip"], (bool)c["apply"], ParseNeg(c["neg"]), ParseTgt(c["tgt"])),
         _ => TChoice.EndTurn(),
     };
 
@@ -274,6 +279,11 @@ public class DifferentialTests
         ["decked"] = t.Decked == null ? JValue.CreateNull() : new JValue(t.Decked.Value),
         ["prio"] = t.Prio,
         ["passes"] = t.Passes,
+        ["pending"] = new JArray(t.Pending.Select(e => new JObject
+        {
+            ["player"] = e.P, ["card"] = e.Card.Name, ["effect"] = e.Eff,
+            ["cell"] = e.Cell is Cell c ? new JArray(c.Col, c.Row) : (JToken)JValue.CreateNull(),
+        })),
     };
 
     static JObject MatchJson(Match m) => new JObject
@@ -413,14 +423,30 @@ public class DifferentialTests
         foreach (var c in ((JArray)o["cards"]).Where(c => ((JObject)c).Descendants().OfType<JProperty>()
                      .Any(p => p.Name == "target" && p.Value.Type == JTokenType.Boolean && (bool)p.Value)).ToList())
             c.Remove();
-        // 手札の上限は版 10 で加えたので、古い版のテストでは上限なしにしておく
+        // 手札の上限は版 10、誘発する効果は版 11 で加えたので、古い版のテストでは上限なし・誘発するカードなしにしておく
         o["rules"]["handLimit"] = 0;
+        foreach (var c in ((JArray)o["cards"]).Where(c => ((JObject)c).Descendants().OfType<JProperty>().Any(p => p.Name == "triggered")).ToList())
+            c.Remove();
         return o;
+    }
+
+    [Fact]
+    public void Version_10_is_upgraded()
+    {
+        var src = OldSample();
+        var o = (JObject)src.DeepClone();
+        o["version"] = 10;
+        // 版 10 から加わった欄はないので読めるが、形式の検査は版の違いを誤りにする
+        Assert.Contains(Check.Game(IrJson.ParseGame(o.DeepClone())), e => e.Contains("版 10"));
+        Assert.True(IrJson.Upgrade(o));
+        Assert.True(JToken.DeepEquals(src, o));
+        Assert.False(IrJson.Upgrade(o));
     }
 
     /// <summary>版 10 で加えたもの（手札の上限）を除く</summary>
     static JObject WithoutHandLimit(JObject o)
     {
+        // 版 11 で加えたもの（誘発する効果）は OldSample が除いてある
         o["version"] = 9;
         ((JObject)o["rules"]).Remove("handLimit");
         return o;

@@ -37,7 +37,7 @@ theorem TReachable.reachable (h : TReachable r decks first m) : Reachable r deck
     · exact Reachable.drawUpTo first _ .start
     · exact .start
   | step ch _ hs ih =>
-    obtain ⟨m0, _, _, ⟨-, rfl⟩ | hmv, rfl⟩ := Match.step?_moved hs
+    obtain ⟨m0, _, _, _, ⟨-, rfl, -⟩ | ⟨hmv, -⟩, rfl⟩ := Match.step?_moved hs
     · exact ih
     show Reachable r decks m0.g
     cases hmv with
@@ -46,6 +46,8 @@ theorem TReachable.reachable (h : TReachable r decks first m) : Reachable r deck
     | resolve hg => exact ih.step (step?_sound hg)
     | settle => exact ih.step (.settle _ _)
     | discard hg => exact ih.step (step?_sound hg)
+    | trigger _ hg => exact ih.step (step?_sound hg)
+    | skip => exact ih
     | attack _ hg => exact ih.step (step?_sound hg)
     | declare _ => exact ih
     | block hg => exact ih.step (step?_sound hg)
@@ -87,9 +89,9 @@ theorem TReachable.summons_le (h : TReachable r decks first m) (hl : r.summonsPe
   induction h with
   | start => simp [Match.start]
   | step ch _ hs ih =>
-    obtain ⟨m0, _, _, ⟨-, rfl⟩ | hmv, rfl⟩ := Match.step?_moved hs
+    obtain ⟨m0, _, _, _, ⟨-, rfl, -⟩ | ⟨hmv, -⟩, rfl⟩ := Match.step?_moved hs
     · simpa using ih
-    simp only [TurnInfo.withPrio_summons]
+    simp only [TurnInfo.queue_summons, TurnInfo.withPrio_summons]
     cases hmv with
     | @place _ _ _ _ _ c _ hc hok _ =>
       simp only [TurnInfo.placeOK, Bool.and_eq_true, Bool.or_eq_true, Bool.not_eq_true',
@@ -106,6 +108,8 @@ theorem TReachable.summons_le (h : TReachable r decks first m) (hl : r.summonsPe
     | resolve _ => simpa using ih
     | settle => simpa using ih
     | discard _ => simpa using ih
+    | trigger _ _ => simpa using ih
+    | skip => simpa using ih
     | attack _ _ => simpa [TurnInfo.afterAttack] using ih
     | declare _ => simpa [TurnInfo.afterAttack] using ih
     | block _ => simpa [TurnInfo.afterBlock] using ih
@@ -119,9 +123,9 @@ theorem TReachable.placed_le (h : TReachable r decks first m) {l : PlaceLimit} (
   induction h with
   | start => simp [Match.start]
   | step ch _ hs ih =>
-    obtain ⟨m0, _, _, ⟨-, rfl⟩ | hmv, rfl⟩ := Match.step?_moved hs
+    obtain ⟨m0, _, _, _, ⟨-, rfl, -⟩ | ⟨hmv, -⟩, rfl⟩ := Match.step?_moved hs
     · simpa using ih
-    simp only [TurnInfo.withPrio_placed]
+    simp only [TurnInfo.queue_placed, TurnInfo.withPrio_placed]
     cases hmv with
     | @place _ _ _ _ _ c _ _ hok _ =>
       simp only [TurnInfo.placeOK, Bool.and_eq_true, List.all_eq_true] at hok
@@ -137,6 +141,8 @@ theorem TReachable.placed_le (h : TReachable r decks first m) {l : PlaceLimit} (
     | resolve _ => simpa using ih
     | settle => simpa using ih
     | discard _ => simpa using ih
+    | trigger _ _ => simpa using ih
+    | skip => simpa using ih
     | attack _ _ => simpa [TurnInfo.afterAttack] using ih
     | declare _ => simpa [TurnInfo.afterAttack] using ih
     | block _ => simpa [TurnInfo.afterBlock] using ih
@@ -159,10 +165,10 @@ theorem TReachable.fits (h : TReachable r decks first m) : m.turn.Fits m.g := by
   induction h with
   | start => refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩ <;> intro a <;> simp [Match.start]
   | step ch _ hs ih =>
-    obtain ⟨m0, _, _, ⟨-, rfl⟩ | hmv, rfl⟩ := Match.step?_moved hs
+    obtain ⟨m0, _, _, _, ⟨-, rfl, -⟩ | ⟨hmv, -⟩, rfl⟩ := Match.step?_moved hs
     · exact ih
     show m0.turn.Fits m0.g
-    cases hmv <;> exact TurnInfo.prune_fits _ _
+    cases hmv <;> first | exact TurnInfo.prune_fits _ _ | exact ih
 
 /-- **攻撃したカードの記録は、ターンプレイヤーのフィールドのカードの一部**
 （同じカードの枚数も含めて。だから、フィールドのどのカードも1ターンに1回までしか攻撃できない） -/
@@ -208,9 +214,9 @@ theorem TReachable.mana_balance (h : TReachable r decks first m) :
   induction h with
   | start => simp [Match.start]
   | step ch _ hs ih =>
-    obtain ⟨m0, _, _, ⟨-, rfl⟩ | hmv, rfl⟩ := Match.step?_moved hs
+    obtain ⟨m0, _, _, _, ⟨-, rfl, -⟩ | ⟨hmv, -⟩, rfl⟩ := Match.step?_moved hs
     · simpa using ih
-    simp only [TurnInfo.withPrio_pool, TurnInfo.withPrio_oppPool, TurnInfo.withPrio_spent, TurnInfo.withPrio_made]
+    simp only [TurnInfo.queue_pool, TurnInfo.withPrio_pool, TurnInfo.queue_oppPool, TurnInfo.withPrio_oppPool, TurnInfo.queue_spent, TurnInfo.withPrio_spent, TurnInfo.queue_made, TurnInfo.withPrio_made]
     cases hmv with
     | place _ hok _ =>
       simp only [TurnInfo.placeOK, Bool.and_eq_true] at hok
@@ -227,6 +233,8 @@ theorem TReachable.mana_balance (h : TReachable r decks first m) :
     | resolve _ => simpa using ih
     | settle => simpa using ih
     | discard _ => simpa using ih
+    | trigger _ _ => simpa using ih
+    | skip => simpa using ih
     | attack _ _ => simpa [TurnInfo.afterAttack] using ih
     | declare _ => simpa [TurnInfo.afterAttack] using ih
     | block _ => simpa [TurnInfo.afterBlock] using ih
@@ -249,10 +257,7 @@ theorem TurnInfo.afterPass_passes (t : TurnInfo) (h : t.passes < 2) : t.afterPas
 theorem TurnInfo.prioAfter_passes (r : Rules) (b a : TurnInfo) (ch : TChoice) (h : b.passes ≤ 2) :
     (b.prioAfter r a ch).passes ≤ 2 := by
   unfold TurnInfo.prioAfter TurnInfo.withPrio
-  split
-  · simpa using h
-  · simp
-  · split <;> simp
+  split <;> (try split) <;> first | exact h | simp
 
 /-- **パスの回数はいつも 2 以下**（両者がパスしたら、解決かブロックをするまでパスできない） -/
 theorem TReachable.passes_le (h : TReachable r decks first m) : m.turn.passes ≤ 2 := by
@@ -269,7 +274,10 @@ theorem TReachable.passes_le (h : TReachable r decks first m) : m.turn.passes �
       · cases h1
       · split at h1
         · split at h1
-          · rename_i hlt; cases h1; exact m.turn.afterPass_passes hlt
+          · rename_i hlt
+            cases h1
+            simp only [Bool.and_eq_true, decide_eq_true_eq] at hlt
+            exact m.turn.afterPass_passes hlt.2
           · cases h1
         · split at h1
           · obtain ⟨m2, _, rfl⟩ := Option.map_eq_some_iff.1 h1
@@ -306,10 +314,10 @@ theorem TReachable.stack_fits (h : TReachable r decks first m) : m.turn.StackFit
   induction h with
   | start => intro e he; simp [Match.start] at he
   | step ch _ hs ih =>
-    obtain ⟨m0, _, _, ⟨-, rfl⟩ | hmv, rfl⟩ := Match.step?_moved hs
+    obtain ⟨m0, _, _, _, ⟨-, rfl, -⟩ | ⟨hmv, -⟩, rfl⟩ := Match.step?_moved hs
     · exact ih
     show m0.turn.StackFits m0.g
-    cases hmv <;> exact TurnInfo.prune_stackFits _ _
+    cases hmv <;> first | exact TurnInfo.prune_stackFits _ _ | exact ih
 
 /-- **対戦が終わったら（ライフが 0 か、デッキ切れ）、それ以上どの動きもできない** -/
 theorem Match.step?_over (h : m.over r = true) (ch : TChoice) : m.step? r ch = none := by
@@ -341,7 +349,7 @@ theorem State.drawUpTo_field (r : Rules) (p : PlayerId) :
 （新しいターンの始めには、フィールドのどのカードもダメージが 0 で、攻撃力・守備力の一時的な変化もない） -/
 theorem Match.endTurn_clean {m' : Match} (hs : m.step? r .endTurn = some m') :
     ∀ q, ∀ sl ∈ (m'.g q).field, sl.base = sl := by
-  obtain ⟨m0, _, _, ⟨h, -⟩ | hmv, rfl⟩ := Match.step?_moved hs
+  obtain ⟨m0, _, _, _, ⟨h, -, -⟩ | ⟨hmv, -⟩, rfl⟩ := Match.step?_moved hs
   · cases h
   cases hmv
   intro q sl hsl
@@ -352,7 +360,7 @@ theorem Match.endTurn_clean {m' : Match} (hs : m.step? r .endTurn = some m') :
 /-- **ターンを終えられたなら、ターンプレイヤーの手札は上限以下**（手札の上限があるとき。超えていれば先に捨てる） -/
 theorem Match.endTurn_hand {m' : Match} (hs : m.step? r .endTurn = some m') (hl : r.handLimit ≠ 0) :
     (m.g m.turn.tp).hand.length ≤ r.handLimit := by
-  obtain ⟨m0, _, _, ⟨h, -⟩ | hmv, rfl⟩ := Match.step?_moved hs
+  obtain ⟨m0, _, _, _, ⟨h, -, -⟩ | ⟨hmv, -⟩, rfl⟩ := Match.step?_moved hs
   · cases h
   cases hmv with
   | endTurn hh => simpa [Rules.handOK, hl] using hh
@@ -403,9 +411,9 @@ theorem TReachable.mana_from {pool : List Card}
   induction h with
   | start => intro c hc; simp [Match.start] at hc
   | @step m _ ch hm hs ih =>
-    obtain ⟨m0, _, _, ⟨-, rfl⟩ | hmv, rfl⟩ := Match.step?_moved hs
+    obtain ⟨m0, _, _, _, ⟨-, rfl, -⟩ | ⟨hmv, -⟩, rfl⟩ := Match.step?_moved hs
     · simpa [TurnInfo.withPrio] using ih
-    simp only [TurnInfo.withPrio_pool, TurnInfo.withPrio_oppPool]
+    simp only [TurnInfo.queue_pool, TurnInfo.withPrio_pool, TurnInfo.queue_oppPool, TurnInfo.withPrio_oppPool]
     have fp := hm.reachable.fromPool hpool
     cases hmv with
     | place _ _ _ =>
@@ -438,8 +446,78 @@ theorem TReachable.mana_from {pool : List Card}
     | resolve _ => simpa using ih
     | settle => simpa using ih
     | discard _ => simpa using ih
+    | trigger _ _ => simpa using ih
+    | skip => simpa using ih
     | attack _ _ => simpa [TurnInfo.afterAttack] using ih
     | declare _ => simpa [TurnInfo.afterAttack] using ih
     | block _ => simpa [TurnInfo.afterBlock] using ih
+
+/-! ## 誘発 -/
+
+/-- **待ちに誘発した効果があるうちは、その解決（と「〜できる」効果を行わないこと）と状態の確認しかできない** -/
+theorem Match.step?_pending (hp : m.turn.pending ≠ []) {ch : TChoice} (hn : ∀ neg, ch ≠ .settle neg)
+    (ht : ∀ i sk a neg tgt, ch ≠ .trigger i sk a neg tgt) : m.step? r ch = none := by
+  have he : m.turn.pending.isEmpty = false := by
+    cases h : m.turn.pending with
+    | nil => exact absurd h hp
+    | cons _ _ => rfl
+  unfold Match.step? Match.step1?
+  by_cases ho : m.over r = true
+  · simp [ho]
+  · cases ch with
+    | pass => simp [ho, he]
+    | settle neg => exact absurd rfl (hn neg)
+    | trigger i sk a neg tgt => exact absurd rfl (ht i sk a neg tgt)
+    | _ => simp [ho, TurnInfo.gateOK, he]
+
+/-- 待ちの効果が、カードの誘発する効果を指している -/
+def Pending.Triggered (e : Pending) : Prop := ∃ on opt as, e.card.effects[e.eff]? = some (.triggered on opt as)
+
+theorem triggersOf_triggered {p : PlayerId} {c : Card} {ev : Trigger} {cell : Option Cell} {e : Pending}
+    (h : e ∈ triggersOf p c ev cell) : e.Triggered := by
+  unfold triggersOf at h
+  simp only [List.mem_filterMap, List.mem_range] at h
+  obtain ⟨k, _, hk⟩ := h
+  split at hk
+  · rename_i on opt as hk2
+    split at hk
+    · cases hk; exact ⟨on, opt, as, hk2⟩
+    · cases hk
+  · cases hk
+
+theorem events_triggered {r : Rules} {tp : PlayerId} {before after : State} {ch : TChoice} {e : Pending}
+    (h : e ∈ Match.events r tp before after ch) : e.Triggered := by
+  unfold Match.events at h
+  simp only [List.mem_append, List.mem_flatMap] at h
+  rcases h with (h | ⟨q, -, sl, -, h⟩) | h
+  · repeat' (first | exact triggersOf_triggered h | (split at h) | simp at h)
+  · exact triggersOf_triggered h
+  · split at h
+    · simp only [List.mem_flatMap, List.mem_filter] at h
+      obtain ⟨sl, -, h⟩ := h
+      exact triggersOf_triggered h
+    · simp at h
+
+@[simp] theorem TurnInfo.prune_pending (t : TurnInfo) (g : State) : (t.prune g).pending = t.pending := rfl
+@[simp] theorem TurnInfo.pop_pending (r : Rules) (t : TurnInfo) : (t.pop r).pending = t.pending := by
+  unfold TurnInfo.pop; split <;> rfl
+
+/-- **待ちにあるのは、どれもカードの誘発する効果**（誘発の条件の出来事が起きたときにだけ加わり、解決すると消える） -/
+theorem TReachable.pending_triggered (h : TReachable r decks first m) : ∀ e ∈ m.turn.pending, e.Triggered := by
+  induction h with
+  | start => intro e he; simp [Match.start] at he
+  | step ch _ hs ih =>
+    obtain ⟨m0, _, _, _, ⟨-, rfl, rfl⟩ | ⟨hmv, rfl⟩, rfl⟩ := Match.step?_moved hs
+    · simpa [TurnInfo.queue, TurnInfo.withPrio] using ih
+    intro e he
+    simp only [TurnInfo.queue, TurnInfo.withPrio, List.mem_append] at he
+    rcases he with he | he
+    · cases hmv with
+      | trigger _ _ => exact ih e (List.mem_of_mem_eraseIdx he)
+      | skip => exact ih e (List.mem_of_mem_eraseIdx he)
+      | endTurn _ => simp [TurnInfo.next] at he
+      | _ => exact ih e (by simpa [TurnInfo.afterPlace, TurnInfo.afterCast, TurnInfo.afterAttack, TurnInfo.afterBlock,
+          TurnInfo.afterTap, TurnInfo.afterOppTap] using he)
+    · exact events_triggered he
 
 end CardGen

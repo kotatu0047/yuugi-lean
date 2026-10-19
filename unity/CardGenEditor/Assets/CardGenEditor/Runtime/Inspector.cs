@@ -503,6 +503,13 @@ namespace CardGen.App
                 case NodeKind.Activate:
                     Hint("発動し、解決したときに、つないだ動き（破壊・手札に戻す・ドロー・ダメージ・回復・カードへのダメージ）を上から順に行います。無効にされていれば何も起きません。");
                     break;
+                case NodeKind.Trigger:
+                    Hint("条件の出来事が起きると誘発し、つないだ動きを上から順に行います。誘発した効果は「待ち」に入り、待ちがあるうちは" +
+                         "その解決と状態の確認しかできません（ターンプレイヤーの待ちから、持ち主が選んだ順に解決）。どれも表側表示のカードだけです。");
+                    Choice("誘発の条件", new[] { ("表側で置かれたとき", Trigger.Placed), ("破壊されて墓地へ送られたとき", Trigger.Destroyed),
+                        ("持ち主のターンの始め", Trigger.TurnStart) }, n.TriggerOn, v => n.TriggerOn = v);
+                    Toggle("「〜できる」（任意。持ち主は行わないことも選べる）", n.Optional, v => n.Optional = v);
+                    break;
                 case NodeKind.Destroy:
                     Hint("つないだ範囲のカードをすべて破壊し、持ち主の墓地へ送ります。範囲のノードを1つつなぎます。");
                     break;

@@ -413,5 +413,47 @@ namespace CardGen.App.Tests
             Pick(view.GeneralMenu(), "ターン終了");
             Assert.IsTrue(view.CurrentMatch.Turn.Tp);
         }
+
+        [Test]
+        public void Triggered_effects_wait_and_resolve()
+        {
+            var view = new PlayView();
+            view.Start(Load("mtg"));
+            view.Scenario("trigger");
+            // 山と森をタップして、エルフの幻想家を置く（置かれたとき1枚引く）
+            Assert.IsTrue(PopupMenu.Choose(view.FieldMenu(true, 0), "タップしてマナを出す"));
+            Assert.IsTrue(PopupMenu.Choose(view.FieldMenu(true, 1), "タップしてマナを出す"));
+            Assert.IsTrue(PopupMenu.Choose(view.HandMenu(true, 0), "で置く"), string.Join(" / ", UiTest.Buttons(view)));
+            Assert.AreEqual(1, view.CurrentMatch.Turn.Pending.Count);
+            // 待ちがあるうちは、ターンを終えられない
+            var end = view.GeneralMenu().First(i => i.Text == "ターン終了");
+            Assert.IsFalse(end.Enabled);
+            StringAssert.Contains("誘発", end.Hint);
+            Assert.IsFalse(UiTest.Buttons(view).Contains("ターン終了"), "上の「ターン終了」も押せない");
+            var hand = view.CurrentMatch.G.P1.Hand.Count;
+            Assert.IsTrue(UiTest.Press(view, "解決する：エルフの幻想家"), string.Join(" / ", UiTest.Buttons(view)));
+            Assert.AreEqual(hand + 1, view.CurrentMatch.G.P1.Hand.Count, "1枚引く");
+            Assert.AreEqual(0, view.CurrentMatch.Turn.Pending.Count);
+        }
+
+        [Test]
+        public void Optional_trigger_can_be_declined()
+        {
+            var view = new PlayView();
+            view.Start(Load("mtg"));
+            view.Scenario("trigger");
+            // ショック（赤）で相手のゴブリンの放火魔を破壊すると、相手の「〜できる」効果が誘発する
+            Assert.IsTrue(PopupMenu.Choose(view.FieldMenu(true, 0), "タップしてマナを出す"));
+            var shock = view.CurrentMatch.G.P1.Hand.FindIndex(c => c.Name == "ショック");
+            Assert.IsTrue(PopupMenu.Choose(view.HandMenu(true, shock), "で置く"), string.Join(" / ", UiTest.Buttons(view)));
+            Pick(view.GeneralMenu(), "両者がパスする");
+            Assert.IsTrue(UiTest.Press(view, "一番上を解決する"), string.Join(" / ", UiTest.Buttons(view)));
+            Assert.IsTrue(UiTest.Press(view, "ゴブリンの放火魔を対象にする"), string.Join(" / ", UiTest.Buttons(view)));
+            Assert.AreEqual(1, view.CurrentMatch.Turn.Pending.Count);
+            Assert.IsFalse(view.CurrentMatch.Turn.Pending[0].P, "相手の効果");
+            Assert.IsTrue(UiTest.Press(view, "行わない：ゴブリンの放火魔"), string.Join(" / ", UiTest.Buttons(view)));
+            Assert.AreEqual(0, view.CurrentMatch.Turn.Pending.Count);
+            Assert.AreEqual(20, view.CurrentMatch.G.P1.Life, "行わなかったのでダメージはない");
+        }
     }
 }

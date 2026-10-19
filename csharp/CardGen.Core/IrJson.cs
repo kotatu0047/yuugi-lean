@@ -96,6 +96,9 @@ namespace CardGen
                 "negate" => new Negate(ParseSelector(Field(o, "target"))),
                 "boost" => new Boost(ParseSelector(Field(o, "target")), Int(o, "amount")),
                 "toughen" => new Toughen(ParseSelector(Field(o, "target")), Int(o, "amount")),
+                "triggered" => new Triggered(
+                    Enum(o, "on", ("placed", Trigger.Placed), ("destroyed", Trigger.Destroyed), ("turnStart", Trigger.TurnStart)),
+                    Bool(o, "optional"), Arr(o, "actions", ParseAction)),
                 _ => throw new FormatException($"効果「{k}」は使えません"),
             };
         }
@@ -191,14 +194,14 @@ namespace CardGen
         /// 範囲の指定のマスの関係を「条件なし」にする。版 4 → 5 はマナ・タップ・置ける枚数の上限・召喚酔いを
         /// 使わない値（コスト 0、マナ 0、上限なし、攻撃でタップしない、召喚酔いなし）で加える。版 5 → 6 は色のマナを使わない値、
         /// 版 6 → 7 はタグの集合を空、版 7 → 8 はインスタントなし・スタックなし・選べるマナの色なし・トランプルなしにする。版 8 → 9 は対象を選ばない範囲と、
-        /// 飛行・到達なしにする。版 9 → 10 は手札の上限なしにする。
+        /// 飛行・到達なしにする。版 9 → 10 は手札の上限なしにする。版 10 → 11（誘発する効果）は書き換えるものがない。
         /// 上げたときは true。版が分からない・新しすぎるときは何もしない
         /// </summary>
         public static bool Upgrade(JObject o)
         {
             if (o["version"]?.Type != JTokenType.Integer || !(o["rules"] is JObject r)) return false;
             var v = (int)o["version"];
-            if (v < 2 || v > 9) return false;
+            if (v < 2 || v > 10) return false;
             if (v == 2)
             {
                 if (r["summonsPerTurn"] == null) r["summonsPerTurn"] = 1;
@@ -270,6 +273,12 @@ namespace CardGen
         {
             Activated a => new JObject { ["activated"] = new JObject { ["actions"] = new JArray(a.Actions.Select(ToJson)) } },
             Negate n => new JObject { ["negate"] = new JObject { ["target"] = ToJson(n.Target) } },
+            Triggered tr => new JObject { ["triggered"] = new JObject
+            {
+                ["on"] = tr.On == Trigger.Placed ? "placed" : tr.On == Trigger.Destroyed ? "destroyed" : "turnStart",
+                ["optional"] = tr.Optional,
+                ["actions"] = new JArray(tr.Actions.Select(ToJson)),
+            } },
             Boost b => new JObject { ["boost"] = new JObject { ["target"] = ToJson(b.Target), ["amount"] = b.Amount } },
             Toughen tg => new JObject { ["toughen"] = new JObject { ["target"] = ToJson(tg.Target), ["amount"] = tg.Amount } },
             _ => throw new ArgumentException("未知の効果"),

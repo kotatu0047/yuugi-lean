@@ -84,6 +84,7 @@ namespace CardGen.App
             {
                 var end = UiTest.Btn("ターン終了", () => { EndTurn(); Render(); });
                 end.style.marginLeft = 12;
+                end.SetEnabled(CanEndTurn);
                 head.Add(end);
             }
             box.Add(head);

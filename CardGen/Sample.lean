@@ -129,11 +129,26 @@ def destroyDraw : Card :=
   { name := "破壊と補給", type := spell, tags := [],
     effects := [.activated [.destroy { sel [monster] .opp with target := true }, .draw 1]] }
 
+/-- 誘発（置かれたとき・強制）：召喚に成功したとき、相手に 300 ダメージを与えるモンスター -/
+def fireGuard : Card :=
+  { name := "火炎の番兵", type := monster, tags := ["戦士族"], effects := [.triggered .placed false [.damage 300]],
+    attack := 1300, defense := 1000 }
+
+/-- 誘発（破壊されたとき・任意）：破壊されて墓地へ送られたとき、カードを1枚引くことができるモンスター -/
+def herald : Card :=
+  { name := "黄泉の伝令", type := monster, tags := ["闇属性", "戦士族"], effects := [.triggered .destroyed true [.draw 1]],
+    attack := 1000, defense := 1200 }
+
+/-- 誘発（ターンの始め・強制）：自分のターンの始めに、カードを1枚引く永続魔法 -/
+def prosperity : Card :=
+  { name := "繁栄の壺", type := spell, tags := [], effects := [.triggered .turnStart false [.draw 1]] }
+
 def game : Game where
   version := currentVersion
   rules := rules
   cards := [thunderbolt, featherDuster, skillDrain, royalDecree, jinzo, blooD, returnSpell, drawSpell,
-    blackMagician, darkCommander, darkBlessing, fireball, potion, columnStrike, escort, destroyDraw]
+    blackMagician, darkCommander, darkBlessing, fireball, potion, columnStrike, escort, destroyDraw,
+    fireGuard, herald, prosperity]
 
 /-! ## 検査 -/
 
@@ -539,6 +554,48 @@ def multiState : State := fun p =>
 -- 効果が無効なら、どちらの動きも行わない（カードは墓地へ送られる）
 #guard match multiState.step? rules (.resolve true 0 0 false [] (some (false, 1))) with
   | some g => (g false).field.length == 2 && (g true).hand.isEmpty && (g true).grave == [destroyDraw]
+  | none => false
+
+/-! ## 誘発 -/
+
+/-- 自分：手札に火炎の番兵、フィールドに繁栄の壺とブラック・マジシャン。相手：フィールドに黄泉の伝令。デッキはどちらも3枚 -/
+def trigMatch : Match :=
+  ⟨fun p => if p then { deck := [jinzo, jinzo, jinzo], hand := [fireGuard], grave := [], life := 8000,
+                        field := [⟨1, 0, prosperity, true, 0, 0, 0⟩, ⟨0, 0, blackMagician, true, 0, 0, 0⟩] }
+            else { deck := [jinzo, jinzo, jinzo], hand := [], grave := [], life := 8000,
+                   field := [⟨0, 0, herald, true, 0, 0, 0⟩] },
+   { tp := true, count := 3 }⟩
+
+-- 置かれたとき：火炎の番兵を置くと誘発し、待ちがあるうちはほかの動き（ターン終了など）はできない
+#guard match Match.run rules trigMatch [.place 0 0 1 true] with
+  | some m => m.turn.pending.length == 1 && (m.step? rules .endTurn).isNone && (m.step? rules .pass).isNone
+  | none => false
+-- 解決すると相手に 300 ダメージ。待ちは消える。強制の効果は行わないことを選べない
+#guard match Match.run rules trigMatch [.place 0 0 1 true, .trigger 0 false true] with
+  | some m => (m.g false).life == 7700 && m.turn.pending.isEmpty
+  | none => false
+#guard (Match.run rules trigMatch [.place 0 0 1 true, .trigger 0 true true]).isNone
+-- 裏側で置いたときは誘発しない
+#guard match Match.run rules trigMatch [.place 0 0 1 false] with
+  | some m => m.turn.pending.isEmpty
+  | none => false
+-- 破壊されたとき：ブラック・マジシャンで黄泉の伝令を攻撃して破壊すると、相手の効果が誘発する（任意：行わないことも選べる）
+#guard match Match.run rules trigMatch [.attack 1 (some 0) []] with
+  | some m => m.turn.pending.map (·.p) == [false] && (m.g false).grave == [herald]
+  | none => false
+#guard match Match.run rules trigMatch [.attack 1 (some 0) [], .trigger 0 false true] with
+  | some m => (m.g false).hand.length == 1 && m.turn.pending.isEmpty
+  | none => false
+#guard match Match.run rules trigMatch [.attack 1 (some 0) [], .trigger 0 true true] with
+  | some m => (m.g false).hand.isEmpty && m.turn.pending.isEmpty
+  | none => false
+-- ターンの始め：自分の繁栄の壺は、自分のターンの始めにだけ誘発する（相手のターンの始めには誘発しない）
+#guard match Match.run rules trigMatch [.endTurn] with
+  | some m => m.turn.pending.isEmpty
+  | none => false
+#guard match Match.run rules trigMatch [.endTurn, .endTurn] with
+  | some m => m.turn.pending.map (·.card.name) == [prosperity.name] &&
+      ((m.step? rules (.trigger 0 false true)).map fun m' => (m'.g true).hand.length) == some ((m.g true).hand.length + 1)
   | none => false
 
 end CardGen.Sample

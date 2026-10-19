@@ -178,6 +178,13 @@ def turnClaims (r : Rules) (cards : List Card) : List ClaimOut :=
       ["ルール：攻撃されたプレイヤーがブロックするカードを選ぶ（MTG 式の戦闘）",
        "ブロックしたカードの記録は、いつも相手のフィールドのカードの一部（同じカードの枚数も含めて）"],
       "proved", "CardGen.TReachable.fits"⟩] else []) ++
+  (if cards.any (fun c => c.effects.any fun | .triggered .. => true | _ => false) then
+    [⟨"誘発した効果が待っているうちは、その解決（「〜できる」効果は行わないことも選べる）と状態の確認しかできない",
+      ["置かれた・破壊された・ターンの始めの出来事で誘発した効果は、待ちに入る",
+       "待ちは、ターンプレイヤーのものから、持ち主が選んだ順に解決する"], "proved", "CardGen.Match.step?_pending"⟩,
+     ⟨"待ちに入るのは、カードの誘発する効果だけ（誘発の条件の出来事が起きたときにだけ加わり、解決すると消える）",
+      ["待ちに加わるのは、出来事のあとの盤面で、条件に合う誘発する効果を持つカードの効果"], "proved",
+      "CardGen.TReachable.pending_triggered"⟩] else []) ++
   (if r.handLimit == 0 then [] else
     [⟨s!"ターンの終わりに、ターンプレイヤーの手札は {r.handLimit} 枚以下（超えていれば、選んで墓地へ捨ててからターンを終える）",
       [s!"ルール：手札の上限は {r.handLimit} 枚", "手札が上限を超えていると、ターンを終えられない"],
@@ -185,7 +192,7 @@ def turnClaims (r : Rules) (cards : List Card) : List ClaimOut :=
   [⟨(if r.life > 0 then "ライフが 0 になるか、" else "") ++ "ターンの最初に引く枚数が足りなければ対戦は終わり、それ以上どの動きもできない",
     ["対戦が終わったかは、ライフとデッキ切れの記録で決まる"], "proved", "CardGen.Match.step?_over"⟩] ++
   (if r.blocking || cards.any (fun c => c.effects.any fun
-      | .activated as => as.any fun | .strike .. | .pump .. => true | _ => false
+      | .activated as | .triggered _ _ as => as.any fun | .strike .. | .pump .. => true | _ => false
       | _ => false) then
     [⟨"受けたダメージと、ターンの終わりまでの攻撃力・守備力の変化は、次のターンに残らない",
       ["ターン終了で、どのカードのダメージと一時的な変化も 0 に戻す"], "proved", "CardGen.Match.endTurn_clean"⟩] else []) ++

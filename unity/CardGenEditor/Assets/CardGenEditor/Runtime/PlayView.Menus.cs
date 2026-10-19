@@ -12,13 +12,14 @@ namespace CardGen.App
     {
         /// <summary>ターンを終えられるか（攻撃の途中でもスタックがあるのでもなく、ターンプレイヤーが優先権を持つ）</summary>
         bool CanEndTurn => match.Turn.Quiet && !match.Over(game.Rules) && match.Turn.Prio == turn && match.Turn.Passes < 2 &&
-                           Match.HandOK(game.Rules, state, turn);
+                           Match.HandOK(game.Rules, state, turn) && match.Turn.Pending.Count == 0;
 
         /// <summary>ターンを終えられない理由（終えられるなら null）</summary>
         string EndTurnBlocked()
         {
             var t = match.Turn;
             if (match.Over(game.Rules)) return "対戦は終わっています";
+            if (t.Pending.Count > 0) return "誘発した効果の待ちがあります（解決してから）";
             if (t.Stack.Count > 0) return "スタックにカードがあります（解決してから）";
             if (t.Attackers.Count > 0) return "攻撃の途中です（ブロックを選んでから）";
             if (t.Prio != turn) return $"優先権が{Who(t.Prio)}にあります（{Who(t.Prio)}がパスしてから）";
@@ -303,7 +304,7 @@ namespace CardGen.App
                 items.Add(MenuEntry.Separator());
             }
             items.Add(MenuEntry.Header("対戦"));
-            var canPass = t.Passes < 2 && !match.Over(game.Rules);
+            var canPass = t.Passes < 2 && !match.Over(game.Rules) && t.Pending.Count == 0;
             if (canPass)
                 items.Add(MenuEntry.Item($"{Who(t.Prio)}がパスする", () => Do(TChoice.Pass(), $"{Who(match.Turn.Prio)}：パス"),
                     hint: $"優先権が{Who(!t.Prio)}に移ります"));

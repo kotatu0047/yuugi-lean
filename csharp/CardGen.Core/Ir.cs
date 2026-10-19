@@ -279,6 +279,18 @@ namespace CardGen
         public Toughen(Selector target, int amount) { Target = target; Amount = amount; }
     }
 
+    /// <summary>誘発の条件（どれも、そのカードが表側表示のとき）</summary>
+    public enum Trigger { Placed, Destroyed, TurnStart }
+
+    /// <summary>条件 On で誘発し、動きを順に行う。Optional なら持ち主は行わないことも選べる</summary>
+    public sealed class Triggered : Effect
+    {
+        public Trigger On;
+        public bool Optional;
+        public List<Action> Actions;
+        public Triggered(Trigger on, bool optional, List<Action> actions) { On = on; Optional = optional; Actions = actions; }
+    }
+
     /// <summary>カードの定義</summary>
     public sealed class Card
     {
@@ -309,7 +321,7 @@ namespace CardGen
     /// <summary>エディタが出力する中間表現の全体</summary>
     public sealed class Game
     {
-        public const int CurrentVersion = 10;
+        public const int CurrentVersion = 11;
         public int Version = CurrentVersion;
         public Rules Rules = new Rules();
         public List<Card> Cards = new List<Card>();

@@ -4,7 +4,7 @@ using System.Linq;
 
 namespace CardGen
 {
-    public enum ChoiceKind { Draw, Place, Resolve, Attack, Combat, Mend, Settle, Discard }
+    public enum ChoiceKind { Draw, Place, Resolve, Attack, Combat, Mend, Settle, Discard, Trigger }
 
     /// <summary>プレイヤーが選ぶ動き（Choice）</summary>
     public sealed class Choice
@@ -24,6 +24,9 @@ namespace CardGen
         public List<(int blocker, int attacker)> Blocks = new List<(int, int)>();
         /// <summary>解決するときに選んだ対象の位置（解決する前の盤面で）</summary>
         public (bool player, int index)? Tgt;
+        /// <summary>誘発した効果を持つカードと、誘発したときのマス</summary>
+        public Card Card;
+        public Cell? TrigCell;
 
         public static Choice Draw(bool p) => new Choice { Kind = ChoiceKind.Draw, Player = p };
         public static Choice Place(bool p, int hand, int zone, int cell, bool faceUp) =>
@@ -38,6 +41,11 @@ namespace CardGen
         public static Choice Mend() => new Choice { Kind = ChoiceKind.Mend };
         /// <summary>p が手札の hand 番目のカードを墓地へ捨てる</summary>
         public static Choice Discard(bool p, int hand) => new Choice { Kind = ChoiceKind.Discard, Player = p, Hand = hand };
+        /// <summary>p のカード card の effect 番目の誘発する効果を解決する（cell：誘発したときのマス）</summary>
+        public static Choice Trigger(bool p, Card card, int effect, Cell? cell, bool apply, List<(bool, int)> neg = null,
+            (bool, int)? tgt = null) =>
+            new Choice { Kind = ChoiceKind.Trigger, Player = p, Card = card, Effect = effect, TrigCell = cell, Apply = apply,
+                         Neg = neg ?? new List<(bool, int)>(), Tgt = tgt };
         public static Choice Attack(bool p, int field, int? target, List<(bool, int)> neg) =>
             new Choice { Kind = ChoiceKind.Attack, Player = p, Field = field, Target = target, Neg = neg };
     }
@@ -353,6 +361,19 @@ namespace CardGen
                     return Mend();
                 case ChoiceKind.Settle:
                     return Sweep(r, ch.Neg);
+                case ChoiceKind.Trigger:
+                {
+                    // State.fire：カードはどこにあってもよい（持ち主のカードであれば）
+                    var c = ch.Card;
+                    if (c == null || !(s.Deck.Any(x => x.Name == c.Name) || s.Hand.Any(x => x.Name == c.Name) ||
+                                       s.Grave.Any(x => x.Name == c.Name) || s.Field.Any(x => x.Card.Name == c.Name)))
+                        return null;
+                    if (ch.Effect < 0 || ch.Effect >= c.Effects.Count || !(c.Effects[ch.Effect] is Triggered tr)) return null;
+                    if (!ch.Apply) return this;
+                    (bool, Slot)? tgt = null;
+                    if (ch.Tgt is (bool tq, int ti) && ti >= 0 && ti < Get(tq).Field.Count) tgt = (tq, Get(tq).Field[ti].Base());
+                    return ApplyActions(r, this, p, new Src(p, ch.TrigCell, tgt), NegSlots(ch.Neg), tr.Actions);
+                }
                 case ChoiceKind.Discard:
                 {
                     if (ch.Hand < 0 || ch.Hand >= s.Hand.Count) return null;
@@ -376,10 +397,20 @@ namespace CardGen
                     if (ch.Tgt is (bool tq, int ti) && ti >= 0 && ti < Get(tq).Field.Count) tgt = (tq, Get(tq).Field[ti].Base());
                     var src = new Src(p, r.CellOf(p, sl.Zone, sl.Cell), tgt);
                     var negS = NegSlots(ch.Neg);
-                    if (ch.Apply)
-                        foreach (var a in act.Actions)
-                            g = a switch
-                            {
+                    if (ch.Apply) g = ApplyActions(r, g, p, src, negS, act.Actions);
+                    var last = Copy(g.Get(p));
+                    last.Grave.Add(sl.Card);
+                    return g.With(p, last);
+                }
+            }
+        }
+
+        /// <summary>State.applyAction を順に：効果を出したもの src（持ち主 p）の動き actions を行う</summary>
+        static MatchState ApplyActions(Rules r, MatchState g, bool p, Src src, List<(bool, Slot)> negS, List<Action> actions)
+        {
+            foreach (var a in actions)
+                g = a switch
+                {
                                 Destroy d => new MatchState { P1 = g.P1.Destroy(r, d.Target, true, src), P2 = g.P2.Destroy(r, d.Target, false, src) },
                                 Bounce b => new MatchState { P1 = g.P1.Bounce(r, b.Target, true, src), P2 = g.P2.Bounce(r, b.Target, false, src) },
                                 DrawCards dc => g.With(p, g.Get(p).DrawN(dc.Count)),
@@ -390,11 +421,7 @@ namespace CardGen
                                 Counter co => new MatchState { P1 = g.P1.Counter(r, co.Target, true, src), P2 = g.P2.Counter(r, co.Target, false, src) },
                                 _ => g,
                             };
-                    var last = Copy(g.Get(p));
-                    last.Grave.Add(sl.Card);
-                    return g.With(p, last);
-                }
-            }
+            return g;
         }
     }
 }

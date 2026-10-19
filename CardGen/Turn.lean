@@ -71,6 +71,14 @@ theorem prune_bagLe : ∀ (as f : List Slot), BagLe (prune as f) f
         omega
     · exact prune_bagLe as f a
 
+/-- 誘発して、解決を待っている効果：持ち主 `p` のカード `card` の `eff` 番目の効果。`cell`：誘発したときのマス -/
+structure Pending where
+  p : PlayerId
+  card : Card
+  eff : Nat
+  cell : Option Cell
+deriving Repr, DecidableEq
+
 /-- ターンの情報。カードの記録はダメージを除いたもの（`Slot.base`）で覚える -/
 structure TurnInfo where
   /-- ターンプレイヤー -/
@@ -110,6 +118,8 @@ structure TurnInfo where
   prio : PlayerId := tp
   /-- 続けてパスした回数（2 なら両者がパスした：スタックの一番上の解決か、ブロックを待つ） -/
   passes : Nat := 0
+  /-- 誘発して、解決を待っている効果（誘発した順）。待ちがある間は、その解決と状態の確認しかできない -/
+  pending : List Pending := []
 deriving Repr, DecidableEq
 
 /-- ターンのある対戦の状態 -/
@@ -140,6 +150,8 @@ inductive TChoice
   | settle (neg : List Pos)
   /-- 手札が上限（`Rules.handLimit`）を超えているターンプレイヤーが、手札の `hand` 番目を墓地へ捨てる -/
   | discard (hand : Nat)
+  /-- 待ちの `i` 番目の誘発した効果を解決する（`skip`：「〜できる」効果を行わない。`apply`：無効にされていないか） -/
+  | trigger (i : Nat) (skip : Bool) (apply : Bool) (neg : List Pos := []) (tgt : Option Pos := none)
   /-- 優先権を持つプレイヤーがパスする（優先権が相手に移る） -/
   | pass
 deriving Repr, DecidableEq
@@ -321,6 +333,66 @@ def TurnInfo.pop (r : Rules) (t : TurnInfo) : TurnInfo :=
 def Match.over (r : Rules) (m : Match) : Bool :=
   m.turn.decked.isSome || (decide (0 < r.life) && ((m.g true).life == 0 || (m.g false).life == 0))
 
+/-! ## 誘発 -/
+
+/-- カード `c` の、条件 `ev` で誘発する効果を、待ちの形にしたもの -/
+def triggersOf (p : PlayerId) (c : Card) (ev : Trigger) (cell : Option Cell) : List Pending :=
+  (List.range c.effects.length).filterMap fun e =>
+    match c.effects[e]? with
+    | some (Effect.triggered on _ _) => if on == ev then some ⟨p, c, e, cell⟩ else none
+    | _ => none
+
+/-- `before` から `after` になるあいだに、`q` の「フィールド上」のゾーンから破壊されて墓地へ送られた、表側表示のカード。
+フィールドから消えたカードのうち、墓地に加わったもの（手札に戻されたものは除く）。`skip` 番目のカードは、
+解決して墓地へ送られたものなので除く -/
+def destroyedSlots (r : Rules) (q : PlayerId) (before after : State) (skip : Option Nat) : List Slot :=
+  let bf := match skip with
+    | some k => (before q).field.eraseIdx k
+    | none => (before q).field
+  let cand := bf.filter fun sl => r.onFieldZone sl.zone && sl.faceUp
+  let gone := ((after q).field.map Slot.base).foldl List.erase (cand.map Slot.base)
+  let added := (after q).grave.drop (before q).grave.length
+  (gone.foldl (fun (acc : List Slot × List Card) sl =>
+    if acc.2.contains sl.card then (acc.1 ++ [sl], acc.2.erase sl.card) else acc) ([], added)).1
+
+/-- 1歩のあいだに起きた出来事（置かれた・破壊された・ターンの始め）で誘発した効果 -/
+def Match.events (r : Rules) (tp : PlayerId) (before after : State) (ch : TChoice) : List Pending :=
+  let placedBy : Option PlayerId := match ch with
+    | .place .. => some tp
+    | .cast .. => some (!tp)
+    | _ => none
+  let placed : List Pending := match placedBy with
+    | some p =>
+      match (after p).field.getLast? with
+      | some sl => if sl.faceUp then triggersOf p sl.card .placed (r.cellOf p sl) else []
+      | none => []
+    | none => []
+  let skipOf (q : PlayerId) : Option Nat := match ch with
+    | .resolve p k .. => if p == q then some k else none
+    | _ => none
+  let destroyed := [tp, !tp].flatMap fun q =>
+    (destroyedSlots r q before after (skipOf q)).flatMap fun sl => triggersOf q sl.card .destroyed (r.cellOf q sl)
+  let start : List Pending := match ch with
+    | .endTurn => ((after (!tp)).field.filter fun sl => r.onFieldZone sl.zone && sl.faceUp).flatMap fun sl =>
+        triggersOf (!tp) sl.card .turnStart (r.cellOf (!tp) sl)
+    | _ => []
+  placed ++ destroyed ++ start
+
+/-- 待ちの効果を解決するプレイヤー：ターンプレイヤーの待ちがあればターンプレイヤー、なければ相手 -/
+def TurnInfo.pendingPlayer (t : TurnInfo) : PlayerId := if t.pending.any (·.p == t.tp) then t.tp else !t.tp
+
+/-- 待ちの `i` 番目を取り除く -/
+def TurnInfo.dropPending (t : TurnInfo) (i : Nat) : TurnInfo := { t with pending := t.pending.eraseIdx i }
+
+/-- 誘発した効果を待ちに加える -/
+def TurnInfo.queue (t : TurnInfo) (es : List Pending) : TurnInfo := { t with pending := t.pending ++ es }
+
+/-- 待ちについて、その動きをしてよいか：待ちがあれば、その解決と状態の確認だけ。なければ、誘発の解決はできない -/
+def TurnInfo.gateOK (t : TurnInfo) : TChoice → Bool
+  | .trigger .. => !t.pending.isEmpty
+  | .settle _ => true
+  | _ => t.pending.isEmpty
+
 /-- 選んだ動きをしたあとの状態（できない動きなら `none`）。盤面を計算済みの値にする前のもの -/
 def Match.step0? (r : Rules) (m : Match) (ch : TChoice) : Option Match :=
   if m.over r then none else
@@ -345,6 +417,17 @@ def Match.step0? (r : Rules) (m : Match) (ch : TChoice) : Option Match :=
       (m.g.step? r (.resolve p k e apply neg tgt)).map fun g => ⟨g, (m.turn.pop r).prune g⟩
     else none
   | .settle neg => some ⟨m.g.sweep r neg, m.turn.prune (m.g.sweep r neg)⟩
+  | .trigger i skip apply neg tgt =>
+    match m.turn.pending[i]? with
+    | none => none
+    | some e =>
+      if e.p == m.turn.pendingPlayer then
+        match e.card.effects[e.eff]? with
+        | some (.triggered _ opt _) =>
+          if skip then (if opt then some ⟨m.g, m.turn.dropPending i⟩ else none)
+          else (m.g.step? r (.trigger e.p e.card e.eff e.cell apply neg tgt)).map fun g => ⟨g, (m.turn.dropPending i).prune g⟩
+        | _ => none
+      else none
   | .discard h =>
     if m.turn.quiet && !r.handOK m.g tp then
       (m.g.step? r (.discard tp h)).map fun g => ⟨g, m.turn.prune g⟩
@@ -414,7 +497,7 @@ def TurnInfo.afterPasses (r : Rules) (t : TurnInfo) : TChoice → Bool
 それ以外の動きは、優先権を持つプレイヤーが、両者がパスする前に行う。状態の確認はいつでもよい -/
 def TurnInfo.prioOK (r : Rules) (t : TurnInfo) (ch : TChoice) : Bool :=
   match ch with
-  | .settle _ => true
+  | .settle _ | .trigger .. => true
   | _ => if t.afterPasses r ch then t.passes == 2 else t.passes < 2 && ch.actor t.tp == t.prio
 
 /-- パスしたあとのターンの情報：優先権が相手に移る。両者がパスしても、スタックが空で攻撃の途中でもなければ、
@@ -428,7 +511,7 @@ def TurnInfo.afterPass (t : TurnInfo) : TurnInfo :=
 ターン終了のあとは新しいターンプレイヤー。状態の確認では変わらない -/
 def TurnInfo.prioAfter (r : Rules) (before after : TurnInfo) (ch : TChoice) : TurnInfo :=
   match ch with
-  | .settle _ => after.withPrio before.prio before.passes
+  | .settle _ | .trigger .. => after.withPrio before.prio before.passes
   | .endTurn => after.withPrio after.tp 0
   | _ => if before.afterPasses r ch then after.withPrio after.tp 0 else after.withPrio (ch.actor before.tp) 0
 
@@ -436,10 +519,10 @@ def TurnInfo.prioAfter (r : Rules) (before after : TurnInfo) (ch : TChoice) : Tu
 def Match.step1? (r : Rules) (m : Match) (ch : TChoice) : Option Match :=
   if m.over r then none else
   match ch with
-  | .pass => if m.turn.passes < 2 then some ⟨m.g, m.turn.afterPass⟩ else none
+  | .pass => if m.turn.pending.isEmpty && m.turn.passes < 2 then some ⟨m.g, m.turn.afterPass⟩ else none
   | ch =>
-    if m.turn.prioOK r ch then
-      (m.step0? r ch).map fun m' => ⟨m'.g, m.turn.prioAfter r m'.turn ch⟩
+    if m.turn.gateOK ch && m.turn.prioOK r ch then
+      (m.step0? r ch).map fun m' => ⟨m'.g, (m.turn.prioAfter r m'.turn ch).queue (Match.events r m.turn.tp m.g m'.g ch)⟩
     else none
 
 /-- 選んだ動きをしたあとの状態（できない動きなら `none`）。盤面は計算済みの値にする（`State.fresh`） -/
@@ -482,6 +565,10 @@ inductive Match.Moved (r : Rules) (m : Match) : TChoice → Match → Prop
       Match.Moved r m (.oppTap k color) ⟨m.g, (m.turn.afterOppTap sl out).prune m.g⟩
   | discard {h g} : m.g.step? r (.discard m.turn.tp h) = some g →
       Match.Moved r m (.discard h) ⟨g, m.turn.prune g⟩
+  | trigger {i apply neg tgt e g} : m.turn.pending[i]? = some e →
+      m.g.step? r (.trigger e.p e.card e.eff e.cell apply neg tgt) = some g →
+      Match.Moved r m (.trigger i false apply neg tgt) ⟨g, (m.turn.dropPending i).prune g⟩
+  | skip {i apply neg tgt} : Match.Moved r m (.trigger i true apply neg tgt) ⟨m.g, m.turn.dropPending i⟩
   | endTurn {d} : r.handOK m.g m.turn.tp = true → Match.Moved r m .endTurn
       ⟨m.g.mend.drawUpTo r (!m.turn.tp) r.drawPerTurn,
        { m.turn.next with decked := d }.prune (m.g.mend.drawUpTo r (!m.turn.tp) r.drawPerTurn)⟩
@@ -528,6 +615,23 @@ theorem Match.step0?_moved {r : Rules} {m m' : Match} {ch : TChoice} (hs : m.ste
     · obtain ⟨g, hg, rfl⟩ := Option.map_eq_some_iff.1 hs
       exact .discard hg
     · cases hs
+  | trigger i skip apply neg tgt =>
+    simp only at hs
+    split at hs
+    · cases hs
+    · rename_i e he
+      split at hs
+      · split at hs
+        · cases skip
+          · simp only [Bool.false_eq_true, ite_false] at hs
+            obtain ⟨g, hg, rfl⟩ := Option.map_eq_some_iff.1 hs
+            exact .trigger he hg
+          · simp only [ite_true] at hs
+            split at hs
+            · cases hs; exact .skip
+            · cases hs
+        · cases hs
+      · cases hs
   | attack k t neg =>
     simp only at hs
     split at hs
@@ -580,6 +684,34 @@ theorem Match.step0?_moved {r : Rules} {m m' : Match} {ch : TChoice} (hs : m.ste
       exact .endTurn hq.2
     · cases hs
 
+@[simp] theorem TurnInfo.queue_tp (t : TurnInfo) (es) : (t.queue es).tp = t.tp := rfl
+@[simp] theorem TurnInfo.queue_count (t : TurnInfo) (es) : (t.queue es).count = t.count := rfl
+@[simp] theorem TurnInfo.queue_summons (t : TurnInfo) (es) : (t.queue es).summons = t.summons := rfl
+@[simp] theorem TurnInfo.queue_placed (t : TurnInfo) (es) : (t.queue es).placed = t.placed := rfl
+@[simp] theorem TurnInfo.queue_pool (t : TurnInfo) (es) : (t.queue es).pool = t.pool := rfl
+@[simp] theorem TurnInfo.queue_oppPool (t : TurnInfo) (es) : (t.queue es).oppPool = t.oppPool := rfl
+@[simp] theorem TurnInfo.queue_spent (t : TurnInfo) (es) : (t.queue es).spent = t.spent := rfl
+@[simp] theorem TurnInfo.queue_made (t : TurnInfo) (es) : (t.queue es).made = t.made := rfl
+@[simp] theorem TurnInfo.queue_attacked (t : TurnInfo) (es) : (t.queue es).attacked = t.attacked := rfl
+@[simp] theorem TurnInfo.queue_entered (t : TurnInfo) (es) : (t.queue es).entered = t.entered := rfl
+@[simp] theorem TurnInfo.queue_tapped (t : TurnInfo) (es) : (t.queue es).tapped = t.tapped := rfl
+@[simp] theorem TurnInfo.queue_oppTapped (t : TurnInfo) (es) : (t.queue es).oppTapped = t.oppTapped := rfl
+@[simp] theorem TurnInfo.queue_attackers (t : TurnInfo) (es) : (t.queue es).attackers = t.attackers := rfl
+@[simp] theorem TurnInfo.queue_blocked (t : TurnInfo) (es) : (t.queue es).blocked = t.blocked := rfl
+@[simp] theorem TurnInfo.queue_stack (t : TurnInfo) (es) : (t.queue es).stack = t.stack := rfl
+@[simp] theorem TurnInfo.queue_decked (t : TurnInfo) (es) : (t.queue es).decked = t.decked := rfl
+@[simp] theorem TurnInfo.queue_prio (t : TurnInfo) (es) : (t.queue es).prio = t.prio := rfl
+@[simp] theorem TurnInfo.queue_passes (t : TurnInfo) (es) : (t.queue es).passes = t.passes := rfl
+@[simp] theorem TurnInfo.queue_nil (t : TurnInfo) : t.queue [] = t := by cases t; simp [TurnInfo.queue]
+@[simp] theorem TurnInfo.dropPending_tp (t : TurnInfo) (i) : (t.dropPending i).tp = t.tp := rfl
+@[simp] theorem TurnInfo.dropPending_summons (t : TurnInfo) (i) : (t.dropPending i).summons = t.summons := rfl
+@[simp] theorem TurnInfo.dropPending_placed (t : TurnInfo) (i) : (t.dropPending i).placed = t.placed := rfl
+@[simp] theorem TurnInfo.dropPending_pool (t : TurnInfo) (i) : (t.dropPending i).pool = t.pool := rfl
+@[simp] theorem TurnInfo.dropPending_oppPool (t : TurnInfo) (i) : (t.dropPending i).oppPool = t.oppPool := rfl
+@[simp] theorem TurnInfo.dropPending_spent (t : TurnInfo) (i) : (t.dropPending i).spent = t.spent := rfl
+@[simp] theorem TurnInfo.dropPending_made (t : TurnInfo) (i) : (t.dropPending i).made = t.made := rfl
+@[simp] theorem TurnInfo.dropPending_passes (t : TurnInfo) (i) : (t.dropPending i).passes = t.passes := rfl
+@[simp] theorem TurnInfo.dropPending_stack (t : TurnInfo) (i) : (t.dropPending i).stack = t.stack := rfl
 @[simp] theorem TurnInfo.withPrio_tp (t : TurnInfo) (p n) : (t.withPrio p n).tp = t.tp := rfl
 @[simp] theorem TurnInfo.withPrio_summons (t : TurnInfo) (p n) : (t.withPrio p n).summons = t.summons := rfl
 @[simp] theorem TurnInfo.withPrio_placed (t : TurnInfo) (p n) : (t.withPrio p n).placed = t.placed := rfl
@@ -591,10 +723,7 @@ theorem Match.step0?_moved {r : Rules} {m m' : Match} {ch : TChoice} (hs : m.ste
 theorem TurnInfo.prioAfter_eq (r : Rules) (before after : TurnInfo) (ch : TChoice) :
     ∃ p n, before.prioAfter r after ch = after.withPrio p n := by
   unfold TurnInfo.prioAfter
-  split
-  · exact ⟨_, _, rfl⟩
-  · exact ⟨_, _, rfl⟩
-  · split <;> exact ⟨_, _, rfl⟩
+  split <;> (try split) <;> exact ⟨_, _, rfl⟩
 
 theorem TurnInfo.afterPass_eq (t : TurnInfo) : ∃ p n, t.afterPass = t.withPrio p n := by
   unfold TurnInfo.afterPass
@@ -602,9 +731,11 @@ theorem TurnInfo.afterPass_eq (t : TurnInfo) : ∃ p n, t.afterPass = t.withPrio
   · exact ⟨_, _, rfl⟩
   · split <;> exact ⟨_, _, rfl⟩
 
-/-- 1歩は、優先権を考えない1歩（`Moved`。パスなら何も変えない）のあとに、優先権とパスの回数だけを変えたもの -/
+/-- 1歩は、優先権を考えない1歩（`Moved`。パスなら何も変えない）のあとに、優先権とパスの回数を変え、
+誘発した効果を待ちに加えたもの -/
 theorem Match.step?_moved {r : Rules} {m m' : Match} {ch : TChoice} (hs : m.step? r ch = some m') :
-    ∃ m0 p n, (ch = .pass ∧ m0 = m ∨ Match.Moved r m ch m0) ∧ m' = ⟨m0.g, m0.turn.withPrio p n⟩ := by
+    ∃ m0 p n es, (ch = .pass ∧ m0 = m ∧ es = [] ∨ Match.Moved r m ch m0 ∧ es = Match.events r m.turn.tp m.g m0.g ch) ∧
+      m' = ⟨m0.g, (m0.turn.withPrio p n).queue es⟩ := by
   unfold Match.step? at hs
   split at hs
   · rename_i m1 h1
@@ -618,19 +749,20 @@ theorem Match.step?_moved {r : Rules} {m m' : Match} {ch : TChoice} (hs : m.step
       · split at h1
         · cases h1
           obtain ⟨p, n, hpn⟩ := m.turn.afterPass_eq
-          exact ⟨m, p, n, .inl ⟨rfl, rfl⟩, by rw [hpn]⟩
+          exact ⟨m, p, n, [], .inl ⟨rfl, rfl, rfl⟩, by rw [TurnInfo.queue_nil, hpn]⟩
         · cases h1
       · split at h1
         · obtain ⟨m2, h2, rfl⟩ := Option.map_eq_some_iff.1 h1
           obtain ⟨p, n, hpn⟩ := m.turn.prioAfter_eq r m2.turn ch
-          exact ⟨m2, p, n, .inr (Match.step0?_moved h2), by simp only [hpn]⟩
+          exact ⟨m2, p, n, Match.events r m.turn.tp m.g m2.g ch, .inr ⟨Match.step0?_moved h2, rfl⟩, by simp only [hpn]⟩
         · cases h1
   · cases hs
 
-/-- **優先権（公理）：パス・状態の確認・両者がパスしたあとの動き（解決・ブロック）以外の動きができたなら、
+/-- **優先権（公理）：パス・状態の確認・誘発した効果の解決・両者がパスしたあとの動き（解決・ブロック）以外の動きができたなら、
 動いたのは優先権を持つプレイヤー** -/
 theorem Match.step?_prio {r : Rules} {m m' : Match} {ch : TChoice} (hs : m.step? r ch = some m')
-    (hp : ch ≠ .pass) (hn : ∀ neg, ch ≠ .settle neg) (ha : m.turn.afterPasses r ch = false) :
+    (hp : ch ≠ .pass) (hn : ∀ neg, ch ≠ .settle neg) (ht : ∀ i sk a neg tgt, ch ≠ .trigger i sk a neg tgt)
+    (ha : m.turn.afterPasses r ch = false) :
     ch.actor m.turn.tp = m.turn.prio := by
   unfold Match.step? at hs
   split at hs
@@ -645,9 +777,10 @@ theorem Match.step?_prio {r : Rules} {m m' : Match} {ch : TChoice} (hs : m.step?
         · rename_i hok
           cases ch with
           | settle neg => exact absurd rfl (hn neg)
+          | trigger i sk a neg tgt => exact absurd rfl (ht i sk a neg tgt)
           | _ =>
             simp only [TurnInfo.prioOK, ha, Bool.false_eq_true, ite_false, Bool.and_eq_true, beq_iff_eq] at hok
-            exact hok.2
+            exact hok.2.2
         · cases h1
   · cases hs
 

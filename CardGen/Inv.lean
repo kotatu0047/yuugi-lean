@@ -374,6 +374,11 @@ theorem Inv.step {r : Rules} {g g' : State} (h : Inv r g) : Step r g g' → Inv 
   | .attack _ p k sl t neg _ _ _ _ => h.shrinks (shrinks_battle r g neg p k sl t)
   | .combat _ p atk blocks neg _ => h.shrinks (shrinks_combat r g neg p atk blocks)
   | .mend _ => h.shrinks (shrinks_mend g)
+  | .trigger _ p _ _ _ as cell apply neg tgt _ _ => h.shrinks (by
+      unfold State.fire
+      split
+      · exact shrinks_foldl r _ _ as g
+      · exact Shrinks.refl g)
   | .discard _ p c hc => h.shrinks fun q => by
       by_cases hq : q = p
       · subst hq

@@ -49,6 +49,8 @@ public class PropertyTests
         foreach (var q in new[] { true, false })
             for (int k = 0; k < m.G.Get(q).Field.Count; k++)
                 foreach (var t in pos) l.Add(TChoice.Resolve(q, k, 0, true, null, t));
+        for (int i = 0; i < m.Turn.Pending.Count; i++) { l.Add(TChoice.Trigger(i, false, true)); l.Add(TChoice.Trigger(i, true, true)); }
+        for (int h = 0; h < m.G.Get(tp).Hand.Count; h++) l.Add(TChoice.Discard(h));
         l.Add(TChoice.Pass());
         l.Add(TChoice.EndTurn());
         return l;
@@ -68,6 +70,9 @@ public class PropertyTests
             var colors = cards.Where(c => c.Mana > 0).SelectMany(c => c.ManaChoice.Count > 0 ? c.ManaChoice : new List<string> { c.ManaColor });
             Assert.True(t.Pool.Concat(t.OppPool).All(colors.Contains), $"{where}：マナの色");
         }
+        // 待ちにあるのは、どれもカードの誘発する効果（TReachable.pending_triggered）
+        Assert.True(t.Pending.All(e => e.Eff >= 0 && e.Eff < e.Card.Effects.Count && e.Card.Effects[e.Eff] is Triggered),
+            $"{where}：待ちの効果");
         // 盤面の制約（Lean の Inv）
         Assert.True(m.G.Violations(r).Count == 0, $"{where}：盤面の制約 {string.Join("、", m.G.Violations(r))}");
         // マナの収支（TReachable.mana_balance）
@@ -96,7 +101,7 @@ public class PropertyTests
     {
         var game = Load(file);
         var r = game.Rules;
-        int moves = 0, attacks = 0, blocks = 0, resolves = 0;
+        int moves = 0, attacks = 0, blocks = 0, resolves = 0, triggers = 0;
         for (int seed = 1; seed <= 30; seed++)
         {
             var rng = new Random(seed);
@@ -111,13 +116,17 @@ public class PropertyTests
                 var before = m;
                 // 優先権（Match.step?_prio）：パス・解決・ブロック以外の動きは、優先権を持つプレイヤーのもの
                 var k = pick.ch.Kind;
-                if (k != TChoiceKind.Pass && !before.Turn.AfterPasses(r, pick.ch))
+                if (k != TChoiceKind.Pass && k != TChoiceKind.Settle && k != TChoiceKind.Trigger && !before.Turn.AfterPasses(r, pick.ch))
                     Assert.Equal(before.Turn.Prio, pick.ch.Actor(before.Turn.Tp));
+                // 待ちがあれば、その解決と状態の確認しかできない（Match.step?_pending）
+                if (before.Turn.Pending.Count > 0)
+                    Assert.True(k == TChoiceKind.Trigger || k == TChoiceKind.Settle, $"待ちがあるのに {k} ができた");
                 m = pick.next;
                 moves++;
                 if (k == TChoiceKind.Attack) attacks++;
                 if (k == TChoiceKind.Block) blocks++;
                 if (k == TChoiceKind.Resolve) resolves++;
+                if (k == TChoiceKind.Trigger) triggers++;
                 CheckInvariants(r, m, $"{file} 種 {seed} {step} 手目（{k}）", game.Cards);
                 // ターンの終わりにダメージと一時的な変化が消える（Match.endTurn_clean）
                 if (k == TChoiceKind.EndTurn)
@@ -127,7 +136,8 @@ public class PropertyTests
             // 対戦が終わったら、どの動きもできない（Match.step?_over）
             if (m.Over(r)) Assert.All(Candidates(r, m), ch => Assert.Null(m.Step(r, ch)));
         }
-        Assert.True(moves > 1000 && attacks > 20 && resolves > 10, $"手 {moves}・攻撃 {attacks}・ブロック {blocks}・解決 {resolves}");
+        Assert.True(moves > 1000 && attacks > 20 && resolves > 10 && triggers > 5,
+            $"手 {moves}・攻撃 {attacks}・ブロック {blocks}・解決 {resolves}・誘発 {triggers}");
     }
 
     [Fact]

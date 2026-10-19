@@ -297,6 +297,14 @@ def State.resolve (r : Rules) (p : PlayerId) (g : State) (k : Nat) (sl : Slot) (
   let g2 := if apply then as.foldl (State.applyAction r (g.srcOf r p sl tgt) (g.negSlots neg)) g1 else g1
   g2.set p { g2 p with grave := (g2 p).grave ++ [sl.card] }
 
+/-- `p` の誘発した効果（動き `as`、誘発したときのマス `cell`）を解決したあとの状態。`apply` でなければ何も起きない -/
+def State.fire (r : Rules) (p : PlayerId) (g : State) (as : List Action) (cell : Option Cell) (apply : Bool)
+    (neg : List Pos := []) (tgt : Option Pos := none) : State :=
+  if apply then
+    as.foldl (State.applyAction r ⟨p, cell, tgt.bind fun (q, i) => ((g q).field[i]?).map fun t => (q, t.base)⟩
+      (g.negSlots neg)) g
+  else g
+
 /-! ## 戦闘 -/
 
 /-- フィールドの `k` 番目のカードを破壊して墓地へ送る -/
@@ -409,6 +417,14 @@ inductive Step (r : Rules) : State → State → Prop
   | combat (g : State) (p : PlayerId) (atk : List Nat) (blocks : List (Nat × Nat)) (neg : List Pos) :
       g.combatOK r p atk blocks → Step r g (g.combat r neg p atk blocks)
   | mend (g : State) : Step r g g.mend
+  /-- 誘発した効果を解決する：`p` のカード `c`（どこにあってもよい）の `e` 番目の誘発する効果の動きを行う
+  （`apply` でなければ、無効にされていて何も起きない）。`cell`：誘発したときのマス。ターンのない対戦では、いつでも何度でもできる
+  （誘発の条件と回数は、ターンのある対戦が決める） -/
+  | trigger (g : State) (p : PlayerId) (c : Card) (on : Trigger) (opt : Bool) (as : List Action) (cell : Option Cell)
+      (apply : Bool) (neg : List Pos) (tgt : Option Pos) :
+      .triggered on opt as ∈ c.effects →
+      (c ∈ (g p).deck ∨ c ∈ (g p).hand ∨ c ∈ (g p).grave ∨ ∃ sl ∈ (g p).field, sl.card = c) →
+      Step r g (g.fire r p as cell apply neg tgt)
   /-- 手札のカードを1枚選んで墓地へ捨てる（ターンのある対戦では、手札の上限を超えたターンプレイヤーだけができる） -/
   | discard (g : State) (p : PlayerId) (c : Card) :
       c ∈ (g p).hand → Step r g (g.set p { g p with hand := (g p).hand.erase c, grave := (g p).grave ++ [c] })

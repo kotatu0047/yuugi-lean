@@ -46,6 +46,6 @@ tools/unity-build.sh --rclick                    # ビルドしたアプリで�
 WSL では .NET 9 の SDK を `~/.dotnet` に入れて使う（`dotnet-install.sh --channel 9.0 --install-dir ~/.dotnet`、
 `export DOTNET_ROOT=~/.dotnet PATH=~/.dotnet:$PATH`）。ドキュメントのサイトは `pip install mkdocs-material==9.5.39`（GitHub Actions と同じ版）。
 
-中間表現は版 10（`CardGen/中間表現.md`）。
+中間表現は版 11（`CardGen/中間表現.md`）。
 
 `sorry` はなく、証明が使う公理は Lean 標準のもの（`propext`・`Classical.choice`・`Quot.sound`）だけ。

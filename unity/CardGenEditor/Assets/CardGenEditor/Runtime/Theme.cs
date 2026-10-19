@@ -52,6 +52,7 @@ namespace CardGen.App
             NodeKind.Zone => Rgb(60, 168, 255),
             NodeKind.Card => Rgb(255, 184, 0),
             NodeKind.Activate => Rgb(255, 128, 64),
+            NodeKind.Trigger => Rgb(255, 222, 120),
             NodeKind.Destroy => Rgb(255, 72, 96),
             NodeKind.Bounce => Rgb(80, 210, 255),
             NodeKind.Draw => Rgb(236, 224, 84),

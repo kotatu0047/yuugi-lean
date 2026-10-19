@@ -12,7 +12,7 @@ using System.Linq;
 
 namespace CardGen
 {
-    public enum NodeKind { Rules, Zone, Card, Activate, Negate, Destroy, Bounce, Draw, Selector, Damage, Heal, Boost, Axioms, Sets, Toughen, Strike, Pump, Counter }
+    public enum NodeKind { Rules, Zone, Card, Activate, Negate, Destroy, Bounce, Draw, Selector, Damage, Heal, Boost, Axioms, Sets, Toughen, Strike, Pump, Counter, Trigger }
 
     /// <summary>公理：すべてのゲームに共通の前提（中間表現には書かず、Lean のモデルが前提にする）</summary>
     public static class Axioms
@@ -93,6 +93,9 @@ namespace CardGen
         public int Amount = 500;
         /// <summary>ターンの終わりまでの守備力の変化の量（Pump のノード。攻撃力は Amount）</summary>
         public int Amount2 = 500;
+        /// <summary>誘発の条件と、「〜できる」（任意）か（Trigger のノード）</summary>
+        public Trigger TriggerOn = Trigger.Placed;
+        public bool Optional;
 
         public static Node Make(int id, NodeKind kind, float x, float y)
         {
@@ -114,6 +117,7 @@ namespace CardGen
             NodeKind.Zone => "ゾーン",
             NodeKind.Card => "カード",
             NodeKind.Activate => "発動",
+            NodeKind.Trigger => "誘発",
             NodeKind.Negate => "無効（永続）",
             NodeKind.Destroy => "破壊",
             NodeKind.Bounce => "手札に戻す",
@@ -137,7 +141,7 @@ namespace CardGen
 
         /// <summary>カードの下につなぐ効果のノードか</summary>
         public static bool IsEffect(NodeKind k) =>
-            k == NodeKind.Activate || k == NodeKind.Negate || k == NodeKind.Boost || k == NodeKind.Toughen;
+            k == NodeKind.Activate || k == NodeKind.Trigger || k == NodeKind.Negate || k == NodeKind.Boost || k == NodeKind.Toughen;
 
         /// <summary>範囲を1つつなぐノードか</summary>
         public static bool TakesSelector(NodeKind k) =>
@@ -146,7 +150,7 @@ namespace CardGen
 
         /// <summary>右側（つなぎ元）の丸を持つか</summary>
         public static bool HasOutput(NodeKind k) =>
-            k == NodeKind.Rules || k == NodeKind.Card || k == NodeKind.Activate || TakesSelector(k);
+            k == NodeKind.Rules || k == NodeKind.Card || k == NodeKind.Activate || k == NodeKind.Trigger || TakesSelector(k);
 
         /// <summary>左側（つなぎ先）の丸を持つか</summary>
         public static bool HasInput(NodeKind k) => k != NodeKind.Rules && k != NodeKind.Card && !IsFixed(k);
@@ -193,7 +197,7 @@ namespace CardGen
         public static bool CanConnect(NodeKind from, NodeKind to) =>
             (from == NodeKind.Rules && to == NodeKind.Zone) ||
             (from == NodeKind.Card && Node.IsEffect(to)) ||
-            (from == NodeKind.Activate && Node.IsAction(to)) ||
+            ((from == NodeKind.Activate || from == NodeKind.Trigger) && Node.IsAction(to)) ||
             (Node.TakesSelector(from) && to == NodeKind.Selector);
 
         /// <summary>つなぐ。入る側はつなぎ元を1つしか持てない。範囲を取るノードは範囲を1つしか持てない</summary>
@@ -363,7 +367,7 @@ namespace CardGen
                         if (s == null) continue;
                         actions.Add(a.Kind == NodeKind.Destroy ? (Action)new Destroy(s) : new Bounce(s));
                     }
-                    card.Effects.Add(new Activated(actions));
+                    card.Effects.Add(e.Kind == NodeKind.Trigger ? new Triggered(e.TriggerOn, e.Optional, actions) : (Effect)new Activated(actions));
                 }
                 cards.Add(card);
             }
@@ -529,11 +533,12 @@ namespace CardGen
                         ey += 130;
                         continue;
                     }
-                    var act = (Activated)e;
-                    var an = Add(NodeKind.Activate, colEffect, ey);
+                    var an = Add(e is Triggered ? NodeKind.Trigger : NodeKind.Activate, colEffect, ey);
+                    if (e is Triggered tr) { an.TriggerOn = tr.On; an.Optional = tr.Optional; }
+                    var acts = e is Triggered tr2 ? tr2.Actions : ((Activated)e).Actions;
                     doc.Edges.Add(new Edge(cn.Id, an.Id));
                     float ay = ey;
-                    foreach (var a in act.Actions)
+                    foreach (var a in acts)
                     {
                         switch (a)
                         {

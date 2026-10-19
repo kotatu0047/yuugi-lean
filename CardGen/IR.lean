@@ -200,6 +200,17 @@ inductive Action
   | counter (target : Selector)
 deriving Repr, DecidableEq, FromJson, ToJson
 
+/-- 誘発の条件（どれも、そのカードが表側表示のとき） -/
+inductive Trigger
+  /-- フィールドに表側表示で置かれたとき（召喚成功時・戦場に出たとき） -/
+  | placed
+  /-- 「フィールド上」のゾーンから破壊されて墓地へ送られたとき（効果・戦闘・状態の確認。手札に戻されたときや、
+  解決して墓地へ送られたときは含まない） -/
+  | destroyed
+  /-- 持ち主のターンの始めに、「フィールド上」のゾーンにあるとき -/
+  | turnStart
+deriving Repr, DecidableEq, FromJson, ToJson
+
 /-- カードの効果 -/
 inductive Effect
   /-- 発動し、解決したときに動きを順に行う -/
@@ -210,6 +221,8 @@ inductive Effect
   | boost (target : Selector) (amount : Int)
   /-- 表側表示でフィールド上に存在する限り、範囲に合うカードの守備力を `amount` 変える（負なら下げる） -/
   | toughen (target : Selector) (amount : Int)
+  /-- 条件 `on` で誘発し、動きを順に行う。`optional` なら持ち主は行わないことも選べる（「〜できる」） -/
+  | triggered (on : Trigger) (optional : Bool) (actions : List Action)
 deriving Repr, DecidableEq, FromJson, ToJson
 
 /-- カードの定義 -/
@@ -251,7 +264,7 @@ structure Game where
 deriving Repr, DecidableEq, FromJson, ToJson
 
 /-- 現在の形式の版 -/
-def currentVersion : Nat := 10
+def currentVersion : Nat := 11
 
 /-! ## 範囲の指定の意味
 
@@ -336,6 +349,8 @@ def Selector.noTarget (where_ : String) (s : Selector) : List String :=
 
 def Effect.check (r : Rules) (where_ : String) : Effect → List String
   | .activated as => (if as.isEmpty then [s!"{where_}：発動する効果に動きがありません"] else []) ++
+      as.flatMap (·.check r where_)
+  | .triggered _ _ as => (if as.isEmpty then [s!"{where_}：誘発する効果に動きがありません"] else []) ++
       as.flatMap (·.check r where_)
   | .negate s => s.check r s!"{where_}の無効" ++ s.noTarget s!"{where_}の無効"
   | .boost s n => s.check r s!"{where_}の攻撃力の変化" ++ s.noTarget s!"{where_}の攻撃力の変化" ++

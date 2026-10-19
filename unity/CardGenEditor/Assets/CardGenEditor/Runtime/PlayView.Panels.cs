@@ -22,7 +22,7 @@ namespace CardGen.App
                     (t.Stack.Count > 0 ? "一番上を解決します" : t.Attackers.Count > 0 ? "ブロックに進みます" : "何も起きずにターンプレイヤーに戻ります")
                 : "優先権を持つプレイヤーだけが動けます（動いても優先権は自分のまま。パスすると相手に移ります）";
             row.Add(Text($"優先権：{Who(t.Prio)}", 14, Good, true));
-            if (t.Passes < 2 && !match.Over(game.Rules))
+            if (t.Passes < 2 && !match.Over(game.Rules) && t.Pending.Count == 0)
             {
                 var b = UiTest.Btn($"{Who(t.Prio)}がパスする", () => Do(TChoice.Pass(), $"{Who(match.Turn.Prio)}：パス"));
                 b.style.marginLeft = 12;
@@ -206,6 +206,7 @@ namespace CardGen.App
             : title.StartsWith("スタック") ? "stack"
             : title.StartsWith("ブロック") ? "combat // block"
             : title.StartsWith("対象") ? "targeting"
+            : title.StartsWith("誘発") ? "trigger // queue"
             : null;
 
         void ActionButton(string text, System.Action a)
@@ -279,6 +280,7 @@ namespace CardGen.App
             }
             if (judge.Choices != null)
                 side.Add(Text("無効の判定で、プレイヤーが選ぶ場面です（下の「無効の状態」から選んでください）", 12, Warn, true));
+            PendingPanel();
             TargetPanel(neg);
             StackPanel(neg);
             if (match.Turn.Attackers.Count > 0)

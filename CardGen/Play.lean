@@ -32,6 +32,9 @@ inductive Choice
   | settle (neg : List Pos)
   /-- `p` が手札の `hand` 番目のカードを墓地へ捨てる -/
   | discard (p : PlayerId) (hand : Nat)
+  /-- `p` のカード `c` の `eff` 番目の誘発する効果を解決する（`cell`：誘発したときのマス。`apply`：無効にされていないか） -/
+  | trigger (p : PlayerId) (c : Card) (eff : Nat) (cell : Option Cell) (apply : Bool) (neg : List Pos := [])
+      (tgt : Option Pos := none)
 deriving Repr, DecidableEq
 
 /-- 攻撃の対象として選べるか（`none` は直接攻撃：相手に戦闘できるカードがないとき） -/
@@ -75,6 +78,12 @@ def State.step0? (r : Rules) (g : State) : Choice → Option State
   | .discard p h => do
     let c ← (g p).hand[h]?
     return g.set p { g p with hand := (g p).hand.erase c, grave := (g p).grave ++ [c] }
+  | .trigger p c e cell apply neg tgt =>
+    if (g p).deck.contains c || (g p).hand.contains c || (g p).grave.contains c || (g p).field.any (·.card == c) then
+      match c.effects[e]? with
+      | some (.triggered _ _ as) => some (g.fire r p as cell apply neg tgt)
+      | _ => none
+    else none
 
 /-- 盤面を、2人分の計算済みの値から作り直す（値は `g` と同じ）。実行時に、前の盤面を参照する関数が積み重なって
 読むたびに計算し直すことがないようにする -/
@@ -173,6 +182,22 @@ theorem step0?_sound {r : Rules} {g g' : State} {ch : Choice} (h : g.step0? r ch
     | some c =>
       simp only [hc, Option.bind_some, Option.pure_def, Option.some.injEq] at h
       subst h; exact .discard g p c (List.mem_of_getElem? hc)
+  | trigger p c e cell apply neg tgt =>
+    simp only [State.step0?] at h
+    split at h
+    · rename_i hin
+      split at h
+      · rename_i on opt as he
+        cases h
+        refine .trigger g p c on opt as cell apply neg tgt (List.mem_of_getElem? he) ?_
+        simp only [Bool.or_eq_true, List.contains_iff_mem, List.any_eq_true, beq_iff_eq] at hin
+        rcases hin with ((h1 | h1) | h1) | h1
+        · exact .inl h1
+        · exact .inr (.inl h1)
+        · exact .inr (.inr (.inl h1))
+        · exact .inr (.inr (.inr h1))
+      · cases h
+    · cases h
 
 /-- **`step?` で進めた状態は、`Step` で進めた状態** -/
 theorem step?_sound {r : Rules} {g g' : State} {ch : Choice} (h : g.step? r ch = some g') : Step r g g' := by

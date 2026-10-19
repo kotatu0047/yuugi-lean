@@ -14,7 +14,7 @@ namespace CardGen.App
         {
             for (int m = 0; m < moves; m++)
             {
-                if (m > 0) { DiscardDown(); EndTurn(); }
+                if (m > 0) { ResolvePending(); DiscardDown(); EndTurn(); ResolvePending(); }
                 var p = turn;
                 // マナを使うルールなら、マナを出すカード（土地）を先に置き、タップしてから、払えるカードを置けるだけ置く
                 bool DemoPlace(Func<Card, bool> which)
@@ -33,6 +33,7 @@ namespace CardGen.App
                             log.Add($"{Who(p)}：{s.Hand[h].Name} を{CellName(zi, cell)}に表側で置く{PayText(pay)}");
                             match = next;
                             judge.Sync(state, game.Rules, turn);
+                            ResolvePending();
                             return true;
                         }
                     }
@@ -65,6 +66,7 @@ namespace CardGen.App
                     log.Add($"{Who(q)}：{top.Card.Name} を解決");
                     match = next;
                     judge.Sync(state, game.Rules, turn);
+                    ResolvePending();
                 }
             }
             // MTG 式の戦闘なら、攻撃できるカードをすべて宣言してブロックの場面を見せる
@@ -90,7 +92,7 @@ namespace CardGen.App
         /// <summary>
         /// 動作確認用の場面（MTG 風の見本のカードを使う）。"combat"：自分がゴブリンの先兵と丘巨人で攻撃を宣言し、
         /// 相手が灰色熊2体で丘巨人をブロックしようとしている。"stack"：自分が紅蓮地獄を唱え、相手が稲妻で応答した。
-        /// "target"：自分がショックを唱え、解決するときに対象を選ぶ
+        /// "target"：自分がショックを唱え、解決するときに対象を選ぶ。"trigger"：誘発（エルフの幻想家とゴブリンの放火魔）
         /// </summary>
         public void Scenario(string name)
         {
@@ -122,6 +124,27 @@ namespace CardGen.App
                 blockPlan[2] = 1;
                 blockPlan[3] = 1;
                 log.Add("場面：自分がゴブリンの先兵と丘巨人で攻撃を宣言し、相手が灰色熊2体で丘巨人をブロックしようとしている");
+            }
+            else if ((name == "trigger" || name == "trigger-wait") && c.ContainsKey("エルフの幻想家") && c.ContainsKey("ゴブリンの放火魔"))
+            {
+                // 自分：山・森（タップしていない）、手札にエルフの幻想家。相手：ゴブリンの放火魔
+                match = new Match
+                {
+                    G = new MatchState
+                    {
+                        P1 = P(new[] { "山", "森" }, new[] { "エルフの幻想家", "ショック" }),
+                        P2 = P(new[] { "森", "ゴブリンの放火魔" }, new string[0]),
+                    },
+                    Turn = new TurnInfo { Tp = true, Count = 5 },
+                };
+                log.Add("場面：自分は山と森をタップしてエルフの幻想家（置かれたとき1枚引く）を置ける。相手のゴブリンの放火魔は破壊されると誘発する");
+                if (name == "trigger-wait")
+                {
+                    // エルフの幻想家を置いて、誘発した効果が待っている場面
+                    foreach (var ch in new[] { TChoice.Tap(0), TChoice.Tap(1), TChoice.Place(0, 0, 2, true, new List<string> { "緑", "赤" }) })
+                        match = match.Step(game.Rules, ch) ?? match;
+                    log.Add("自分：エルフの幻想家を置いた（置かれたときの効果が待っている）");
+                }
             }
             else if (name == "target")
             {

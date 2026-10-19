@@ -64,7 +64,7 @@ def rules : Rules where
   summoningSickness := true
   blocking := true
   manaColors := ["白", "青", "黒", "赤", "緑"]
-  tagSets := [⟨"色", ["白", "青", "黒", "赤", "緑"]⟩, ⟨"クリーチャー・タイプ", ["騎士", "熊", "ゴブリン", "巨人"]⟩]
+  tagSets := [⟨"色", ["白", "青", "黒", "赤", "緑"]⟩, ⟨"クリーチャー・タイプ", ["騎士", "熊", "ゴブリン", "巨人", "エルフ"]⟩]
   instants := [instant]
   stack := true
   handLimit := 7
@@ -146,11 +146,25 @@ def silence : Card :=
   { name := "沈黙の結界", type := enchantment, tags := ["白"],
     effects := [.negate (sel [enchantment] .opp)], cost := 1, colorCost := ["白"] }
 
+/-- 誘発（置かれたとき・強制）：戦場に出たとき、カードを1枚引く -/
+def visionary : Card :=
+  { name := "エルフの幻想家", type := creature, tags := ["緑", "エルフ"], effects := [.triggered .placed false [.draw 1]],
+    attack := 1, defense := 1, cost := 1, colorCost := ["緑"] }
+/-- 誘発（破壊されたとき・任意）：死亡したとき、相手に 1 点のダメージを与えてもよい -/
+def arsonist : Card :=
+  { name := "ゴブリンの放火魔", type := creature, tags := ["赤", "ゴブリン"], effects := [.triggered .destroyed true [.damage 1]],
+    attack := 1, defense := 1, colorCost := ["赤"] }
+/-- 誘発（ターンの始め・強制）：自分のターンの始めに、カードを1枚引くエンチャント -/
+def fountain : Card :=
+  { name := "知識の噴水", type := enchantment, tags := ["青"], effects := [.triggered .turnStart false [.draw 1]],
+    cost := 2, colorCost := ["青"] }
+
 def game : Game where
   version := currentVersion
   rules := rules
   cards := [mountain, forest, plains, island, karplusan, goblin, bear, giant, rhino, knight, drake, spider, bolt, shock,
-            growth, counterspell, pyroclasm, wrath, unsummon, divination, salve, anthem, silence, electrolyze, helix]
+            growth, counterspell, pyroclasm, wrath, unsummon, divination, salve, anthem, silence, electrolyze, helix,
+            visionary, arsonist, fountain]
 
 /-! ## 検査 -/
 
@@ -427,6 +441,38 @@ def respond : List TChoice := [.tap 0, .tap 1, .place 0 1 0 true ["赤", "赤"],
 #guard match Match.run rules duel [.attack 2 none [], .pass, .oppTap 0, .cast 0 1 0 true ["赤"], .pass, .pass] with
   | some m => m.turn.attackers.length == 1 && m.turn.stack.length == 1 &&
       (m.step? rules (.block [(2, 0)] [])).isNone
+  | none => false
+
+/-! ## 誘発 -/
+
+/-- 自分：山・森・丘巨人、手札にエルフの幻想家（1 ＋ 緑） -/
+def elfMatch : Match :=
+  ⟨duel.g.set true { duel.g true with hand := [visionary], field := [slot 0 mountain, slot 1 forest, slot 2 giant] },
+   duel.turn⟩
+
+-- エルフの幻想家：山と森をタップして置くと、戦場に出たときに1枚引く
+#guard match Match.run rules elfMatch [.tap 0, .tap 1, .place 0 0 3 true ["緑", "赤"]] with
+  | some m => m.turn.pending.length == 1 &&
+      ((m.step? rules (.trigger 0 false true)).map fun m' => (m'.g true).hand.length) == some 1
+  | none => false
+-- ゴブリンの放火魔：ショックで破壊されると誘発し、相手（ショックを唱えた側）に 1 点。手札に戻されたときは誘発しない
+#guard match (board [⟨1, 0, shock, true, 0, 0, 0⟩] [slot 0 arsonist]).step? rules (.resolve true 0 0 true [] (some (false, 0))) with
+  | some g => (destroyedSlots rules false (board [⟨1, 0, shock, true, 0, 0, 0⟩] [slot 0 arsonist]) g none).map (·.card.name) ==
+      [arsonist.name]
+  | none => false
+-- 解決した呪文自身は「破壊された」に入らない
+#guard match (board [⟨1, 0, shock, true, 0, 0, 0⟩] [slot 0 arsonist]).step? rules (.resolve true 0 0 true [] (some (false, 0))) with
+  | some g => (destroyedSlots rules true (board [⟨1, 0, shock, true, 0, 0, 0⟩] [slot 0 arsonist]) g (some 0)).isEmpty
+  | none => false
+#guard match (board [⟨1, 0, unsummon, true, 0, 0, 0⟩] [slot 0 arsonist]).step? rules (.resolve true 0 0 true []) with
+  | some g => (destroyedSlots rules false (board [⟨1, 0, unsummon, true, 0, 0, 0⟩] [slot 0 arsonist]) g none).isEmpty
+  | none => false
+-- ターンの始め：知識の噴水は持ち主のターンの始めに誘発する（待ちがあるうちはタップもできない）
+def fountainMatch : Match := ⟨board [slot 0 mountain, slot 1 fountain] [slot 0 mountain], { tp := false, count := 2 }⟩
+#guard match Match.run rules { fountainMatch with g := fountainMatch.g.set true { fountainMatch.g true with deck := [mountain] } }
+    [.endTurn] with
+  | some m => m.turn.pending.map (·.card.name) == [fountain.name] && (m.step? rules (.tap 0)).isNone &&
+      ((m.step? rules (.trigger 0 false true)).map fun m' => (m'.g true).hand) == some [mountain]
   | none => false
 
 /-! ## 手札の上限 -/

@@ -297,6 +297,10 @@ def stateJson (g : State) : Json := json% [$(pstateJson (g true)), $(pstateJson 
 
 def negJson (neg : List Pos) : Json := toJson (neg.map fun (q, j) => json% [$(q), $(j)])
 
+def cellJson (c : Option Cell) : Json := match c with
+  | some c => json% [$(c.col), $(c.row)]
+  | none => Json.null
+
 def tgtJson (t : Option Pos) : Json := match t with
   | some (q, j) => json% [$(q), $(j)]
   | none => Json.null
@@ -318,6 +322,8 @@ def choiceJson : Choice → Json
   | .mend => json% {kind: "mend"}
   | .settle neg => json% {kind: "settle", neg: $(negJson neg)}
   | .discard p h => json% {kind: "discard", player: $(p), hand: $(h)}
+  | .trigger p c e cell apply neg tgt => json% {kind: "trigger", player: $(p), card: $(c.name), effect: $(e),
+      cell: $(cellJson cell), apply: $(apply), neg: $(negJson neg), tgt: $(tgtJson tgt)}
 
 /-- フィールドのカードの位置からいくつか選ぶ（ないカードの位置も混ぜる） -/
 def Rand.negs (g : State) : Rand (List Pos) := do
@@ -328,7 +334,24 @@ def Rand.negs (g : State) : Rand (List Pos) := do
 def Rand.choice (g : State) : Rand Choice := do
   let p ← Rand.bool
   match ← Rand.next 6 with
-  | 0 => if (← Rand.next 4) == 0 then return .discard p (← Rand.next ((g p).hand.length + 1)) else return .draw p
+  | 0 =>
+    match ← Rand.next 6 with
+    | 0 => return .discard p (← Rand.next ((g p).hand.length + 1))
+    | 1 | 2 =>
+      -- 誘発する効果：フィールドか墓地のカード（ないカードも混ぜる）
+      let cs := (g p).field.map (·.card) ++ (g p).grave
+      let trigCards := vecCards.filter fun c => c.effects.any fun | .triggered .. => true | _ => false
+      let c ← if cs.isEmpty || (← Rand.next 3) == 0 then Rand.pick (trigCards ++ vecCards.take 3) else Rand.pick cs
+      let col ← Rand.next 5
+      let row ← Rand.next 2
+      let cell : Option Cell := if (← Rand.bool) then some ⟨22 + col, 25 + row⟩ else none
+      -- 誘発する効果の番号を選びやすくする（ときどき、ない番号や誘発しない効果も）
+      let trig := (List.range c.effects.length).filter fun e => match c.effects[e]? with
+        | some (.triggered ..) => true
+        | _ => false
+      let e ← if trig.isEmpty || (← Rand.next 4) == 0 then Rand.next 2 else Rand.pick trig
+      return .trigger p c e cell ((← Rand.next 4) != 0) (← Rand.negs g) (← Rand.tgt g)
+    | _ => return .draw p
   | 5 =>
     if (← Rand.next 6) == 0 then
       let negs ← Rand.negs g
@@ -372,7 +395,8 @@ def turnJson (t : TurnInfo) : Json :=
          tapped: $(t.tapped.map slotJson), oppTapped: $(t.oppTapped.map slotJson),
          attackers: $(t.attackers.map slotJson), blocked: $(t.blocked.map slotJson),
          stack: $(t.stack.map fun (q, sl) => json% [$(q), $(slotJson sl)]), made: $(t.made), spent: $(t.spent),
-         decked: $(t.decked), prio: $(t.prio), passes: $(t.passes)}
+         decked: $(t.decked), prio: $(t.prio), passes: $(t.passes),
+         pending: $(t.pending.map fun e => json% {player: $(e.p), card: $(e.card.name), effect: $(e.eff), cell: $(cellJson e.cell)})}
 
 def tchoiceJson : TChoice → Json
   | .place h z c up pay => json% {kind: "place", hand: $(h), zone: $(z), cell: $(c), faceUp: $(up), pay: $(pay)}
@@ -388,6 +412,8 @@ def tchoiceJson : TChoice → Json
   | .pass => json% {kind: "pass"}
   | .endTurn => json% {kind: "endTurn"}
   | .discard h => json% {kind: "discard", hand: $(h)}
+  | .trigger i skip apply neg tgt => json% {kind: "trigger", index: $(i), skip: $(skip), apply: $(apply),
+      neg: $(negJson neg), tgt: $(tgtJson tgt)}
 
 /-- ターンのある対戦のテストのゾーン：見本のゾーンに、「フィールド上」でない魔法・罠のゾーン（スタック）を加えたもの -/
 def turnZones : List Zone :=
@@ -430,6 +456,10 @@ def Rand.tchoice (r : Rules) (m : Match) : Rand TChoice := do
   let tp := m.turn.tp
   let o := (m.g (!tp)).field
   let fighters := (List.range o.length).filter fun j => (o[j]?.map r.fights).getD false
+  -- 誘発：待ちがあれば、たいていはその解決か、行わないこと
+  if !m.turn.pending.isEmpty && (← Rand.next 5) != 0 then
+    return .trigger (← Rand.next (m.turn.pending.length + 1)) ((← Rand.next 4) == 0) ((← Rand.next 5) != 0) []
+      (← Rand.tgt m.g)
   -- 手札の上限：ときどき捨てる（上限を超えていなければできない）
   if (← Rand.next 12) == 0 then return .discard (← Rand.next ((m.g tp).hand.length + 1))
   -- 優先権：ときどきパスする。スタックがあるか攻撃の途中で、両者がまだパスしていなければ、パスを多くする
@@ -537,6 +567,7 @@ def candidates (r : Rules) (m : Match) : List TChoice :=
   taps tp (fun k c => .tap k c) ++ taps (!tp) (fun k c => .oppTap k c) ++
   (List.range (m.g tp).field.length).map (fun k => .attack k none []) ++
   blocks.map (fun b => .block b []) ++ resolves ++ (List.range (m.g tp).hand.length).map (fun h => .discard h) ++
+  (List.range m.turn.pending.length).flatMap (fun i => [.trigger i false true, .trigger i true true]) ++
   [.pass, .endTurn]
 
 /-- 動きを選ぶ：たいていはできる動きから（パスとターン終了は少なめに）、ときどき `Rand.tchoice` の動き（できないことが多い） -/

@@ -313,6 +313,7 @@ namespace CardGen.App
                 (n.Sets.ManaColors.Count > 0 ? $"\nマナの色：{List(n.Sets.ManaColors)}" : "") +
                 string.Concat(n.Sets.TagSets.Select(t => $"\n{t.Name}：{List(t.Values)}")),
             NodeKind.Activate => "発動し、つないだ動きを上から順に行う",
+            NodeKind.Trigger => $"{TriggerText(n.TriggerOn)}、つないだ動きを上から順に行う" + (n.Optional ? "（行わなくてもよい）" : "（必ず行う）"),
             NodeKind.Destroy => "つないだ範囲のカードをすべて破壊し、持ち主の墓地へ送る",
             NodeKind.Bounce => "つないだ範囲のカードをすべて持ち主の手札に戻す",
             NodeKind.Draw => $"発動したプレイヤーがカードを {n.DrawCount} 枚引く",
@@ -325,6 +326,14 @@ namespace CardGen.App
             NodeKind.Damage => $"相手に {n.Amount} のダメージを与える",
             NodeKind.Heal => $"発動したプレイヤーのライフを {n.Amount} 回復する",
             _ => SelectorSummary(n.Selector),
+        };
+
+        /// <summary>誘発の条件の表示</summary>
+        public static string TriggerText(Trigger t) => t switch
+        {
+            Trigger.Placed => "表側で置かれたとき",
+            Trigger.Destroyed => "破壊されて墓地へ送られたとき",
+            _ => "持ち主のターンの始めに",
         };
 
         public static string SelectorSummary(Selector s)

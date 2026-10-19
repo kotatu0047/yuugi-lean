@@ -50,6 +50,10 @@ namespace CardGen
                     if (a.Actions.Count == 0) yield return $"{where}：発動する効果に動きがありません";
                     foreach (var m in a.Actions.SelectMany(x => Action(r, where, x))) yield return m;
                     break;
+                case Triggered tr:
+                    if (tr.Actions.Count == 0) yield return $"{where}：誘発する効果に動きがありません";
+                    foreach (var m in tr.Actions.SelectMany(x => Action(r, where, x))) yield return m;
+                    break;
                 case Negate n:
                     foreach (var m in Selector(r, $"{where}の無効", n.Target)) yield return m;
                     foreach (var m in NoTarget($"{where}の無効", n.Target)) yield return m;

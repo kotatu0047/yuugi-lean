@@ -5,6 +5,15 @@ using System.Linq;
 namespace CardGen
 {
     /// <summary>ターンの情報（TurnInfo）。カードの記録はダメージを除いたもの（Slot.Base）で覚える</summary>
+    /// <summary>誘発して、解決を待っている効果：持ち主 P のカード Card の Eff 番目の効果。Cell：誘発したときのマス</summary>
+    public sealed class Pending
+    {
+        public bool P;
+        public Card Card;
+        public int Eff;
+        public Cell? Cell;
+    }
+
     public sealed class TurnInfo
     {
         /// <summary>ターンプレイヤー</summary>
@@ -44,6 +53,13 @@ namespace CardGen
         bool? prio;
         /// <summary>続けてパスした回数（2 なら両者がパスした：スタックの一番上の解決か、ブロックを待つ）</summary>
         public int Passes;
+        /// <summary>誘発して、解決を待っている効果（誘発した順）。待ちがある間は、その解決と状態の確認しかできない</summary>
+        public List<Pending> Pending = new List<Pending>();
+        /// <summary>待ちの効果を解決するプレイヤー：ターンプレイヤーの待ちがあればターンプレイヤー、なければ相手</summary>
+        public bool PendingPlayer => Pending.Any(e => e.P == Tp) ? Tp : !Tp;
+        /// <summary>TurnInfo.gateOK：待ちがあれば、その解決と状態の確認だけ。なければ、誘発の解決はできない</summary>
+        public bool GateOK(TChoice ch) =>
+            ch.Kind == TChoiceKind.Trigger ? Pending.Count > 0 : ch.Kind == TChoiceKind.Settle || Pending.Count == 0;
 
         /// <summary>Lean の Slot.base の等しさ（ゾーン・マス・カード・表裏が同じ。ダメージは見ない）</summary>
         public static bool SameSlot(Slot a, Slot b) => a.SameBase(b);
@@ -89,6 +105,7 @@ namespace CardGen
             Entered = Entered.ToList(), Pool = Pool.ToList(), OppPool = OppPool.ToList(), Tapped = Tapped.ToList(),
             OppTapped = OppTapped.ToList(), Attackers = Attackers.ToList(), Blocked = Blocked.ToList(),
             Stack = Stack.ToList(), Made = Made, Spent = Spent, Decked = Decked, prio = prio, Passes = Passes,
+            Pending = Pending.ToList(),
         };
 
         TurnInfo WithPrio(bool p, int n) { var t = Copy(); t.Prio = p; t.Passes = n; return t; }
@@ -99,7 +116,7 @@ namespace CardGen
 
         /// <summary>TurnInfo.prioOK：優先権について、その動きをしてよいか</summary>
         public bool PrioOK(Rules r, TChoice ch) =>
-            ch.Kind == TChoiceKind.Settle ||
+            ch.Kind == TChoiceKind.Settle || ch.Kind == TChoiceKind.Trigger ||
             (AfterPasses(r, ch) ? Passes == 2 : Passes < 2 && ch.Actor(Tp) == Prio);
 
         /// <summary>TurnInfo.afterPass：パスしたあと（両者がパスしても、何もなければターンプレイヤーに戻る）</summary>
@@ -108,7 +125,7 @@ namespace CardGen
 
         /// <summary>TurnInfo.prioAfter：動いたあとの優先権</summary>
         public TurnInfo PrioAfter(Rules r, TurnInfo after, TChoice ch) =>
-            ch.Kind == TChoiceKind.Settle ? after.WithPrio(Prio, Passes)
+            ch.Kind == TChoiceKind.Settle || ch.Kind == TChoiceKind.Trigger ? after.WithPrio(Prio, Passes)
             : ch.Kind == TChoiceKind.EndTurn ? after.WithPrio(after.Tp, 0)
             : AfterPasses(r, ch) ? after.WithPrio(after.Tp, 0) : after.WithPrio(ch.Actor(Tp), 0);
 
@@ -233,7 +250,7 @@ namespace CardGen
             !NotIn(owner == Tp ? Tapped : OppTapped, field, sl);
     }
 
-    public enum TChoiceKind { Place, Cast, Resolve, Attack, Block, Tap, OppTap, EndTurn, Settle, Pass, Discard }
+    public enum TChoiceKind { Place, Cast, Resolve, Attack, Block, Tap, OppTap, EndTurn, Settle, Pass, Discard, Trigger }
 
     /// <summary>ターンのある対戦の動き（TChoice）</summary>
     public sealed class TChoice
@@ -253,6 +270,9 @@ namespace CardGen
         public List<(int blocker, int attacker)> Blocks = new List<(int, int)>();
         /// <summary>解決するときに選んだ対象の位置</summary>
         public (bool player, int index)? Tgt;
+        /// <summary>誘発：待ちの何番目か、「〜できる」効果を行わないか</summary>
+        public int Index;
+        public bool Skip;
 
         public static TChoice Place(int hand, int zone, int cell, bool faceUp, List<string> pay = null) =>
             new TChoice { Kind = TChoiceKind.Place, Hand = hand, Zone = zone, Cell = cell, FaceUp = faceUp,
@@ -286,6 +306,9 @@ namespace CardGen
         public static TChoice EndTurn() => new TChoice { Kind = TChoiceKind.EndTurn };
         /// <summary>手札が上限を超えているターンプレイヤーが、手札の hand 番目を墓地へ捨てる</summary>
         public static TChoice Discard(int hand) => new TChoice { Kind = TChoiceKind.Discard, Hand = hand };
+        /// <summary>待ちの index 番目の誘発した効果を解決する（skip：「〜できる」効果を行わない。apply：無効にされていないか）</summary>
+        public static TChoice Trigger(int index, bool skip, bool apply, List<(bool, int)> neg = null, (bool, int)? tgt = null) =>
+            new TChoice { Kind = TChoiceKind.Trigger, Index = index, Skip = skip, Apply = apply, Neg = neg ?? new List<(bool, int)>(), Tgt = tgt };
     }
 
     /// <summary>ターンのある対戦の状態（Match）：盤面とターンの情報</summary>
@@ -333,10 +356,67 @@ namespace CardGen
         {
             if (Over(r)) return null;
             if (ch.Kind == TChoiceKind.Pass)
-                return Turn.Passes < 2 ? new Match { G = G, Turn = Turn.AfterPass() } : null;
-            if (!Turn.PrioOK(r, ch)) return null;
+                return Turn.Pending.Count == 0 && Turn.Passes < 2 ? new Match { G = G, Turn = Turn.AfterPass() } : null;
+            if (!Turn.GateOK(ch) || !Turn.PrioOK(r, ch)) return null;
             var m = Step0(r, ch);
-            return m == null ? null : new Match { G = m.G, Turn = Turn.PrioAfter(r, m.Turn, ch) };
+            if (m == null) return null;
+            var t = Turn.PrioAfter(r, m.Turn, ch);
+            t.Pending.AddRange(Events(r, Turn.Tp, G, m.G, ch));
+            return new Match { G = m.G, Turn = t };
+        }
+
+        /// <summary>triggersOf：カード c の、条件 ev で誘発する効果を、待ちの形にしたもの</summary>
+        static IEnumerable<Pending> TriggersOf(bool p, Card c, Trigger ev, Cell? cell) =>
+            Enumerable.Range(0, c.Effects.Count).Where(e => c.Effects[e] is Triggered t && t.On == ev)
+                .Select(e => new Pending { P = p, Card = c, Eff = e, Cell = cell });
+
+        /// <summary>destroyedSlots：q の「フィールド上」のゾーンから破壊されて墓地へ送られた、表側表示のカード（skip 番目は解決したカード）</summary>
+        public static List<Slot> DestroyedSlots(Rules r, bool q, MatchState before, MatchState after, int? skip)
+        {
+            var bf = before.Get(q).Field.ToList();
+            if (skip is int k && k >= 0 && k < bf.Count) bf.RemoveAt(k);
+            var gone = bf.Where(sl => r.OnFieldZone(sl.Zone) && sl.FaceUp).Select(sl => sl.Base()).ToList();
+            foreach (var a in after.Get(q).Field)
+            {
+                var i = gone.FindIndex(x => x.SameBase(a));
+                if (i >= 0) gone.RemoveAt(i);
+            }
+            var added = after.Get(q).Grave.Skip(before.Get(q).Grave.Count).ToList();
+            var res = new List<Slot>();
+            foreach (var sl in gone)
+            {
+                var i = added.FindIndex(c => c.Name == sl.Card.Name);
+                if (i < 0) continue;
+                res.Add(sl);
+                added.RemoveAt(i);
+            }
+            return res;
+        }
+
+        /// <summary>Match.events：1歩のあいだに起きた出来事（置かれた・破壊された・ターンの始め）で誘発した効果</summary>
+        public static List<Pending> Events(Rules r, bool tp, MatchState before, MatchState after, TChoice ch)
+        {
+            var l = new List<Pending>();
+            bool? placedBy = ch.Kind == TChoiceKind.Place ? tp : ch.Kind == TChoiceKind.Cast ? !tp : (bool?)null;
+            if (placedBy is bool p)
+            {
+                var f = after.Get(p).Field;
+                if (f.Count > 0 && f[f.Count - 1].FaceUp)
+                {
+                    var sl = f[f.Count - 1];
+                    l.AddRange(TriggersOf(p, sl.Card, Trigger.Placed, r.CellOf(p, sl.Zone, sl.Cell)));
+                }
+            }
+            foreach (var q in new[] { tp, !tp })
+            {
+                int? skip = ch.Kind == TChoiceKind.Resolve && ch.Player == q ? ch.Field : (int?)null;
+                foreach (var sl in DestroyedSlots(r, q, before, after, skip))
+                    l.AddRange(TriggersOf(q, sl.Card, Trigger.Destroyed, r.CellOf(q, sl.Zone, sl.Cell)));
+            }
+            if (ch.Kind == TChoiceKind.EndTurn)
+                foreach (var sl in after.Get(!tp).Field.Where(sl => r.OnFieldZone(sl.Zone) && sl.FaceUp))
+                    l.AddRange(TriggersOf(!tp, sl.Card, Trigger.TurnStart, r.CellOf(!tp, sl.Zone, sl.Cell)));
+            return l;
         }
 
         /// <summary>Match.step0?：優先権を考えない1歩</summary>
@@ -431,6 +511,19 @@ namespace CardGen
                 {
                     var g = G.Sweep(r, ch.Neg);
                     return Next(g, Turn);
+                }
+                case TChoiceKind.Trigger:
+                {
+                    if (ch.Index < 0 || ch.Index >= Turn.Pending.Count) return null;
+                    var e = Turn.Pending[ch.Index];
+                    if (e.P != Turn.PendingPlayer) return null;
+                    if (e.Eff < 0 || e.Eff >= e.Card.Effects.Count || !(e.Card.Effects[e.Eff] is Triggered tr)) return null;
+                    var t = Turn.Copy();
+                    t.Pending.RemoveAt(ch.Index);
+                    if (ch.Skip) return tr.Optional ? new Match { G = G, Turn = t } : null;
+                    var g = G.Step(r, Choice.Trigger(e.P, e.Card, e.Eff, e.Cell, ch.Apply, ch.Neg, ch.Tgt));
+                    if (g == null) return null;
+                    return Next(g, t);
                 }
                 case TChoiceKind.Discard:
                 {
