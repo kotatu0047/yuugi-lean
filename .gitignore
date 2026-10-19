@@ -1,3 +1,5 @@
 /.lake
 /.claude/settings.local.json
 /csharp/.build/
+_docs_site/
+_site/

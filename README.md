@@ -1,5 +1,7 @@
 # yuugi-lean
 
+ドキュメントは Web でも読める：https://kotatu0047.github.io/yuugi-lean/ （`master` に push するたびに GitHub Actions で作り直す。手元で見るなら `python3 tools/docs-site.py && mkdocs serve`。必要なのは `pip install mkdocs-material`）
+
 遊戯王 OCG のルールの Lean 4 による形式化と、それを土台にした「検証付きカードゲームジェネレーター」の検査部分。
 
 ## YuugiLean：遊戯王 OCG のルールの形式化
