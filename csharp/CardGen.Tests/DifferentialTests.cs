@@ -66,11 +66,17 @@ public class DifferentialTests
     [Fact]
     public void Check_reports_same_errors_as_Lean()
     {
+        // 手で作った例（1か所ずつ間違えたもの）と、乱数で見本をあちこち壊したもの 300 件
+        int games = 0, errors = 0;
         foreach (var c in V["check"])
         {
             var expected = c["errors"].Select(x => (string)x).ToList();
             Assert.Equal(expected, Check.Game(IrJson.ParseGame(c["game"])));
+            games++;
+            errors += expected.Count;
         }
+        Assert.True(games >= 330, $"形式の検査のテストが {games} 件しかありません");
+        Assert.True(errors > 1000);
     }
 
     [Fact]

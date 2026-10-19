@@ -21,6 +21,7 @@
 - `CardGen/Negation.lean`：無効の関係に循環がなければ判定が必ず止まり結果が1通りであることの証明（`negation_settles`）
 - `CardGen/Pool.lean`：盤面のカードはカードの一覧から来ること、回復のカードがなければライフは増えないこと（★の型 F、`gameClaims_valid`）
 - `CardGen/Turn.lean`：ターンのある対戦（マナとタップ、インスタントとスタック、まとめての攻撃とブロック、デッキ切れ、優先権）
+- `CardGen/Warnings.lean`：形式の警告の裏付け（例：種類が空の範囲はどのカードにも当たらない、0のダメージは盤面を変えない）
 - `CardGen/TurnProps.lean`：その定理。盤面はターンのないモデルで到達できること（★の引き継ぎ）と、召喚の上限・攻撃の回数・種類ごとの上限・マナの収支など
 - `CardGen/Explore.lean`：循環があるときの総当たりの検査
 - `CardGen/Timed.lean`：OCG の適用の時刻つきの判定と、証明書つきの総当たり（メタ定理2、`TSys.allEnd_of_certOK`）。テストプレイの無効の判定もこの手順

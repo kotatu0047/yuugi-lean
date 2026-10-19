@@ -7,6 +7,7 @@ import CardGen.Claims
 import CardGen.Pool
 import CardGen.Turn
 import CardGen.TurnProps
+import CardGen.Warnings
 import CardGen.Negation
 import CardGen.Explore
 import CardGen.Timed

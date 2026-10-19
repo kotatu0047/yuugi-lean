@@ -50,6 +50,9 @@ def Rand.list {α} (n : Nat) (m : Rand α) : Rand (List α) := (List.range n).ma
 instance : Inhabited Side := ⟨.both⟩
 instance : Inhabited Near := ⟨.any⟩
 instance : Inhabited Cell := ⟨⟨0, 0⟩⟩
+instance : Inhabited ZoneRole := ⟨.plain⟩
+instance : Inhabited Capacity := ⟨.many⟩
+instance : Inhabited Game := ⟨Sample.game⟩
 
 def vecTypes : List TypeName := ["モンスター", "魔法", "罠"]
 def vecTags : List String := ["闇属性", "機械族", "戦士族"]
@@ -188,6 +191,91 @@ def checkCases : List Game :=
     { g with rules := { r with manaColors := ["赤"] },
              cards := [{ Sample.jinzo with manaChoice := ["赤", "紫", "赤"], manaColor := "赤" },
                        { Sample.blooD with manaChoice := ["赤"] }] } ]
+
+/-! ### 形式の検査の乱数のテスト：見本（遊戯王風か MTG 風）を、あちこち少しずつ壊したもの -/
+
+def checkTypes : List TypeName := ["モンスター", "魔法", "罠", "土地", "クリーチャー", "インスタント", "儀式", ""]
+def checkTags : List String := ["闇属性", "機械族", "戦士族", "赤", "ゴブリン", "未知"]
+def checkColors : List String := ["赤", "緑", "白", "紫", ""]
+
+/-- `n` 回に1回だけ `m` を使い、それ以外は `x` のまま -/
+def Rand.sometimes {α} (n : Nat) (x : α) (m : Rand α) : Rand α := do
+  if (← Rand.next n) == 0 then m else pure x
+
+/-- 重複も混ぜた部分集合 -/
+def Rand.bag (l : List String) : Rand (List String) := do
+  let s ← Rand.subset l
+  if (← Rand.next 4) == 0 then match s with | a :: _ => return s ++ [a] | [] => return s else return s
+
+def Rand.wildSelector : Rand Selector := do
+  let s ← Rand.selector
+  return { s with types := ← Rand.sometimes 2 s.types (Rand.subset checkTypes),
+                  tags := ← Rand.sometimes 3 s.tags (Rand.subset checkTags) }
+
+def Rand.wildAction : Rand Action := do
+  let sel ← Rand.wildSelector
+  let n ← Rand.pick [0, 1, 300]
+  let i ← Rand.pick [(0 : Int), 500, -300]
+  match ← Rand.next 8 with
+  | 0 => return .destroy sel
+  | 1 => return .bounce sel
+  | 2 => return .draw n
+  | 3 => return .damage n
+  | 4 => return .heal n
+  | 5 => return .strike sel n
+  | 6 => return .pump sel i (← Rand.pick [(0 : Int), 300])
+  | _ => return .counter sel
+
+def Rand.wildEffect : Rand Effect := do
+  let sel ← Rand.wildSelector
+  let n ← Rand.pick [(0 : Int), 300, -500]
+  match ← Rand.next 4 with
+  | 0 => return .activated (← Rand.list (← Rand.next 3) Rand.wildAction)
+  | 1 => return .negate sel
+  | 2 => return .boost sel n
+  | _ => return .toughen sel n
+
+def Rand.wildCard (pool : List Card) : Rand Card := do
+  let c ← Rand.pick pool
+  return { c with
+    type := ← Rand.sometimes 4 c.type (Rand.pick checkTypes),
+    tags := ← Rand.sometimes 4 c.tags (Rand.bag checkTags),
+    colorCost := ← Rand.sometimes 4 c.colorCost (Rand.bag checkColors),
+    manaColor := ← Rand.sometimes 5 c.manaColor (Rand.pick checkColors),
+    mana := ← Rand.sometimes 5 c.mana (Rand.pick [0, 1, 2]),
+    manaChoice := ← Rand.sometimes 5 c.manaChoice (Rand.bag checkColors),
+    effects := ← Rand.sometimes 3 c.effects (Rand.list (← Rand.next 3) Rand.wildEffect) }
+
+def Rand.wildZone (z : Zone) : Rand Zone := do
+  return { z with
+    count := ← Rand.sometimes 5 z.count (Rand.pick [0, 1, 5]),
+    admits := ← Rand.sometimes 4 z.admits (Rand.subset checkTypes),
+    role := ← Rand.sometimes 6 z.role (Rand.pick [.plain, .deck, .grave]),
+    onField := ← Rand.sometimes 6 z.onField Rand.bool,
+    capacity := ← Rand.sometimes 6 z.capacity (Rand.pick [.one, .many]),
+    cells := ← Rand.sometimes 6 z.cells (Rand.pick [[], Sample.row 25, (Sample.row 24).take 2, [⟨49, 3⟩, ⟨1, 1⟩]]) }
+
+def Rand.checkGame : Rand Game := do
+  let base ← Rand.pick [Sample.game, Mtg.game]
+  let r := base.rules
+  let r : Rules := { r with
+    cardTypes := ← Rand.sometimes 5 r.cardTypes (Rand.bag checkTypes),
+    handSize := ← Rand.sometimes 6 r.handSize (Rand.pick [0, 5, 41]),
+    zones := ← Rand.sometimes 2 r.zones (do
+      let zs ← r.zones.mapM Rand.wildZone
+      Rand.sometimes 4 zs (Rand.pick [zs ++ zs.take 1, zs.drop 1, zs.reverse])),
+    fighters := ← Rand.sometimes 5 r.fighters (Rand.subset checkTypes),
+    life := ← Rand.sometimes 6 r.life (Rand.pick [0, 20]),
+    manaColors := ← Rand.sometimes 5 r.manaColors (Rand.bag checkColors),
+    tagSets := ← Rand.sometimes 5 r.tagSets (Rand.pick [[], [⟨"属性", ["闇属性", "闇属性"]⟩, ⟨"", ["機械族"]⟩],
+                                                          [⟨"色", ["赤", "緑"]⟩, ⟨"色", []⟩]]),
+    instants := ← Rand.sometimes 5 r.instants (Rand.subset checkTypes),
+    placeLimits := ← Rand.sometimes 5 r.placeLimits (Rand.pick [[], [⟨[], 0⟩], [⟨["土地", "儀式"], 1⟩, ⟨["魔法"], 0⟩]]) }
+  let cards ← Rand.sometimes 3 base.cards (do
+    let n ← Rand.next 5
+    let cs ← Rand.list (n + 1) (Rand.wildCard base.cards)
+    Rand.sometimes 4 cs (pure (cs ++ cs.take 1)))
+  return { base with version := ← Rand.sometimes 20 base.version (pure 1), rules := r, cards }
 
 /-- 対戦のテスト用の小さなルール（デッキ8枚・初期手札3枚） -/
 def playRules : Rules := { Sample.rules with deckSize := 8, handSize := 3, life := 3000 }
@@ -526,7 +614,6 @@ def vectors (_ : Unit := ()) : Json := Id.run do
       let tgt ← if (← Rand.next 5) == 0 then pure none else Rand.tgt g
       let ch : Choice := .resolve p k 0 ((← Rand.next 6) != 0) (← Rand.negs g) tgt
       return json% {state: $(stateJson g), choice: $(choiceJson ch), result: $((g.step? Sample.rules ch).map stateJson)}
-    let check := checkCases.map fun g => json% {game: $(toJson g), errors: $(g.check)}
     let play ← Rand.list 80 do
       let d1 ← Rand.list playRules.deckSize (Rand.pick vecCards)
       let d2 ← Rand.list playRules.deckSize (Rand.pick vecCards)
@@ -582,6 +669,9 @@ def vectors (_ : Unit := ()) : Json := Id.run do
         m := next.getD m
       return json% {decks: [$(d1.map (·.name)), $(d2.map (·.name))], first: $(first),
                     start: {state: $(stateJson m0.g), turn: $(turnJson m0.turn)}, steps: $(steps)}
+    -- 形式の検査：手で作った例と、乱数で壊した見本（ほかのテストの乱数の並びを変えないように、最後に作る）
+    let wild ← Rand.list 300 Rand.checkGame
+    let check := (checkCases ++ wild).map fun g => json% {game: $(toJson g), errors: $(g.check)}
     return json% {version: 1, rules: $(toJson Sample.rules), cards: $(toJson vecCards),
                   mtgRules: $(toJson Mtg.rules), mtgCards: $(toJson Mtg.game.cards), mtgPlay: $(mtgPlay),
                   selector: $(selector), check: $(check), destroy: $(destroy), boards: $(boards), timed: $(timed), attack: $(attack),

@@ -14,7 +14,7 @@ cd csharp/CardGen.Tests && dotnet test
 | `Selector.Matches` | `Selector.matches` |
 | `Rules.CellOf`・`Cell.Adjacent`・`Slot.ViewFor`（マスの位置と、隣・同じ縦列） | `Rules.cellOf`・`Cell.adjacent`・`Slot.view` |
 | `MatchState.FreeCell` | `State.freeCell` |
-| `Check.Game` | `Game.check`（誤りの文章も同じ） |
+| `Check.Game` | `Game.check`（誤りの文章も同じ。手で作った例と、乱数で見本を壊した 300 件で照合） |
 | `PState.Destroy` | `PState.destroy`（`CardGen/Model.lean`） |
 | `Negation.InstRel` | `instRel`（`CardGen/Negation.lean`） |
 | `Negation.AnalyzeBoard` | `analyzeBoard`（`CardGen/Explore.lean`） |
