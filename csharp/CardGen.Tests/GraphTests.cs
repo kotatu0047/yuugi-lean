@@ -137,4 +137,30 @@ public class GraphTests
         Assert.Equal(new[] { "紅", "緑" }, g.Cards.First(c => c.Name == "カープルーザンの森").ManaChoice);
         Assert.Equal("紅", g.Cards.First(c => c.Name == "山").ManaColor);
     }
+
+    [Fact]
+    public void Candidates_and_auto_layout()
+    {
+        Assert.Equal(new[] { NodeKind.Zone }, GraphDoc.Candidates(NodeKind.Rules));
+        Assert.Contains(NodeKind.Pump, GraphDoc.Candidates(NodeKind.Activate));
+        Assert.Equal(new[] { NodeKind.Selector }, GraphDoc.Candidates(NodeKind.Destroy));
+        Assert.Empty(GraphDoc.Candidates(NodeKind.Selector));
+
+        var doc = GraphDoc.FromGame(Sample());
+        var card = doc.Nodes.First(n => n.Kind == NodeKind.Card);
+        var before = doc.ToGame(out _);
+        var act = doc.AddChild(card, NodeKind.Activate, n => 100);
+        Assert.Contains(act, doc.Children(card));
+        Assert.True(act.X > card.X);
+        // 並べ直しても、中間表現は変わらない（子の順番は上から下のまま）
+        doc.Nodes.Remove(act);
+        doc.Edges.RemoveAll(e => e.To == act.Id);
+        doc.AutoLayout(n => 100, n => 220);
+        Assert.True(JToken.DeepEquals(IrJson.ToJson(before), IrJson.ToJson(doc.ToGame(out var st))));
+        Assert.Empty(st);
+        // 親は子より左にあり、ノードは重ならない
+        foreach (var e in doc.Edges) Assert.True(doc.Find(e.From).X < doc.Find(e.To).X);
+        var boxes = doc.Nodes.Select(n => (n.X, n.Y)).ToList();
+        Assert.Equal(boxes.Count, boxes.Distinct().Count());
+    }
 }

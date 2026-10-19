@@ -374,6 +374,64 @@ namespace CardGen
             return new Game { Rules = rules, Cards = cards };
         }
 
+        /// <summary>from の種類のノードにつなげる種類（つなぎ先の候補）</summary>
+        public static List<NodeKind> Candidates(NodeKind from) =>
+            System.Enum.GetValues(typeof(NodeKind)).Cast<NodeKind>().Where(k => !Node.IsFixed(k) && CanConnect(from, k)).ToList();
+
+        /// <summary>
+        /// parent の子として kind のノードを加えてつなぐ。親の右の列の、今ある子の下に置く（height はノードの高さ）。
+        /// 範囲のように1つしかつなげないノードなら、前のつなぎは外れる
+        /// </summary>
+        public Node AddChild(Node parent, NodeKind kind, System.Func<Node, float> height, float parentWidth = 220)
+        {
+            var kids = Children(parent);
+            var x = parent.X + parentWidth + 60;
+            var y = kids.Count == 0 ? parent.Y : kids.Max(k => k.Y + height(k)) + 20;
+            var n = Node.Make(NextId, kind, x, y);
+            Nodes.Add(n);
+            Connect(parent.Id, n.Id);
+            return n;
+        }
+
+        /// <summary>
+        /// 木の形に並べ直す：公理・集合を左上に、その下にルールとカードを上から順に置き、つないだ先を右の列に並べる
+        /// （親の左から右へ、子は上から下へ。つながっていないノードは最後に左の列に置く）。height はノードの高さ、width は幅
+        /// </summary>
+        public void AutoLayout(System.Func<Node, float> height, System.Func<Node, float> width)
+        {
+            const float left = 40, gapX = 60, gapY = 20, colW = 220;
+            float y = left;
+            foreach (var f in Nodes.Where(n => Node.IsFixed(n.Kind)).OrderBy(n => n.Kind == NodeKind.Sets ? 1 : 0))
+            {
+                f.X = left;
+                f.Y = y;
+                y += height(f) + gapY * 2;
+            }
+            var placed = new HashSet<int>();
+            void Place(Node n, float x)
+            {
+                if (!placed.Add(n.Id)) return;
+                n.X = x;
+                n.Y = y;
+                var kids = Children(n).Where(k => !placed.Contains(k.Id)).ToList();
+                var bottom = n.Y + height(n) + gapY;
+                if (kids.Count > 0)
+                {
+                    var cx = x + System.Math.Max(colW, width(n)) + gapX;
+                    foreach (var k in kids) Place(k, cx);
+                }
+                y = System.Math.Max(y, bottom);
+            }
+            var roots = Nodes.Where(n => !Node.IsFixed(n.Kind) && Parents(n).Count == 0)
+                .OrderBy(n => n.Kind == NodeKind.Rules ? 0 : n.Kind == NodeKind.Card ? 1 : 2).ThenBy(n => n.Y).ThenBy(n => n.X).ToList();
+            foreach (var r in roots)
+            {
+                Place(r, left);
+                y += gapY;
+            }
+            foreach (var n in Nodes.Where(n => !Node.IsFixed(n.Kind) && !placed.Contains(n.Id)).ToList()) Place(n, left);
+        }
+
         /// <summary>公理と集合のノードの高さの分、ほかのノードを下げる量</summary>
         public const float FixedHeight = 600;
 

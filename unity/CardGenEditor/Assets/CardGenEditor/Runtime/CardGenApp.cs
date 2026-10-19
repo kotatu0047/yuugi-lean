@@ -82,6 +82,7 @@ namespace CardGen.App
             // 折り返したときに下の領域に押しつぶされないようにする
             toolbar.style.flexShrink = 0;
             toolbar.Add(MakeButton("新規", NewDoc));
+            toolbar.Add(MakeButton("整列", () => canvas.Arrange()));
             toolbar.Add(MakeButton("見本", LoadSample));
             toolbar.Add(MakeButton("見本（MTG 風）", LoadMtgSample));
             pathField = new TextField { value = PlayerPrefs.GetString(PathKey, DefaultPath()) };
@@ -427,6 +428,8 @@ namespace CardGen.App
 
         // ---- コマンドライン（動作確認用）----
         //   -cardgen-mtg                      最初に MTG 風の見本を読み込む
+        //   -cardgen-arrange                  ノードを木の形に並べ直す（「整列」）
+        //   -cardgen-candidates <種類の名前>   その種類の最初のノードの、つなぎ先の候補を出す（例：Activate）
         //   -cardgen-select <ノードの番号>   そのノードを選ぶ（Sets・Axioms などの種類の名前なら、その種類の最初のノード）
         //   -cardgen-focus <ノードの番号>    そのノードが見えるようにキャンバスを動かす
         //   -cardgen-check                    Lean で検査する
@@ -464,6 +467,18 @@ namespace CardGen.App
                 yield return null;
                 var n = canvas.Doc.Find(fid);
                 if (n != null) canvas.Focus(n);
+            }
+            if (args.Contains("-cardgen-arrange"))
+            {
+                yield return null;
+                canvas.Arrange();
+            }
+            var cand = Arg("-cardgen-candidates");
+            if (cand != null && Enum.TryParse<NodeKind>(cand, true, out var ckind))
+            {
+                for (int i = 0; i < 3; i++) yield return null;
+                var n = canvas.Doc.Nodes.FirstOrDefault(x => x.Kind == ckind);
+                if (n != null) { canvas.Focus(n); yield return null; canvas.ShowCandidatesFor(n); }
             }
             if (args.Contains("-cardgen-check"))
             {
