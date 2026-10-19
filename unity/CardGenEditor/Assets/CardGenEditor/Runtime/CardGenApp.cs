@@ -29,6 +29,9 @@ namespace CardGen.App
         TextField commandField;
         ClaimPanel claimPanel;
         Report lastReport;
+        // C# と Lean の照合（ユーザーのゲームのテストベクトル）の結果
+        VectorReport vectorReport;
+        bool vectorStale;
         bool reportStale;
         bool checking;
         // Lean の検査のログ（実際に起きたことだけ：送った大きさ・コマンド・待った時間・受け取った結果）
@@ -165,6 +168,9 @@ namespace CardGen.App
             var checkButton = MakeButton("Lean で検査", () => _ = RunLeanCheck());
             checkButton.style.unityFontStyleAndWeight = FontStyle.Bold;
             checkRow.Add(checkButton);
+            var vecButton = MakeButton("C# と照合", () => _ = RunVectorCheck());
+            vecButton.tooltip = "今のゲームのカードとルールで、Lean にテストベクトル（入力と正解の組）を作らせ、このアプリの C# の結果と照合する";
+            checkRow.Add(vecButton);
             commandField = new TextField { value = PlayerPrefs.GetString(CommandKey, CheckerClient.DefaultCommand) };
             commandField.style.flexGrow = 1;
             commandField.style.flexShrink = 1;
@@ -242,6 +248,7 @@ namespace CardGen.App
         {
             MenuEntry.Title("検査の結果", lastReport == null ? "まだ Lean で検査していません" : reportStale ? "編集したあとは未実行" : null),
             MenuEntry.Item("Lean で検査", () => _ = RunLeanCheck(), !checking, checking ? "検査しています…" : "★と無効の関係を検査します"),
+            MenuEntry.Item("C# と照合", () => _ = RunVectorCheck(), !checking, "このゲームのテストベクトルで、C# と Lean の動きが一致するかを確かめます"),
             MenuEntry.Item("結果をコピーする", () => GUIUtility.systemCopyBuffer =
                 string.Join("\n", results.Query<Label>().ToList().Select(l => l.text)), hint: "クリップボードへ"),
             MenuEntry.Separator(),
@@ -354,11 +361,11 @@ namespace CardGen.App
             _ => Theme.Muted,
         };
 
-        static VisualElement Badge(string status)
+        static VisualElement Badge(string status, string label = null)
         {
             // 枠線だけの札（地は状態の色をうっすら）
             var c = StatusColor(status);
-            var l = Text(Report.StatusLabel(status), 11, c, true);
+            var l = Text(label ?? Report.StatusLabel(status), 11, c, true);
             l.style.backgroundColor = Theme.Alpha(c, 0.12f);
             Theme.Border(l.style, 1, Theme.Alpha(c, 0.8f));
             Theme.Round(l.style, 1);
@@ -376,6 +383,7 @@ namespace CardGen.App
         void OnModelChanged()
         {
             if (lastReport != null) reportStale = true;
+            if (vectorReport != null) vectorStale = true;
             claimPanel?.SyncChoices();
             Render();
         }
@@ -394,21 +402,79 @@ namespace CardGen.App
             Section(results, "Lean による検査" + (reportStale ? "（編集後は未実行）" : ""), "lean // verify");
             if (checking) { results.Add(CheckProgress()); results.Add(CheckLogView()); return; }
             if (lastReport == null)
-            {
-                results.Add(Text("「Lean で検査」を押すと、ルールから導いた性質（★）と無効の関係を検査します。", 12, Theme.Muted));
-                if (checkLog.Count > 0)
-                {
-                    Section(results, "検査のログ", "lean // log");
-                    results.Add(CheckLogView());
-                }
-                return;
-            }
-            RenderReport(lastReport);
+                results.Add(Text("「Lean で検査」を押すと、ルールから導いた性質（★）と無効の関係を検査します。" +
+                                 "「C# と照合」を押すと、このゲームでテストプレイの C# が Lean と同じ動きをするかを確かめます。", 12, Theme.Muted));
+            else RenderReport(lastReport);
+            RenderVectorReport();
             if (checkLog.Count > 0)
             {
                 Section(results, "検査のログ", "lean // log");
                 results.Add(CheckLogView());
             }
+        }
+
+        // ---- C# と Lean の照合 ----
+
+        /// <summary>照合の結果：照合した件数と、すべて一致したか（食い違いがあれば、その場所）</summary>
+        void RenderVectorReport()
+        {
+            if (vectorReport == null) return;
+            var v = vectorReport;
+            Section(results, "C# と Lean の照合" + (vectorStale ? "（編集後は未実行）" : ""), "diff // vectors");
+            var row = Row();
+            row.style.alignItems = Align.FlexStart;
+            // 証明ではなく、テストベクトルでの一致なので「一致」「食い違い」と出す
+            row.Add(Badge(v.Ok ? "proved" : "counterexample", v.Ok ? "一致" : "食い違い"));
+            var msg = Text(v.Ok
+                ? $"このゲームのカードとルールで、形式の検査・{v.Games} 対戦（{v.Steps} 手）・無効の関係の {v.Boards} 盤面・時刻つきの判定の {v.Timed} 件が、" +
+                  "C# と Lean ですべて一致しました（テストプレイの C# が、証明に使う Lean のモデルと同じ動きをする）"
+                : $"{v.Mismatches.Count} 件の食い違いがあります（C# の実装の誤りです）", 12, Theme.Bright);
+            msg.style.flexShrink = 1;
+            row.Add(msg);
+            results.Add(row);
+            foreach (var m in v.Mismatches) results.Add(Text("・" + m, 11, StatusColor("counterexample")));
+        }
+
+        async System.Threading.Tasks.Task RunVectorCheck()
+        {
+            if (checking) return;
+            var game = canvas.Doc.ToGame(out var structure);
+            if (structure.Count > 0) { status.text = "つなぎ方の問題を直してから照合してください"; return; }
+            checking = true;
+            vectorStale = false;
+            checkLog.Clear();
+            checkStart = Time.realtimeSinceStartup;
+            var input = IrJson.ToJson(game).ToString(Formatting.None);
+            var command = CheckerClient.WithArgs(commandField.value, "--game-vectors -");
+            Log("send", $"中間表現 {System.Text.Encoding.UTF8.GetByteCount(input):N0} バイト（カード {game.Cards.Count} 枚）");
+            Log("exec", command);
+            Log("wait", "Lean がこのゲームのテストベクトル（入力と正解の組）を作っています");
+            Render();
+            var anim = results.schedule.Execute(AnimateCheck).Every(33);
+            PlayerPrefs.SetString(CommandKey, commandField.value);
+            try
+            {
+                var output = await CheckerClient.Run(command, input);
+                Log("recv", $"テストベクトル {System.Text.Encoding.UTF8.GetByteCount(output):N0} バイト");
+                var v = Newtonsoft.Json.Linq.JObject.Parse(output);
+                vectorReport = await System.Threading.Tasks.Task.Run(() => GameVectors.Verify(v));
+                Log("verify", vectorReport.Ok
+                    ? $"{vectorReport.Games} 対戦・{vectorReport.Steps} 手・{vectorReport.Boards} 盤面・{vectorReport.Timed} 件：すべて一致"
+                    : $"{vectorReport.Mismatches.Count} 件の食い違い", vectorReport.Ok ? Theme.Green : Theme.Red);
+                Log("done", "照合が終わりました", Theme.Green);
+                status.text = vectorReport.Ok ? "C# と Lean の照合：すべて一致" : "C# と Lean の照合：食い違いがあります";
+            }
+            catch (Exception e)
+            {
+                vectorReport = null;
+                Log("error", e.Message, Theme.Red);
+                status.text = $"照合できません：{e.Message}";
+            }
+            anim.Pause();
+            checking = false;
+            checkSegment = null;
+            checkWait = null;
+            Render();
         }
 
         // ---- 検査中の表示：流れるプログレスバーとログ ----
@@ -615,6 +681,7 @@ namespace CardGen.App
         //   -cardgen-select <ノードの番号>   そのノードを選ぶ（Sets・Axioms などの種類の名前なら、その種類の最初のノード）
         //   -cardgen-focus <ノードの番号>    そのノードが見えるようにキャンバスを動かす（種類の名前なら、その種類の最初のノード）
         //   -cardgen-check                    Lean で検査する
+        //   -cardgen-vectors                  このゲームのテストベクトルで C# と Lean を照合する
         //   -cardgen-check-live               Lean で検査を始め、終わるのを待たない（検査中の表示の確認用）
         //   -cardgen-results-end              検査の結果を一番下まで送る
         //   -cardgen-play <手数>              テストプレイを始め、置ける手札を交互に置く
@@ -672,6 +739,13 @@ namespace CardGen.App
                 for (int i = 0; i < 3; i++) yield return null;
                 var n = canvas.Doc.Nodes.FirstOrDefault(x => x.Kind == ckind);
                 if (n != null) { canvas.Focus(n); yield return null; canvas.ShowCandidatesFor(n); }
+            }
+            if (args.Contains("-cardgen-vectors"))
+            {
+                var task = RunVectorCheck();
+                while (!task.IsCompleted) yield return null;
+                Debug.Log($"CardGen: vectors {(vectorReport == null ? "failed" : vectorReport.Ok ? "ok" : "mismatch")} " +
+                          (vectorReport == null ? "" : $"{vectorReport.Games} games {vectorReport.Steps} steps {vectorReport.Boards} boards {vectorReport.Timed} timed"));
             }
             // 検査を始めて、終わるのを待たない（検査中の表示の確認用）
             if (args.Contains("-cardgen-check-live")) _ = RunLeanCheck();

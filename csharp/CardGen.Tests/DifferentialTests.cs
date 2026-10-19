@@ -18,42 +18,42 @@ public class DifferentialTests
     static View ParseView(JToken t) => new View((string)t["type"], t["tags"].Select(x => (string)x).ToList(),
         (bool)t["mine"], (bool)t["faceUp"], (bool)t["isSelf"], (bool)t["adjacent"], (bool)t["sameColumn"], (bool)t["isTarget"]);
 
-    static Slot ParseSlot(JToken x) =>
-        new Slot((int)x["zone"], (int)x["cell"], Cards[(string)x["card"]], (bool)x["faceUp"], (int)x["damage"],
-            (int)x["atkBonus"], (int)x["defBonus"]);
+    // 読み書きは中核の VectorJson（エディタの「C# と照合」と同じもの）
+    static readonly VectorJson J = new VectorJson(Cards);
+    static Slot ParseSlot(JToken x) => J.ParseSlot(x);
+    static JObject SlotJson(Slot sl) => VectorJson.SlotJson(sl);
+    static PState ParseState(JToken t) => J.ParseState(t);
+    static JObject StateJson(PState s) => VectorJson.StateJson(s);
+    static string VerdictName(Verdict v) => VectorJson.VerdictName(v);
+    static Choice ParseChoice(JToken c) => J.ParseChoice(c);
+    static TChoice ParseTChoice(JToken c) => VectorJson.ParseTChoice(c);
+    static (bool, int)? ParseTgt(JToken t) => VectorJson.ParseTgt(t);
+    static List<(bool, int)> ParseNeg(JToken t) => VectorJson.ParseNeg(t);
+    static List<(int, int)> ParseBlocks(JToken t) => VectorJson.ParseBlocks(t);
+    static Cell? ParseCell(JToken c) => VectorJson.ParseCell(c);
+    static Inst ParseInst(JToken x) => J.ParseInst(x);
+    static JObject TurnJson(TurnInfo t) => VectorJson.TurnJson(t);
+    static JObject MatchJson(Match m) => VectorJson.MatchJson(m);
+    static JArray MatchJson(MatchState g) => VectorJson.MatchStateJson(g);
 
-    static JObject SlotJson(Slot sl) => new JObject
+    [Fact]
+    public void Game_vectors_of_a_user_game_match()
     {
-        ["zone"] = sl.Zone, ["cell"] = sl.Cell, ["card"] = sl.Card.Name, ["faceUp"] = sl.FaceUp, ["damage"] = sl.Damage,
-        ["atkBonus"] = sl.AtkBonus, ["defBonus"] = sl.DefBonus,
-    };
-
-    static PState ParseState(JToken t) => new PState
-    {
-        Deck = t["deck"].Select(x => Cards[(string)x]).ToList(),
-        Hand = t["hand"].Select(x => Cards[(string)x]).ToList(),
-        Grave = t["grave"].Select(x => Cards[(string)x]).ToList(),
-        Field = t["field"].Select(ParseSlot).ToList(),
-        Life = (int)t["life"],
-    };
-
-    static JObject StateJson(PState s) => new JObject
-    {
-        ["deck"] = new JArray(s.Deck.Select(c => c.Name)),
-        ["hand"] = new JArray(s.Hand.Select(c => c.Name)),
-        ["grave"] = new JArray(s.Grave.Select(c => c.Name)),
-        ["field"] = new JArray(s.Field.Select(SlotJson)),
-        ["life"] = s.Life,
-    };
-
-    static string VerdictName(Verdict v) => v switch
-    {
-        Verdict.Ok => "ok",
-        Verdict.SomeLoop => "someLoop",
-        Verdict.MultiStable => "multiStable",
-        Verdict.CannotHalt => "cannotHalt",
-        _ => "noStable",
-    };
+        // ユーザーのゲーム（ここでは MTG 風の見本）のテストベクトルを、エディタと同じ照合で確かめる
+        var gv = (JObject)V["gameVectors"];
+        var report = GameVectors.Verify(gv);
+        Assert.True(report.Ok, string.Join("\n", report.Mismatches));
+        Assert.True(report.Games == 3 && report.Steps > 50 && report.Boards == 60 && report.Timed == 60,
+            $"{report.Games} 対戦・{report.Steps} 手・{report.Boards} 盤面・{report.Timed} 時刻");
+        // 正解を1か所書き換えると、食い違いとして見つかる
+        var bad = (JObject)gv.DeepClone();
+        var step = bad["play"][0]["steps"].First(x => x["result"].Type != JTokenType.Null);
+        step["result"]["state"][0]["life"] = 12345;
+        Assert.False(GameVectors.Verify(bad).Ok);
+        var bad2 = (JObject)gv.DeepClone();
+        bad2["check"] = new JArray("ありえない誤り");
+        Assert.Contains(GameVectors.Verify(bad2).Mismatches, m => m.StartsWith("形式の検査"));
+    }
 
     [Fact]
     public void Selector_matches_like_Lean()
@@ -127,33 +127,6 @@ public class DifferentialTests
         }
     }
 
-    static Cell? ParseCell(JToken c) => c == null || c.Type == JTokenType.Null ? (Cell?)null : new Cell((int)c[0], (int)c[1]);
-
-    static Inst ParseInst(JToken x) => new Inst(Cards[(string)x["card"]], (bool)x["controller"], (bool)x["faceUp"],
-        x["cell"] == null || x["cell"].Type == JTokenType.Null ? (Cell?)null : new Cell((int)x["cell"][0], (int)x["cell"][1]));
-
-    static Choice ParseChoice(JToken c) => (string)c["kind"] switch
-    {
-        "draw" => Choice.Draw((bool)c["player"]),
-        "place" => Choice.Place((bool)c["player"], (int)c["hand"], (int)c["zone"], (int)c["cell"], (bool)c["faceUp"]),
-        "attack" => Choice.Attack((bool)c["player"], (int)c["field"],
-            c["target"].Type == JTokenType.Null ? (int?)null : (int)c["target"], ParseNeg(c["neg"])),
-        "combat" => Choice.Combat((bool)c["player"], c["attackers"].Select(x => (int)x).ToList(), ParseBlocks(c["blocks"]),
-            ParseNeg(c["neg"])),
-        "mend" => Choice.Mend(),
-        "settle" => Choice.Settle(ParseNeg(c["neg"])),
-        "discard" => Choice.Discard((bool)c["player"], (int)c["hand"]),
-        "trigger" => Choice.Trigger((bool)c["player"], Cards[(string)c["card"]], (int)c["effect"], ParseCell(c["cell"]),
-            (bool)c["apply"], ParseNeg(c["neg"]), ParseTgt(c["tgt"])),
-        _ => Choice.Resolve((bool)c["player"], (int)c["field"], (int)c["effect"], (bool)c["apply"], ParseNeg(c["neg"]), ParseTgt(c["tgt"])),
-    };
-
-    static (bool, int)? ParseTgt(JToken t) => t.Type == JTokenType.Null ? ((bool, int)?)null : ((bool)t[0], (int)t[1]);
-
-    static List<(bool, int)> ParseNeg(JToken t) => t.Select(x => ((bool)x[0], (int)x[1])).ToList();
-
-    static List<(int, int)> ParseBlocks(JToken t) => t.Select(x => ((int)x[0], (int)x[1])).ToList();
-
     [Fact]
     public void Attack_values_like_Lean()
     {
@@ -188,8 +161,6 @@ public class DifferentialTests
             Assert.True(JToken.DeepEquals(c["expected"], MatchJson(next)), $"不一致：{c}\n実際：{MatchJson(next)}");
         }
     }
-
-    static JArray MatchJson(MatchState g) => new JArray(StateJson(g.P1), StateJson(g.P2));
 
     [Fact]
     public void Multi_action_effects_resolve_like_Lean()
@@ -238,59 +209,6 @@ public class DifferentialTests
         Assert.Equal(80, games);
         Assert.Equal(4000, steps);
     }
-
-    static TChoice ParseTChoice(JToken c) => (string)c["kind"] switch
-    {
-        "place" => TChoice.Place((int)c["hand"], (int)c["zone"], (int)c["cell"], (bool)c["faceUp"],
-            c["pay"].Select(x => (string)x).ToList()),
-        "cast" => TChoice.Cast((int)c["hand"], (int)c["zone"], (int)c["cell"], (bool)c["faceUp"],
-            c["pay"].Select(x => (string)x).ToList()),
-        "resolve" => TChoice.Resolve((bool)c["player"], (int)c["field"], (int)c["effect"], (bool)c["apply"], ParseNeg(c["neg"]),
-            ParseTgt(c["tgt"])),
-        "settle" => TChoice.Settle(ParseNeg(c["neg"])),
-        "pass" => TChoice.Pass(),
-        "attack" => TChoice.Attack((int)c["field"],
-            c["target"].Type == JTokenType.Null ? (int?)null : (int)c["target"], ParseNeg(c["neg"])),
-        "tap" => TChoice.Tap((int)c["field"], (string)c["color"]),
-        "oppTap" => TChoice.OppTap((int)c["field"], (string)c["color"]),
-        "block" => TChoice.Block(ParseBlocks(c["blocks"]), ParseNeg(c["neg"])),
-        "discard" => TChoice.Discard((int)c["hand"]),
-        "trigger" => TChoice.Trigger((int)c["index"], (bool)c["skip"], (bool)c["apply"], ParseNeg(c["neg"]), ParseTgt(c["tgt"])),
-        _ => TChoice.EndTurn(),
-    };
-
-    static JObject TurnJson(TurnInfo t) => new JObject
-    {
-        ["tp"] = t.Tp,
-        ["count"] = t.Count,
-        ["summons"] = t.Summons,
-        ["attacked"] = new JArray(t.Attacked.Select(SlotJson)),
-        ["placed"] = new JArray(t.Placed),
-        ["entered"] = new JArray(t.Entered.Select(SlotJson)),
-        ["pool"] = new JArray(t.Pool),
-        ["oppPool"] = new JArray(t.OppPool),
-        ["tapped"] = new JArray(t.Tapped.Select(SlotJson)),
-        ["oppTapped"] = new JArray(t.OppTapped.Select(SlotJson)),
-        ["attackers"] = new JArray(t.Attackers.Select(SlotJson)),
-        ["blocked"] = new JArray(t.Blocked.Select(SlotJson)),
-        ["stack"] = new JArray(t.Stack.Select(x => new JArray(x.player, SlotJson(x.slot)))),
-        ["made"] = t.Made,
-        ["spent"] = t.Spent,
-        ["decked"] = t.Decked == null ? JValue.CreateNull() : new JValue(t.Decked.Value),
-        ["prio"] = t.Prio,
-        ["passes"] = t.Passes,
-        ["pending"] = new JArray(t.Pending.Select(e => new JObject
-        {
-            ["player"] = e.P, ["card"] = e.Card.Name, ["effect"] = e.Eff,
-            ["cell"] = e.Cell is Cell c ? new JArray(c.Col, c.Row) : (JToken)JValue.CreateNull(),
-        })),
-    };
-
-    static JObject MatchJson(Match m) => new JObject
-    {
-        ["state"] = new JArray(StateJson(m.G.P1), StateJson(m.G.P2)),
-        ["turn"] = TurnJson(m.Turn),
-    };
 
     [Fact]
     public void Turn_play_like_Lean()

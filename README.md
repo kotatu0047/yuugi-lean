@@ -36,6 +36,7 @@
 lake build
 lake exe cardgen CardGen/sample.json --text
 lake exe cardgen CardGen/mtg.json --text
+lake exe cardgen --game-vectors CardGen/mtg.json  # そのゲームのテストベクトル（C# との照合用。エディタの「C# と照合」）
 python3 jobs/accept.py --recheck                 # 受け入れ済みの証明のジョブを検査し直す
 cd csharp/CardGen.Tests && dotnet test           # C# の差分テスト
 tools/unity-build.sh                             # Unity のエディタをビルド（Windows 側で）

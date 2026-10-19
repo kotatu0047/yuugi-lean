@@ -100,6 +100,14 @@ def main (args : List String) : IO UInt32 := do
     let c ← IO.ofExcept ((Json.parse (← IO.FS.readFile claimPath)).bind parseClaim)
     makeJobFrom g c (← jobsDirArg rest)
   | "--job-stdin" :: rest => jobStdin rest
+  | "--game-vectors" :: path :: rest =>
+    -- ユーザーのゲームのテストベクトル（path が - なら標準入力から読む）。続けて対戦の数と手数を指定できる
+    let input ← if path == "-" then (← IO.getStdin).readToEnd else IO.FS.readFile path
+    let g ← IO.ofExcept ((Json.parse input).bind fun j => (fromJson? j : Except String Game))
+    let games := (rest.head?.bind String.toNat?).getD 12
+    let steps := (rest[1]?.bind String.toNat?).getD 80
+    IO.println (gameVectors g games steps).compress
+    return 0
   | "--jobs" :: rest =>
     IO.println (← listJobs (← jobsDirArg rest)).pretty
     return 0

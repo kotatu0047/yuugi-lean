@@ -579,6 +579,57 @@ def Rand.validChoice (r : Rules) (m : Match) : Rand TChoice := do
   else if !ok.isEmpty then Rand.pick ok
   else Rand.tchoice r m
 
+/-- 1つの対戦：`r` のルールで、`pick` で作ったデッキから始め、`steps` 手を `Rand.validChoice` で進めた記録 -/
+def Rand.turnGame (r : Rules) (pick : Nat → Rand Card) (steps : Nat) : Rand Json := do
+  let d1 ← (List.range r.deckSize).mapM pick
+  let d2 ← (List.range r.deckSize).mapM pick
+  let first ← Rand.bool
+  let m0 := Match.start r (fun p => if p then d1 else d2) first
+  let mut m := m0
+  let mut out : Array Json := #[]
+  for _ in [0:steps] do
+    if m.over r then break
+    let ch ← Rand.validChoice r m
+    let next := m.step? r ch
+    out := out.push (json% {choice: $(tchoiceJson ch),
+      result: $(next.map fun m' => json% {state: $(stateJson m'.g), turn: $(turnJson m'.turn)})})
+    m := next.getD m
+  return json% {decks: [$(d1.map (·.name)), $(d2.map (·.name))], first: $(first),
+                start: {state: $(stateJson m0.g), turn: $(turnJson m0.turn)}, steps: $(out)}
+
+/-- **ユーザーのゲームのテストベクトル**：そのゲームのカードとルールで作った「入力」と Lean の「正解」の組。
+形式の検査、ターンのある対戦（`games` 対戦 × 最大 `steps` 手。デッキは5枚に2枚ほどをマナを出すカードにする）、
+無効の関係の盤面と分類、時刻つきの判定の1歩。C# の `GameVectors.Verify` で照合する（エディタの「C# と照合」） -/
+def gameVectors (g : Game) (games : Nat := 12) (steps : Nat := 80) (seed : Nat := 20261020) : Json := Id.run do
+  let r := g.rules
+  let cards := g.cards
+  let lands := cards.filter (0 < ·.mana)
+  let others := cards.filter (·.mana == 0)
+  let pick (i : Nat) : Rand Card :=
+    if !lands.isEmpty && !others.isEmpty && i % 5 < 2 then Rand.pick lands
+    else if others.isEmpty then Rand.pick lands else Rand.pick others
+  let (j, _) := (do
+    let play ← if cards.isEmpty || !g.check.isEmpty then pure [] else Rand.list games (Rand.turnGame r pick steps)
+    let n := if cards.isEmpty then 0 else 60
+    let boards ← Rand.list n do
+      let k := (← Rand.next 5) + 1
+      let insts ← Rand.list k do
+        return (⟨← Rand.pick cards, ← Rand.bool, ← Rand.bool, ← Rand.instCell⟩ : Inst)
+      let rel := (List.range k).map fun y => (List.range k).map fun x => instRel insts y x
+      return json% {insts: $(insts.map instJson), rel: $(rel), verdict: $(verdictName (analyzeBoard insts))}
+    let timed ← Rand.list n do
+      let k := (← Rand.next 4) + 1
+      let insts ← Rand.list k do
+        return (⟨← Rand.pick cards, ← Rand.bool, ← Rand.bool, ← Rand.instCell⟩ : Inst)
+      let st : TState := ⟨← Rand.list k Rand.bool, ← Rand.pick (perms (List.range k))⟩
+      let tp ← Rand.bool
+      let tjson (t : TState) : Json := json% {on: $(t.on), order: $(t.order)}
+      return json% {insts: $(insts.map instJson), state: $(tjson st), turn: $(tp),
+                    expected: $((TSys.ofInsts insts).succ tp st |>.map tjson)}
+    return json% {version: 1, game: $(toJson g), check: $(g.check), play: $(play), boards: $(boards), timed: $(timed)}
+    : Rand Json).run seed
+  return j
+
 def vectors (_ : Unit := ()) : Json := Id.run do
   let (j, _) := (do
     let selector ← Rand.list 300 do
@@ -726,7 +777,8 @@ def vectors (_ : Unit := ()) : Json := Id.run do
                   mtgRules: $(toJson Mtg.rules), mtgCards: $(toJson Mtg.game.cards), mtgPlay: $(mtgPlay),
                   selector: $(selector), check: $(check), destroy: $(destroy), boards: $(boards), timed: $(timed), attack: $(attack),
                   combat: $(combat), multi: $(multi),
-                  playRules: $(toJson playRules), play: $(play), turnPlay: $(turnPlay)}
+                  playRules: $(toJson playRules), play: $(play), turnPlay: $(turnPlay),
+                  gameVectors: $(gameVectors Mtg.game 3 40)}
     : Rand Json).run 20261018
   return j
 
