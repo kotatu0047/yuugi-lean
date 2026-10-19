@@ -75,7 +75,18 @@ namespace CardGen.App
             Add(message);
             Add(jobs);
             SyncChoices();
+            PopupMenu.Attach(this, _ => Menu());
         }
+
+        /// <summary>右クリックのメニュー：反例を探す・ジョブの状態を更新・タグの選択を外す</summary>
+        public List<MenuEntry> Menu() => new List<MenuEntry>
+        {
+            MenuEntry.Header("追加した命題"),
+            MenuEntry.Item("反例を探してジョブにする", () => _ = Submit()),
+            MenuEntry.Item("ジョブの状態を更新", () => _ = Refresh()),
+            MenuEntry.Separator(),
+            MenuEntry.Item("タグの選択をすべて外す（タグの条件なし）", () => { tags.Clear(); SyncChoices(); }, tags.Count > 0),
+        };
 
         static readonly Color ChipOn = new Color(0.28f, 0.45f, 0.62f);
         static readonly Color ChipOff = new Color(0.22f, 0.22f, 0.25f);

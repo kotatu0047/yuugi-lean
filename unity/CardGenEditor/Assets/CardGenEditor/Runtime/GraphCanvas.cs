@@ -8,7 +8,8 @@ namespace CardGen.App
 {
     /// <summary>
     /// ノードを並べてつなぐキャンバス（背景のドラッグで移動、ホイールで拡大縮小）。
-    /// ノードの右の丸にカーソルを合わせる（またはクリックする）と、つなげるノードの候補が出て、選ぶとつないだ状態で加わる
+    /// ノードの右の丸にカーソルを合わせる（またはクリックする）と、つなげるノードの候補が出て、選ぶとつないだ状態で加わる。
+    /// 右クリックでメニューを出す（ノードの上：つなぐ・表示・つなぎを外す・削除、空き場所：ノードを加える・整列・表示を戻す）
     /// </summary>
     public sealed class GraphCanvas : VisualElement
     {
@@ -168,12 +169,103 @@ namespace CardGen.App
         /// <summary>候補を選んだ：親の右の列に、つないだ状態で加える</summary>
         void AddCandidate(NodeKind kind)
         {
-            if (popupFor == null) return;
-            var parent = popupFor.Node;
-            var n = Doc.AddChild(parent, kind, x => views.TryGetValue(x.Id, out var nv) ? HeightOf(nv) : 100, WidthOf(popupFor));
+            if (popupFor != null) AddChildOf(popupFor.Node, kind);
+        }
+
+        /// <summary>parent の右の列に、kind のノードをつないだ状態で加える</summary>
+        public Node AddChildOf(Node parent, NodeKind kind)
+        {
+            var pw = views.TryGetValue(parent.Id, out var pv) ? WidthOf(pv) : NodeView.Width;
+            var n = Doc.AddChild(parent, kind, x => views.TryGetValue(x.Id, out var nv) ? HeightOf(nv) : 100, pw);
             Rebuild();
             Select(n);
             Changed?.Invoke();
+            return n;
+        }
+
+        // ---- 右クリックのメニュー ----
+
+        /// <summary>ノード n の右クリックのメニュー：つなげるノード・表示・つなぎを外す・削除</summary>
+        public List<MenuEntry> NodeMenu(Node n)
+        {
+            var items = new List<MenuEntry> { MenuEntry.Header(n.Title) };
+            var cands = GraphDoc.Candidates(n.Kind);
+            if (cands.Count > 0)
+            {
+                foreach (var k in cands)
+                {
+                    var kind = k;
+                    items.Add(MenuEntry.Item($"つなぐ：{Node.KindLabel(kind)}", () => AddChildOf(n, kind)));
+                }
+                if (Node.TakesSelector(n.Kind) && Doc.Children(n).Count > 0)
+                    items.Add(MenuEntry.Header("（範囲は今の範囲と入れ替わります）"));
+                items.Add(MenuEntry.Separator());
+            }
+            items.Add(MenuEntry.Item("左上に表示する", () => Focus(n)));
+            items.Add(MenuEntry.Item("入ってくるつなぎを外す", () => Disconnect(n), Doc.Edges.Any(e => e.To == n.Id)));
+            items.Add(MenuEntry.Item(Node.IsFixed(n.Kind) ? "削除（このノードは削除できません）" : "削除",
+                () => { Select(n); RemoveSelected(); }, !Node.IsFixed(n.Kind)));
+            return items;
+        }
+
+        /// <summary>キャンバスの空き場所（キャンバスの座標 at）の右クリックのメニュー：ノードを加える・整列・表示を戻す</summary>
+        public List<MenuEntry> BackgroundMenu(Vector2 at)
+        {
+            var items = new List<MenuEntry> { MenuEntry.Header("ここにノードを加える") };
+            foreach (NodeKind k in Enum.GetValues(typeof(NodeKind)))
+            {
+                if (k == NodeKind.Rules || Node.IsFixed(k)) continue;
+                var kind = k;
+                items.Add(MenuEntry.Item(Node.KindLabel(kind), () => AddNodeAt(kind, at)));
+            }
+            items.Add(MenuEntry.Separator());
+            items.Add(MenuEntry.Item("整列（木の形に並べ直す）", Arrange));
+            items.Add(MenuEntry.Item("表示を元に戻す（位置と拡大率）", ResetView));
+            return items;
+        }
+
+        /// <summary>キャンバスの座標 at に kind のノードを加える（どこにもつながない）</summary>
+        public Node AddNodeAt(NodeKind kind, Vector2 at)
+        {
+            var n = Node.Make(Doc.NextId, kind, at.x, at.y);
+            Doc.Nodes.Add(n);
+            Rebuild();
+            Select(n);
+            Changed?.Invoke();
+            return n;
+        }
+
+        /// <summary>n に入ってくるつなぎを外す</summary>
+        public void Disconnect(Node n)
+        {
+            Doc.Edges.RemoveAll(e => e.To == n.Id);
+            edgeLayer.MarkDirtyRepaint();
+            Changed?.Invoke();
+        }
+
+        /// <summary>位置と拡大率を最初の状態に戻す</summary>
+        public void ResetView()
+        {
+            offset = new Vector2(20, 20);
+            zoom = 0.85f;
+            ApplyTransform();
+        }
+
+        /// <summary>ノード n のメニューを、そのノードの右上に出す（動作確認用）</summary>
+        public void OpenMenuFor(Node n)
+        {
+            if (!views.TryGetValue(n.Id, out var v)) return;
+            Select(n);
+            PopupMenu.Open(this, new Vector2(v.worldBound.xMax - 40, v.worldBound.yMin + 20), NodeMenu(n));
+        }
+
+        void OpenMenu(PointerDownEvent evt)
+        {
+            HideCandidates();
+            var nv = NodeAt(evt.position);
+            if (nv != null) Select(nv.Node);
+            var items = nv != null ? NodeMenu(nv.Node) : BackgroundMenu(ToContent(this.WorldToLocal(evt.position)));
+            PopupMenu.Open(this, evt.position, items);
         }
 
         /// <summary>木の形に並べ直す（親の右に子、子は上から順）</summary>
@@ -286,6 +378,12 @@ namespace CardGen.App
             var target = evt.target as VisualElement;
             // 候補の一覧の中のクリックは、一覧のボタンに任せる
             for (var e = target; e != null; e = e.parent) if (e == popup) return;
+            if (evt.button == 1)
+            {
+                OpenMenu(evt);
+                evt.StopPropagation();
+                return;
+            }
             Focus();
             if (!(target != null && popupFor != null && target == popupFor.OutPort)) HideCandidates();
             var nv = NodeAt(evt.position);
@@ -298,9 +396,7 @@ namespace CardGen.App
             else if (nv != null && target == nv.InPort)
             {
                 // 入る側の丸を押すと、つなぎを外す
-                Doc.Edges.RemoveAll(e => e.To == nv.Node.Id);
-                edgeLayer.MarkDirtyRepaint();
-                Changed?.Invoke();
+                Disconnect(nv.Node);
                 return;
             }
             else if (nv != null)

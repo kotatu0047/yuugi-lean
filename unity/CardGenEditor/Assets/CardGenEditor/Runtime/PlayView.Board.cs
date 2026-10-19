@@ -29,9 +29,11 @@ namespace CardGen.App
             return r;
         }
 
-        VisualElement Chip(Card c, bool faceUp, string status, bool selected, System.Action onClick, string stats = null)
+        VisualElement Chip(Card c, bool faceUp, string status, bool selected, System.Action onClick, string stats = null,
+                           Func<List<MenuEntry>> menu = null)
         {
             var b = UiTest.Btn("", onClick);
+            if (menu != null) PopupMenu.Attach(b, _ => menu());
             b.style.width = 120;
             b.style.flexShrink = 0;
             b.style.minHeight = CellHeight;
@@ -121,7 +123,7 @@ namespace CardGen.App
                 int idx = i;
                 var hc = s.Hand[i];
                 hand.Add(Chip(hc, true, CanPlaceNow(p, idx) ? "置ける" : null, selPlayer == p && selHand == idx, () => { selPlayer = p; selHand = idx; selField = -1; customPay = null; Render(); },
-                    UsesMana ? (hc.Mana > 0 ? ManaText(hc) : $"コスト {CostText(hc)}") : null));
+                    UsesMana ? (hc.Mana > 0 ? ManaText(hc) : $"コスト {CostText(hc)}") : null, () => HandMenu(p, idx)));
             }
 
             // 相手のフィールドは自分のフィールドを逆さまにした形（共通ルール②）
@@ -157,7 +159,7 @@ namespace CardGen.App
                 if (notes.Count > 0) stats = (stats == null ? "" : stats + "\n") + string.Join("・", notes);
             }
             var chip = Chip(sl.Card, sl.FaceUp, st, selPlayer == p && selField == i,
-                () => { selPlayer = p; selField = i; selHand = -1; customPay = null; Render(); }, stats);
+                () => { selPlayer = p; selField = i; selHand = -1; customPay = null; Render(); }, stats, () => FieldMenu(p, i));
             if (tapped) chip.style.opacity = 0.6f;
             return chip;
         }

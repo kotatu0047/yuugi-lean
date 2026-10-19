@@ -52,6 +52,13 @@ namespace CardGen.App
 
         readonly VisualElement boards;
         readonly VisualElement side;
+        // 右の欄の動きのボタン（右クリックのメニューにも出す）：選んでいるカードの動きと、それ以外（対象・スタック・ブロックなど）
+        readonly List<MenuEntry> selectionActions = new List<MenuEntry>();
+        readonly List<MenuEntry> panelActions = new List<MenuEntry>();
+        bool inSelection;
+
+        /// <summary>「エディタに戻る」（アプリが設定する）</summary>
+        public System.Action Exit;
 
         static readonly Color Panel = new Color(0.16f, 0.16f, 0.18f);
         static readonly Color Line = new Color(0.3f, 0.3f, 0.33f);
@@ -74,6 +81,7 @@ namespace CardGen.App
             boards.style.paddingTop = 8;
             boardScroll.Add(boards);
             Add(boardScroll);
+            PopupMenu.Attach(boardScroll, _ => GeneralMenu());
             var sideScroll = new ScrollView();
             sideScroll.style.width = 420;
             sideScroll.style.backgroundColor = Panel;
@@ -85,6 +93,7 @@ namespace CardGen.App
             side.style.paddingTop = 10;
             sideScroll.Add(side);
             Add(sideScroll);
+            PopupMenu.Attach(sideScroll, _ => GeneralMenu());
         }
 
         /// <summary>カードの一覧から山札を作る（土地は色のコストに合わせて選び、山札全体にむらなく散らす。C# の中核の DeckBuilder）</summary>

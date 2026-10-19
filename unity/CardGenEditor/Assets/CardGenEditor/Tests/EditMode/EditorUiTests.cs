@@ -195,5 +195,97 @@ namespace CardGen.App.Tests
             Assert.IsTrue(UiTest.Press(panel, "ゴブリン"));
             CollectionAssert.AreEqual(new[] { "ゴブリン" }, panel.SelectedTags);
         }
+
+        // ---- 右クリックのメニュー ----
+
+        static void Pick(System.Collections.Generic.List<MenuEntry> items, string text)
+        {
+            var it = items.FirstOrDefault(i => i.Text == text && i.Enabled);
+            Assert.IsNotNull(it, $"「{text}」がない：{string.Join(" / ", PopupMenu.Texts(items))}");
+            it.Action();
+        }
+
+        [Test]
+        public void Node_menu_connects_disconnects_and_deletes()
+        {
+            var canvas = new GraphCanvas();
+            canvas.SetDoc(GraphDoc.FromGame(Load("mtg")));
+            var act = canvas.Doc.Nodes.First(n => n.Kind == NodeKind.Activate);
+            var before = canvas.Doc.Children(act).Count;
+            Pick(canvas.NodeMenu(act), "つなぐ：打ち消す");
+            var counter = canvas.Doc.Children(act).Single(k => k.Kind == NodeKind.Counter);
+            Assert.AreEqual(before + 1, canvas.Doc.Children(act).Count);
+            // 打ち消すのメニューのつなぎ先は範囲だけ
+            CollectionAssert.AreEqual(new[] { "つなぐ：範囲" },
+                PopupMenu.Texts(canvas.NodeMenu(counter)).Where(t => t.StartsWith("つなぐ：")).ToArray());
+            Pick(canvas.NodeMenu(counter), "入ってくるつなぎを外す");
+            Assert.IsFalse(canvas.Doc.Edges.Any(e => e.To == counter.Id));
+            Assert.IsFalse(PopupMenu.Choose(canvas.NodeMenu(counter), "入ってくるつなぎを外す"), "つなぎがなければ押せない");
+            Pick(canvas.NodeMenu(counter), "削除");
+            Assert.IsNull(canvas.Doc.Find(counter.Id));
+            // 集合のノードは削除できない
+            var sets = canvas.Doc.Nodes.First(n => n.Kind == NodeKind.Sets);
+            Assert.IsFalse(PopupMenu.Choose(canvas.NodeMenu(sets), "削除"));
+            Assert.IsNotNull(canvas.Doc.Find(sets.Id));
+        }
+
+        [Test]
+        public void Background_menu_adds_a_node_where_clicked()
+        {
+            var canvas = new GraphCanvas();
+            canvas.SetDoc(GraphDoc.FromGame(Load("sample")));
+            var items = canvas.BackgroundMenu(new Vector2(321, 654));
+            var texts = PopupMenu.Texts(items);
+            CollectionAssert.Contains(texts, "整列（木の形に並べ直す）");
+            CollectionAssert.DoesNotContain(texts, Node.KindLabel(NodeKind.Sets));
+            Pick(items, Node.KindLabel(NodeKind.Card));
+            var added = canvas.SelectedNode;
+            Assert.AreEqual(NodeKind.Card, added.Kind);
+            Assert.AreEqual(321, added.X, 0.01);
+            Assert.AreEqual(654, added.Y, 0.01);
+            Assert.IsFalse(canvas.Doc.Edges.Any(e => e.To == added.Id), "どこにもつながない");
+        }
+
+        [Test]
+        public void Card_menus_show_the_same_moves_as_the_side_panel()
+        {
+            var view = new PlayView();
+            view.Start(Load("mtg"));
+            var land = view.CurrentMatch.G.P1.Hand.FindIndex(c => c.Mana > 0);
+            var menu = view.HandMenu(true, land);
+            StringAssert.Contains(view.CurrentMatch.G.P1.Hand[land].Name, menu[0].Text);
+            // メニューの動きは、右の欄のボタンにもある
+            var buttons = UiTest.Buttons(view);
+            foreach (var t in menu.Where(i => i.Enabled && !i.IsHeader && !i.IsSeparator && !i.Text.StartsWith("置く向き")))
+                CollectionAssert.Contains(buttons, t.Text);
+            Assert.IsTrue(PopupMenu.Choose(menu, "戦場に表側で置く"), string.Join(" / ", PopupMenu.Texts(menu)));
+            Assert.AreEqual(1, view.CurrentMatch.G.P1.Field.Count);
+            Assert.IsTrue(PopupMenu.Choose(view.FieldMenu(true, 0), "タップしてマナを出す"));
+            Assert.AreEqual(1, view.CurrentMatch.Turn.Pool.Count);
+            // 相手の手札は、自分のターンには置けない（できる動きがない）
+            var opp = view.HandMenu(false, 0);
+            Assert.IsFalse(opp.Any(i => i.Enabled && !i.IsHeader && !i.IsSeparator && i.Text.Contains("置く")));
+            // 空き場所のメニュー：ターン終了で相手のターンになる
+            var general = view.GeneralMenu();
+            CollectionAssert.Contains(PopupMenu.Texts(general), "自分がパスする");
+            Pick(general, "ターン終了");
+            Assert.IsFalse(view.CurrentMatch.Turn.Tp);
+        }
+
+        [Test]
+        public void General_menu_resolves_the_stack()
+        {
+            var view = new PlayView();
+            view.Start(Load("mtg"));
+            view.Scenario("stack");
+            Assert.IsFalse(PopupMenu.Choose(view.GeneralMenu(), "ターン終了"), "スタックがあるとターンを終えられない");
+            Pick(view.GeneralMenu(), "相手がパスする");
+            Pick(view.GeneralMenu(), "自分がパスする");
+            var menu = view.GeneralMenu();
+            Assert.AreEqual("今できること", menu[0].Text);
+            Assert.IsTrue(PopupMenu.Choose(menu, "一番上を解決する"), string.Join(" / ", PopupMenu.Texts(menu)));
+            Assert.AreEqual(1, view.CurrentMatch.Turn.Stack.Count);
+            Assert.AreEqual(17, view.CurrentMatch.G.P1.Life, "稲妻の3点");
+        }
     }
 }

@@ -203,6 +203,7 @@ namespace CardGen.App
 
         void ActionButton(string text, System.Action a)
         {
+            (inSelection ? selectionActions : panelActions).Add(MenuEntry.Item(text, a));
             var b = UiTest.Btn(text, a);
             b.style.marginTop = 4;
             b.style.whiteSpace = WhiteSpace.Normal;
@@ -212,6 +213,9 @@ namespace CardGen.App
         void Render()
         {
             if (game == null) return;
+            selectionActions.Clear();
+            panelActions.Clear();
+            inSelection = false;
             var neg = NegationStatus(out var negSummary);
             boards.Clear();
             boards.Add(PlayerBoard(false, neg));
@@ -232,7 +236,7 @@ namespace CardGen.App
             turnRow.Add(Text($"第{turnCount}ターン：{Who(turn)}のターン", 14, Warn, true));
             var endTurn = UiTest.Btn("ターン終了", () => { EndTurn(); Render(); });
             endTurn.style.marginLeft = 12;
-            endTurn.SetEnabled(match.Turn.Quiet && !match.Over(game.Rules) && match.Turn.Prio == turn && match.Turn.Passes < 2);
+            endTurn.SetEnabled(CanEndTurn);
             turnRow.Add(endTurn);
             var swap = UiTest.Btn($"{Who(!firstPlayer)}の先攻で最初から", () => { firstPlayer = !firstPlayer; Start(game); });
             swap.style.marginLeft = 6;
@@ -267,6 +271,7 @@ namespace CardGen.App
                 BlockPanel(neg);
 
             Section("選んでいるカード");
+            inSelection = true;
             var s = state.Get(selPlayer);
             if (selHand >= 0 && selHand < s.Hand.Count)
             {
@@ -421,6 +426,7 @@ namespace CardGen.App
             }
             else side.Add(Text("（なし）", 12, Quiet));
 
+            inSelection = false;
             Section("無効の状態");
             var ok = judge.Result == Judge.Outcome.Unique || judge.Result == Judge.Outcome.Done;
             side.Add(Text(negSummary, 12, ok ? Good : Warn));

@@ -130,6 +130,8 @@ namespace CardGen.App
             inspScroll.style.height = new Length(42, LengthUnit.Percent);
             inspScroll.Add(inspector);
             side.Add(inspScroll);
+            PopupMenu.Attach(inspScroll, _ => canvas.SelectedNode != null ? canvas.NodeMenu(canvas.SelectedNode)
+                : new System.Collections.Generic.List<MenuEntry> { MenuEntry.Item("ノードを選んでいません（キャンバスでノードをクリック）", null, false) });
 
             var checkRow = Row();
             checkRow.style.paddingLeft = 12;
@@ -157,11 +159,12 @@ namespace CardGen.App
             resScroll.Add(results);
             claimPanel = new ClaimPanel(() => canvas.Doc.ToGame(out _), () => commandField.value);
             resScroll.Add(claimPanel);
+            PopupMenu.Attach(resScroll, _ => ResultsMenu());
             side.Add(resScroll);
             main.Add(side);
             root.Add(main);
             editorMain = main;
-            playView = new PlayView();
+            playView = new PlayView { Exit = TogglePlay };
             playView.style.display = DisplayStyle.None;
             root.Add(playView);
 
@@ -192,6 +195,18 @@ namespace CardGen.App
 
         static string DefaultPath() =>
             Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "cardgame.json");
+
+        /// <summary>検査の結果の欄の右クリックのメニュー</summary>
+        System.Collections.Generic.List<MenuEntry> ResultsMenu() => new System.Collections.Generic.List<MenuEntry>
+        {
+            MenuEntry.Header("検査"),
+            MenuEntry.Item("Lean で検査", () => _ = RunLeanCheck(), !checking),
+            MenuEntry.Item("結果をコピーする", () => GUIUtility.systemCopyBuffer =
+                string.Join("\n", results.Query<Label>().ToList().Select(l => l.text))),
+            MenuEntry.Separator(),
+            MenuEntry.Item("一番上へ", () => resultsScroll.scrollOffset = Vector2.zero),
+            MenuEntry.Item("一番下へ", () => resultsScroll.scrollOffset = new Vector2(0, 100000)),
+        };
 
         // ---- テストプレイ ----
 
@@ -437,6 +452,7 @@ namespace CardGen.App
         //   -cardgen-play <手数>              テストプレイを始め、置ける手札を交互に置く
         //   -cardgen-scenario combat|stack    テストプレイで、戦闘（ブロックの割り当て）かスタックの場面を作る（MTG 風の見本）
         //   -cardgen-claim                    命題の欄の値でジョブを作る（反例探し）
+        //   -cardgen-menu node|play|card      右クリックのメニューを出す（最初の発動のノード／テストプレイの空き場所／自分の最初の手札）
         //   -cardgen-screenshot <パス>        画面を保存して終了する
 
         static string Arg(string name)
@@ -497,6 +513,26 @@ namespace CardGen.App
                 if (demo != null && int.TryParse(demo, out var moves)) playView.Demo(moves);
                 var scene = Arg("-cardgen-scenario");
                 if (scene != null) playView.Scenario(scene);
+            }
+            var menu = Arg("-cardgen-menu");
+            if (menu != null)
+            {
+                for (int i = 0; i < 5; i++) yield return null;
+                if (menu == "node")
+                {
+                    var n = canvas.Doc.Nodes.FirstOrDefault(x => x.Kind == NodeKind.Activate);
+                    if (n != null) canvas.OpenMenuFor(n);
+                }
+                else if (menu == "play")
+                {
+                    var b = playView.worldBound;
+                    PopupMenu.Open(playView, new Vector2(b.x + b.width * 0.35f, b.y + b.height * 0.3f), playView.GeneralMenu());
+                }
+                else if (menu == "card")
+                {
+                    var b = playView.worldBound;
+                    PopupMenu.Open(playView, new Vector2(b.x + b.width * 0.25f, b.y + b.height * 0.55f), playView.HandMenu(true, 0));
+                }
             }
             if (args.Contains("-cardgen-results-end"))
             {
