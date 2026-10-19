@@ -40,6 +40,7 @@ python3 jobs/accept.py --recheck                 # 受け入れ済みの証明�
 cd csharp/CardGen.Tests && dotnet test           # C# の差分テスト
 tools/unity-build.sh                             # Unity のエディタをビルド（Windows 側で）
 tools/unity-build.sh --test                      # Unity の画面の自動テスト
+tools/unity-build.sh --rclick                    # ビルドしたアプリで、右クリックのメニューが出るかを確かめる
 ```
 
 WSL では .NET 9 の SDK を `~/.dotnet` に入れて使う（`dotnet-install.sh --channel 9.0 --install-dir ~/.dotnet`、

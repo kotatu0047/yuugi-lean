@@ -4,6 +4,7 @@
 #   tools/unity-build.sh                     写してビルドする
 #   tools/unity-build.sh --reset             先に Windows 側のクローンの変更を捨てて git pull する
 #   tools/unity-build.sh --test              写して、エディタと画面の自動テスト（EditMode）を動かす（ビルドはしない）
+#   tools/unity-build.sh --rclick            ビルドしたアプリを動かし、画面のあちこちを右クリックしてメニューが出るか確かめる
 #   tools/unity-build.sh --shot 画面.png [exe の引数…]
 #                                            ビルドしたアプリを動かして画面を保存する（例：-cardgen-play 7）
 #
@@ -26,10 +27,12 @@ UNITY=${CARDGEN_UNITY:-"/mnt/c/Program Files/Unity/Hub/Editor/$VERSION/Editor/Un
 reset=0
 shot=""
 test=0
+rclick=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --reset) reset=1; shift ;;
     --test) test=1; shift ;;
+    --rclick) rclick=1; shift ;;
     --shot) shot=$2; shift 2; break ;;
     *) echo "不明な引数：$1" >&2; exit 2 ;;
   esac
@@ -95,9 +98,45 @@ if ! grep -q "CardGen build: Succeeded" "$LOG"; then
 fi
 echo "成功：$DST/$PROJ_REL/Build/CardGenEditor.exe"
 
+if [ $rclick = 1 ]; then
+  # 右クリックの動作確認：実際の右クリックと同じイベントを送り、メニューが出てタイトルが合うかをログで見る。
+  # 自動テスト（EditMode）は画面に載らないので、右クリックの経路はここで確かめる。
+  # 起動の途中で止まることがあるので、3回まで試す
+  echo "== 右クリックの動作確認"
+  PLOG="$DST/$PROJ_REL/Logs/cardgen-player.log"
+  TMP_PNG="$DST/$PROJ_REL/Logs/cardgen-rclick.png"
+  fail=0
+  while IFS='|' read -r name want args; do
+    ok=""
+    for t in 1 2 3; do
+      # 前に止まったアプリが Windows 側に残っていればログを握ったままなので、終わらせてから、試すごとに別のログにする
+      taskkill.exe /IM CardGenEditor.exe /F </dev/null >/dev/null 2>&1 || true
+      PLOG="$DST/$PROJ_REL/Logs/cardgen-rclick-$t.log"
+      rm -f "$TMP_PNG" "$PLOG" 2>/dev/null || true
+      # shellcheck disable=SC2086
+      (cd "$DST/$PROJ_REL/Build" && timeout 60 ./CardGenEditor.exe -screen-width 1600 -screen-height 1000 -screen-fullscreen 0 \
+         $args -cardgen-screenshot "$(wslpath -w "$TMP_PNG")" -logFile "$(wslpath -w "$PLOG")") </dev/null >/dev/null 2>&1 || true
+      line=$(grep -a "CardGen: menu" "$PLOG" 2>/dev/null | tail -1 || true)
+      if [ -n "$line" ]; then ok=$line; break; fi
+    done
+    if echo "$ok" | grep -q "open「$want"; then echo "  ○ $name：${ok#CardGen: menu }"
+    else echo "  × $name：${ok:-起動できませんでした}（期待：「$want…」）"; fail=1; fi
+  done <<'CASES'
+手札のカード|丘巨人|-cardgen-mtg -cardgen-play -cardgen-rclick 0.175,0.225
+場のカード（ブロック）|灰色熊|-cardgen-mtg -cardgen-play -cardgen-scenario combat -cardgen-rclick 0.67,0.56
+空きのマス|戦場の|-cardgen-mtg -cardgen-play -cardgen-rclick 0.25,0.55
+盤面の空き場所|第|-cardgen-mtg -cardgen-play -cardgen-rclick 0.45,0.67
+右の欄|第|-cardgen-mtg -cardgen-play -cardgen-rclick 0.9,0.42
+キャンバスのノード|公理|-cardgen-mtg -cardgen-arrange -cardgen-rclick 0.12,0.3
+CASES
+  [ $fail = 0 ] || exit 2
+fi
+
 if [ -n "$shot" ]; then
   echo "== 画面を保存：$shot"
   TMP_PNG="$DST/$PROJ_REL/Logs/cardgen-shot.png"
+  # 前に止まったアプリが Windows 側に残っていれば終わらせる
+  taskkill.exe /IM CardGenEditor.exe /F </dev/null >/dev/null 2>&1 || true
   rm -f "$TMP_PNG"
   (cd "$DST/$PROJ_REL/Build" && timeout ${CARDGEN_SHOT_TIMEOUT:-180} ./CardGenEditor.exe -screen-width 1600 -screen-height 1000 -screen-fullscreen 0 \
      "$@" -cardgen-screenshot "$(wslpath -w "$TMP_PNG")" -logFile "$(wslpath -w "$DST/$PROJ_REL/Logs/cardgen-player.log")") >/dev/null || true

@@ -623,6 +623,7 @@ namespace CardGen.App
         //   -cardgen-menu node|play|card|field|cell|player
         //                                     右クリックのメニューを出す（最初の発動のノード／テストプレイの空き場所／自分の最初の手札／
         //                                     相手の場の戦闘できるカード／自分の戦場の 6 番目のマス／自分の盤面）
+        //   -cardgen-rclick <x>,<y>           画面の位置（幅と高さに対する割合、例 0.17,0.22）を右クリックする
         //   -cardgen-screenshot <パス>        画面を保存して終了する
 
         static string Arg(string name)
@@ -720,6 +721,29 @@ namespace CardGen.App
                         : playView.FieldMenu(false, Math.Max(0, m.G.P2.Field.FindIndex(x => x.Card.Attack > 0 || x.Card.Defense > 0)));
                     PopupMenu.Open(playView, new Vector2(b.x + b.width * 0.3f, b.y + b.height * 0.15f), items);
                 }
+            }
+            // 画面の位置（幅と高さに対する割合）を右クリックしたのと同じイベントを送る（右クリックの動作確認用）
+            var rclick = Arg("-cardgen-rclick");
+            if (rclick != null)
+            {
+                for (int i = 0; i < 10; i++) yield return null;
+                var root = GetComponent<UIDocument>().rootVisualElement;
+                var xy = rclick.Split(',');
+                var pos = new Vector2(root.layout.width * float.Parse(xy[0], System.Globalization.CultureInfo.InvariantCulture),
+                                      root.layout.height * float.Parse(xy[1], System.Globalization.CultureInfo.InvariantCulture));
+                var picked = root.panel.Pick(pos);
+                Debug.Log($"CardGen: rclick {pos} -> {picked?.GetType().Name} {picked?.name}");
+                if (picked != null)
+                {
+                    var e = new Event { type = EventType.MouseDown, button = 1, mousePosition = pos, clickCount = 1 };
+                    using (var pe = PointerDownEvent.GetPooled(e))
+                    {
+                        pe.target = picked;
+                        picked.SendEvent(pe);
+                    }
+                }
+                yield return null;
+                Debug.Log($"CardGen: menu {(PopupMenu.Current != null ? "open「" + PopupMenu.Current.TitleText + "」" : "none")}");
             }
             if (args.Contains("-cardgen-results-end"))
             {

@@ -67,19 +67,27 @@ namespace CardGen.App
             target.RegisterCallback<PointerDownEvent>(evt =>
             {
                 if (evt.button != 1) return;
+                // 画面は先に覚えておく。build がカードを選んで描き直すと、target は画面から外れる（panel が null になる）
+                var root = target.panel?.visualTree;
+                if (root == null) return;
+                evt.StopPropagation();
                 var items = build(evt.position);
                 if (items == null || items.Count == 0) return;
-                Open(target, evt.position, items);
-                evt.StopPropagation();
+                OpenOn(root, evt.position, items);
             });
         }
 
         /// <summary>anchor が載っている画面の、位置 pos（パネルの座標）にメニューを出す</summary>
         public static PopupMenu Open(VisualElement anchor, Vector2 pos, List<MenuEntry> items)
         {
-            Current?.Close();
             var root = anchor.panel?.visualTree;
-            if (root == null) return null;
+            return root == null ? null : OpenOn(root, pos, items);
+        }
+
+        /// <summary>画面 root の、位置 pos にメニューを出す</summary>
+        static PopupMenu OpenOn(VisualElement root, Vector2 pos, List<MenuEntry> items)
+        {
+            Current?.Close();
             var m = new PopupMenu(items);
             root.Add(m);
             m.Place(pos, root);
@@ -90,8 +98,12 @@ namespace CardGen.App
 
         static void Round(IStyle s, float r) => Theme.Round(s, r);
 
+        /// <summary>メニューのタイトル（動作確認用）</summary>
+        public string TitleText { get; private set; }
+
         PopupMenu(List<MenuEntry> items)
         {
+            TitleText = items.Find(i => i.IsTitle)?.Text ?? "";
             style.position = Position.Absolute;
             style.left = style.top = 0;
             style.right = style.bottom = 0;
