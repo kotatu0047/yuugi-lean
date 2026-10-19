@@ -50,6 +50,8 @@ def main():
     OUT.mkdir()
     for src, dst in PAGES.items():
         (OUT / dst).write_text(link((ROOT / src).read_text(encoding="utf-8")), encoding="utf-8")
+    # サイト用の JavaScript と CSS（mermaid の図の全画面表示）
+    shutil.copytree(ROOT / "docs-assets", OUT / "assets" / "extra")
     print(f"{len(PAGES)} ページを {OUT} に写しました")
 
 

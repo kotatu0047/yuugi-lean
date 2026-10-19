@@ -32,8 +32,13 @@ markdown_extensions:
   - pymdownx.superfences:
       custom_fences:
         - name: mermaid
-          class: mermaid
+          class: cg-mermaid
           format: !!python/name:pymdownx.superfences.fence_code_format
+# mermaid の図は自前で描き、全画面で拡大縮小できるようにする（docs-assets/mermaid-zoom.js）
+extra_javascript:
+  - assets/extra/mermaid-zoom.js
+extra_css:
+  - assets/extra/mermaid-zoom.css
 nav:
   - トップ: index.md
   - 企画書: 企画書.md
