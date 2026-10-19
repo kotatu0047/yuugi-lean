@@ -59,9 +59,15 @@ public class PropertyTests
     /// <summary>記録 rec が、フィールド field の一部（同じカードの枚数も含めて）</summary>
     static bool BagLe(List<Slot> rec, List<Slot> field) => rec.All(a => CountOf(rec, a) <= CountOf(field, a));
 
-    static void CheckInvariants(Rules r, Match m, string where)
+    static void CheckInvariants(Rules r, Match m, string where, List<Card> cards = null)
     {
         var t = m.Turn;
+        // マナの色（TReachable.mana_from）：持っているマナは、マナを出すカードが出せる色だけ
+        if (cards != null)
+        {
+            var colors = cards.Where(c => c.Mana > 0).SelectMany(c => c.ManaChoice.Count > 0 ? c.ManaChoice : new List<string> { c.ManaColor });
+            Assert.True(t.Pool.Concat(t.OppPool).All(colors.Contains), $"{where}：マナの色");
+        }
         // 盤面の制約（Lean の Inv）
         Assert.True(m.G.Violations(r).Count == 0, $"{where}：盤面の制約 {string.Join("、", m.G.Violations(r))}");
         // マナの収支（TReachable.mana_balance）
@@ -112,7 +118,7 @@ public class PropertyTests
                 if (k == TChoiceKind.Attack) attacks++;
                 if (k == TChoiceKind.Block) blocks++;
                 if (k == TChoiceKind.Resolve) resolves++;
-                CheckInvariants(r, m, $"{file} 種 {seed} {step} 手目（{k}）");
+                CheckInvariants(r, m, $"{file} 種 {seed} {step} 手目（{k}）", game.Cards);
                 // ターンの終わりにダメージと一時的な変化が消える（Match.endTurn_clean）
                 if (k == TChoiceKind.EndTurn)
                     Assert.All(new[] { m.G.P1, m.G.P2 }.SelectMany(s => s.Field),

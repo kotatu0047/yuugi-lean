@@ -465,9 +465,9 @@ inductive Match.Moved (r : Rules) (m : Match) : TChoice → Match → Prop
   | attack {k t neg sl g} : (m.g m.turn.tp).field[k]? = some sl →
       m.g.step? r (.attack m.turn.tp k t neg) = some g →
       Match.Moved r m (.attack k t neg) ⟨g, (m.turn.afterAttack r sl).prune g⟩
-  | tap {k color sl out} : (m.g m.turn.tp).field[k]? = some sl →
+  | tap {k color sl out} : (m.g m.turn.tp).field[k]? = some sl → manaOut sl.card color = some out →
       Match.Moved r m (.tap k color) ⟨m.g, (m.turn.afterTap sl out).prune m.g⟩
-  | oppTap {k color sl out} : (m.g (!m.turn.tp)).field[k]? = some sl →
+  | oppTap {k color sl out} : (m.g (!m.turn.tp)).field[k]? = some sl → manaOut sl.card color = some out →
       Match.Moved r m (.oppTap k color) ⟨m.g, (m.turn.afterOppTap sl out).prune m.g⟩
   | endTurn {d} : Match.Moved r m .endTurn
       ⟨m.g.mend.drawUpTo r (!m.turn.tp) r.drawPerTurn,
@@ -537,8 +537,9 @@ theorem Match.step0?_moved {r : Rules} {m m' : Match} {ch : TChoice} (hs : m.ste
     · rename_i sl hsl
       split at hs
       · cases hs
-      · split at hs
-        · cases hs; exact .tap hsl
+      · rename_i out hout
+        split at hs
+        · cases hs; exact .tap hsl hout
         · cases hs
   | oppTap k color =>
     simp only at hs
@@ -547,8 +548,9 @@ theorem Match.step0?_moved {r : Rules} {m m' : Match} {ch : TChoice} (hs : m.ste
     · rename_i sl hsl
       split at hs
       · cases hs
-      · split at hs
-        · cases hs; exact .oppTap hsl
+      · rename_i out hout
+        split at hs
+        · cases hs; exact .oppTap hsl hout
         · cases hs
   | endTurn =>
     simp only at hs
@@ -660,8 +662,8 @@ theorem TReachable.reachable {r : Rules} {decks : PlayerId → List Card} {first
     | attack _ hg => exact ih.step (step?_sound hg)
     | declare _ => exact ih
     | block hg => exact ih.step (step?_sound hg)
-    | tap _ => exact ih
-    | oppTap _ => exact ih
+    | tap _ _ => exact ih
+    | oppTap _ _ => exact ih
     | endTurn => exact Reachable.drawUpTo _ _ (ih.step (.mend _))
 
 /-- **ターンのない対戦のどの盤面でも成り立つ性質は、ターンのある対戦でも成り立つ**
@@ -720,8 +722,8 @@ theorem TReachable.summons_le {r : Rules} {decks : PlayerId → List Card} {firs
     | attack _ _ => simpa [TurnInfo.afterAttack] using ih
     | declare _ => simpa [TurnInfo.afterAttack] using ih
     | block _ => simpa [TurnInfo.afterBlock] using ih
-    | tap _ => simpa [TurnInfo.afterTap] using ih
-    | oppTap _ => simpa [TurnInfo.afterOppTap] using ih
+    | tap _ _ => simpa [TurnInfo.afterTap] using ih
+    | oppTap _ _ => simpa [TurnInfo.afterOppTap] using ih
     | endTurn => simp [TurnInfo.prune, TurnInfo.next]
 
 /-- **種類ごとの上限：1ターンに置いた、その種類のカードの枚数は上限を超えない**（例：土地は1ターンに1枚） -/
@@ -751,8 +753,8 @@ theorem TReachable.placed_le {r : Rules} {decks : PlayerId → List Card} {first
     | attack _ _ => simpa [TurnInfo.afterAttack] using ih
     | declare _ => simpa [TurnInfo.afterAttack] using ih
     | block _ => simpa [TurnInfo.afterBlock] using ih
-    | tap _ => simpa [TurnInfo.afterTap] using ih
-    | oppTap _ => simpa [TurnInfo.afterOppTap] using ih
+    | tap _ _ => simpa [TurnInfo.afterTap] using ih
+    | oppTap _ _ => simpa [TurnInfo.afterOppTap] using ih
     | endTurn => simp [TurnInfo.prune, TurnInfo.next]
 
 /-- 記録はどれも、フィールドのカード（ダメージを除いたもの）の一部（同じカードの枚数も含めて） -/
@@ -842,8 +844,8 @@ theorem TReachable.mana_balance {r : Rules} {decks : PlayerId → List Card} {fi
     | attack _ _ => simpa [TurnInfo.afterAttack] using ih
     | declare _ => simpa [TurnInfo.afterAttack] using ih
     | block _ => simpa [TurnInfo.afterBlock] using ih
-    | tap _ => simp [TurnInfo.afterTap]; omega
-    | oppTap _ => simp [TurnInfo.afterOppTap]; omega
+    | tap _ _ => simp [TurnInfo.afterTap]; omega
+    | oppTap _ _ => simp [TurnInfo.afterOppTap]; omega
     | endTurn => simp [TurnInfo.prune, TurnInfo.next]
 
 /-- **1ターンに払ったマナは、そのターンにタップして出したマナを超えない** -/
@@ -967,5 +969,80 @@ theorem Match.endTurn_clean {r : Rules} {m m' : Match} (hs : m.step? r .endTurn 
   simp only [State.drawUpTo_field, State.mend, State.map_apply, List.mem_map] at hsl
   obtain ⟨x, -, rfl⟩ := hsl
   rfl
+
+end CardGen
+
+namespace CardGen
+
+/-! ## マナの色 -/
+
+/-- マナ `c` は、カードの一覧 `cards` のどれかのマナを出すカードが出せる色（`""` は無色） -/
+def ManaFrom (cards : List Card) (c : String) : Prop :=
+  ∃ card ∈ cards, 0 < card.mana ∧ (c = card.manaColor ∨ c ∈ card.manaChoice)
+
+theorem mem_of_mem_foldl_erase : ∀ (l m : List String) (c : String), c ∈ l.foldl List.erase m → c ∈ m
+  | [], _, _, h => h
+  | a :: l, m, c, h => List.mem_of_mem_erase (mem_of_mem_foldl_erase l (m.erase a) c h)
+
+theorem manaOut_from {card : Card} {color : String} {out : List String} (h : manaOut card color = some out) :
+    ∀ c ∈ out, 0 < card.mana ∧ (c = card.manaColor ∨ c ∈ card.manaChoice) := by
+  intro c hc
+  unfold manaOut at h
+  split at h
+  · cases h
+    obtain ⟨h1, h2⟩ := List.mem_replicate.1 hc
+    exact ⟨Nat.pos_of_ne_zero h1, .inl h2⟩
+  · split at h
+    · rename_i hch
+      cases h
+      obtain ⟨h1, rfl⟩ := List.mem_replicate.1 hc
+      exact ⟨Nat.pos_of_ne_zero h1, .inr (by simpa using hch)⟩
+    · cases h
+
+/-- **持っているマナは、どれも一覧のマナを出すカードが出せる色（か無色）**
+（形式の検査で、カードの出すマナの色はルールのマナの色のどれかなので、マナはルールの色か無色だけ） -/
+theorem TReachable.mana_from {r : Rules} {decks : PlayerId → List Card} {first : PlayerId} {pool : List Card}
+    (hpool : ∀ p, ∀ x ∈ decks p, x ∈ pool) {m : Match} (h : TReachable r decks first m) :
+    ∀ c ∈ m.turn.pool ++ m.turn.oppPool, ManaFrom pool c := by
+  induction h with
+  | start => intro c hc; simp [Match.start] at hc
+  | @step m _ ch hm hs ih =>
+    obtain ⟨m0, _, _, ⟨-, rfl⟩ | hmv, rfl⟩ := Match.step?_moved hs
+    · simpa [TurnInfo.withPrio] using ih
+    simp only [TurnInfo.withPrio_pool, TurnInfo.withPrio_oppPool]
+    have fp := hm.reachable.fromPool hpool
+    cases hmv with
+    | place _ _ _ =>
+      intro c hc
+      simp only [TurnInfo.prune_pool, TurnInfo.prune_oppPool, TurnInfo.afterPlace, List.mem_append] at hc
+      rcases hc with hc | hc
+      · exact ih c (List.mem_append_left _ (mem_of_mem_foldl_erase _ _ _ hc))
+      · exact ih c (List.mem_append_right _ hc)
+    | cast _ _ _ =>
+      intro c hc
+      simp only [TurnInfo.prune_pool, TurnInfo.prune_oppPool, TurnInfo.afterCast, List.mem_append] at hc
+      rcases hc with hc | hc
+      · exact ih c (List.mem_append_left _ hc)
+      · exact ih c (List.mem_append_right _ (mem_of_mem_foldl_erase _ _ _ hc))
+    | @tap _ _ sl _ hsl hout =>
+      intro c hc
+      simp only [TurnInfo.prune_pool, TurnInfo.prune_oppPool, TurnInfo.afterTap, List.mem_append] at hc
+      rcases hc with (hc | hc) | hc
+      · exact ih c (List.mem_append_left _ hc)
+      · exact ⟨sl.card, fp.field (List.mem_of_getElem? hsl), manaOut_from hout c hc⟩
+      · exact ih c (List.mem_append_right _ hc)
+    | @oppTap _ _ sl _ hsl hout =>
+      intro c hc
+      simp only [TurnInfo.prune_pool, TurnInfo.prune_oppPool, TurnInfo.afterOppTap, List.mem_append] at hc
+      rcases hc with hc | hc | hc
+      · exact ih c (List.mem_append_left _ hc)
+      · exact ih c (List.mem_append_right _ hc)
+      · exact ⟨sl.card, fp.field (List.mem_of_getElem? hsl), manaOut_from hout c hc⟩
+    | endTurn => intro c hc; simp [TurnInfo.prune, TurnInfo.next] at hc
+    | resolve _ => simpa using ih
+    | settle => simpa using ih
+    | attack _ _ => simpa [TurnInfo.afterAttack] using ih
+    | declare _ => simpa [TurnInfo.afterAttack] using ih
+    | block _ => simpa [TurnInfo.afterBlock] using ih
 
 end CardGen

@@ -183,6 +183,12 @@ def turnClaims (r : Rules) (cards : List Card) : List ClaimOut :=
   (if r.stack then
     [⟨"スタックに積まれたカードは、いつも置いたプレイヤーのスタックのゾーンにある（打ち消されたり手札に戻されたりしたら、スタックからも消える）",
       ["スタックの記録は、動きのたびにフィールドにあるものだけに絞る"], "proved", "CardGen.TReachable.stack_fits"⟩] else []) ++
+  (if cards.any (0 < ·.mana) then
+    let colors := (cards.filter (0 < ·.mana)).flatMap (fun c => if c.manaChoice.isEmpty then [c.manaColor] else c.manaChoice)
+    let names := colors.eraseDups.map fun c => if c.isEmpty then "無色" else c
+    [⟨s!"持っているマナは、マナを出すカードが出せる色（{"・".intercalate names}）だけ",
+      ["マナは、フィールドのマナを出すカードをタップしたときだけ増え、払うと減る", "盤面のカードはどれもカードの一覧から来る"],
+      "proved", "CardGen.TReachable.mana_from"⟩] else []) ++
   (if cards.any (fun c => c.cost > 0 || !c.colorCost.isEmpty) then
     [⟨"1ターンに払うマナは、そのターンにタップして出したマナを超えない（マナはターンの終わりに消える）",
       ["カードを置くには、持っているマナからコストの分を払う", "持っているマナと払ったマナの合計は、そのターンにタップで出したマナに等しい"],
