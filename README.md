@@ -13,16 +13,18 @@
 ユーザーがビジュアルエディタで作ったルールとカード（中間表現の JSON）を検査する。企画は `企画書.md`、構成と処理の流れの図は `アーキテクチャ.md`。
 
 - `CardGen/IR.lean`：中間表現（説明は `CardGen/中間表現.md`、見本は `CardGen/sample.json`）
-- `CardGen/Model.lean`・`CardGen/Inv.lean`：対戦のモデルと、どの盤面でも成り立つ盤面の制約
+- `CardGen/Model.lean`・`CardGen/Inv.lean`：対戦のモデル（遊戯王式と MTG 式の戦闘、カードに残るダメージ）と、どの盤面でも成り立つ盤面の制約
 - `CardGen/Play.lean`：実行できる対戦の1歩と、それが証明に使う動きの関係と一致すること（`step?_sound`）
 - `CardGen/Claims.lean`：ルールから導く性質（★）と、それがすべての対戦で成り立つことの証明（`derived_valid`）
 - `CardGen/Negation.lean`：無効の関係に循環がなければ判定が必ず止まり結果が1通りであることの証明（`negation_settles`）
 - `CardGen/Pool.lean`：盤面のカードはカードの一覧から来ること、回復のカードがなければライフは増えないこと（★の型 F、`gameClaims_valid`）
-- `CardGen/Turn.lean`：ターンのある対戦。盤面はターンのないモデルで到達できること（★の引き継ぎ）と、召喚の上限・攻撃の回数
+- `CardGen/Turn.lean`：ターンのある対戦（マナとタップ、インスタントとスタック、まとめての攻撃とブロック、デッキ切れ）。
+  盤面はターンのないモデルで到達できること（★の引き継ぎ）と、召喚の上限・攻撃の回数・種類ごとの上限・マナの収支
 - `CardGen/Explore.lean`：循環があるときの総当たりの検査
 - `CardGen/Timed.lean`：OCG の適用の時刻つきの判定と、証明書つきの総当たり（メタ定理2、`TSys.allEnd_of_certOK`）。テストプレイの無効の判定もこの手順
 - `CardGen/Custom.lean`：ユーザーが追加する命題（フィールド上・手札・墓地・デッキの枚数）と反例探し
 - `CardGen/Cli.lean`：検査ツール
+- `CardGen/Sample.lean`・`CardGen/Mtg.lean`：見本（遊戯王風と MTG 風）と `#guard` のテスト
 - `CardGen/Vectors.lean`：C# との差分テスト用のテストベクトル
 
 `csharp/`：Unity で使う C# 実装と差分テスト。`unity/CardGenEditor/`：エディタ（実行時のアプリ）
@@ -30,6 +32,12 @@
 ```
 lake build
 lake exe cardgen CardGen/sample.json --text
+lake exe cardgen CardGen/mtg.json --text
+python3 jobs/accept.py --recheck                 # 受け入れ済みの証明のジョブを検査し直す
+cd csharp/CardGen.Tests && dotnet test           # C# の差分テスト
+tools/unity-build.sh                             # Unity のエディタをビルド（Windows 側で）
 ```
+
+中間表現は版 8（`CardGen/中間表現.md`）。
 
 `sorry` はなく、証明が使う公理は Lean 標準のもの（`propext`・`Classical.choice`・`Quot.sound`）だけ。
