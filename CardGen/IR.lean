@@ -22,7 +22,7 @@ JSON との相互変換は Lean の自動導出による（`Option` 以外のフ
 マスの関係（`near`：隣・同じ縦列）を加えた。版 5 で、マナとタップ（カードの `cost`・`mana`）、
 1ターンに置ける枚数の上限（`placeLimits`）、攻撃でタップすること（`attackTaps`）、
 召喚酔い（`summoningSickness`）、MTG 式の戦闘（`blocking`）を加えた。版 6 で、色のマナ（ルールの `manaColors`、
-カードの `colorCost`・`manaColor`）を加えた。
+カードの `colorCost`・`manaColor`）を加えた。版 7 で、タグの集合（`tagSets`）を加えた。
 
 マスの並びは、縦と横の2本の序列で表す。盤面全体（2人分）は `gridSize`×`gridSize`（49×49。
 前提の「最大 50×50」に収まり、中心のマスがあるように奇数にした）のマス目で、マスは（列, 行）で表し、
@@ -91,6 +91,12 @@ structure PlaceLimit where
   count : Nat
 deriving Repr, DecidableEq, FromJson, ToJson
 
+/-- タグの集合（例：属性＝闇属性・光属性、種族＝戦士族・機械族） -/
+structure TagSet where
+  name : String
+  values : List String
+deriving Repr, DecidableEq, FromJson, ToJson
+
 /-- ゲームのルール -/
 structure Rules where
   cardTypes : List TypeName
@@ -122,6 +128,8 @@ structure Rules where
   blocking : Bool := false
   /-- マナの色（例：白・青・黒・赤・緑）。空なら色のマナは使わない -/
   manaColors : List String := []
+  /-- タグの集合。空でなければ、カードと範囲の指定のタグはどれかの集合の値 -/
+  tagSets : List TagSet := []
 deriving Repr, DecidableEq, FromJson, ToJson
 
 /-- 効果の持ち主から見た陣営 -/
@@ -208,7 +216,7 @@ structure Game where
 deriving Repr, DecidableEq, FromJson, ToJson
 
 /-- 現在の形式の版 -/
-def currentVersion : Nat := 6
+def currentVersion : Nat := 7
 
 /-! ## 範囲の指定の意味
 
@@ -252,11 +260,19 @@ def Selector.matches (s : Selector) (v : View) : Bool :=
 def dups [BEq α] (l : List α) : List α :=
   (l.filter fun a => l.count a > 1).eraseDups
 
+/-- タグの集合の値すべて -/
+def Rules.allTags (r : Rules) : List String := r.tagSets.flatMap (·.values)
+
+/-- タグの集合があるのに、どの集合にもないタグ -/
+def Rules.unknownTags (r : Rules) (tags : List String) : List String :=
+  if r.tagSets.isEmpty then [] else (tags.filter (!r.allTags.contains ·)).eraseDups
+
 namespace Selector
 def check (r : Rules) (where_ : String) (s : Selector) : List String :=
   (if s.types.isEmpty then [s!"{where_}：範囲のカードの種類が空です"] else []) ++
   (s.types.filter (!r.cardTypes.contains ·)).map
-    (s!"{where_}：範囲のカードの種類「{·}」はルールにありません")
+    (s!"{where_}：範囲のカードの種類「{·}」はルールにありません") ++
+  (r.unknownTags s.tags).map (s!"{where_}：範囲のタグ「{·}」はどのタグの集合にもありません")
 end Selector
 
 def Action.check (r : Rules) (where_ : String) : Action → List String
@@ -279,6 +295,7 @@ def Effect.check (r : Rules) (where_ : String) : Effect → List String
 def Card.check (r : Rules) (c : Card) : List String :=
   (if r.cardTypes.contains c.type then [] else
     [s!"カード「{c.name}」：種類「{c.type}」はルールにありません"]) ++
+  (r.unknownTags c.tags).map (s!"カード「{c.name}」：タグ「{·}」はどのタグの集合にもありません") ++
   (c.colorCost.eraseDups.filter (!r.manaColors.contains ·)).map
     (s!"カード「{c.name}」：コストの色「{·}」はルールのマナの色にありません") ++
   (if c.manaColor != "" && !r.manaColors.contains c.manaColor then
@@ -327,6 +344,9 @@ def Rules.check (r : Rules) : List String :=
   (r.fighters.filter (!r.cardTypes.contains ·)).map (s!"ルール：戦闘できる種類「{·}」はカードの種類にありません") ++
   (if !r.fighters.isEmpty && r.life = 0 then ["ルール：戦闘できる種類があるのに、初期ライフが0です"] else []) ++
   (dups r.manaColors).map (s!"ルール：マナの色「{·}」が重複しています") ++
+  (dups (r.tagSets.map (·.name))).map (s!"ルール：タグの集合「{·}」が重複しています") ++
+  (if r.tagSets.any (·.name.isEmpty) then ["ルール：タグの集合の名前が空です"] else []) ++
+  r.tagSets.flatMap (fun t => (dups t.values).map (s!"ルール：タグの集合「{t.name}」で「{·}」が重複しています")) ++
   (if r.manaColors.contains "" then ["ルール：マナの色に空の名前があります"] else []) ++
   r.placeLimits.flatMap fun l =>
     (if l.types.isEmpty then ["ルール：置ける枚数の上限の、カードの種類が空です"] else []) ++

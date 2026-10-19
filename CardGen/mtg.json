@@ -1,4 +1,4 @@
-{"version": 6,
+{"version": 7,
  "rules":
  {"zones":
   [{"role": "plain",
@@ -29,6 +29,9 @@
     "cells": [],
     "capacity": "many",
     "admits": ["土地", "クリーチャー", "ソーサリー", "エンチャント"]}],
+  "tagSets":
+  [{"values": ["白", "青", "黒", "赤", "緑"], "name": "色"},
+   {"values": ["騎士", "熊", "ゴブリン", "巨人"], "name": "クリーチャー・タイプ"}],
   "summonsPerTurn": 0,
   "summoningSickness": true,
   "placeLimits": [{"types": ["土地"], "count": 1}],

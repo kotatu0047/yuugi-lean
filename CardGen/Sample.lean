@@ -44,6 +44,7 @@ def rules : Rules where
       onField := false, admits := [monster, spell, trap] }]
   life := 8000
   fighters := [monster]
+  tagSets := [⟨"属性", ["闇属性", "光属性"]⟩, ⟨"種族", ["戦士族", "機械族", "魔法使い族"]⟩]
 
 /-- 範囲の指定を短く書く -/
 def sel (types : List TypeName) (side : Side) (faceUpOnly := false) (excludeSelf := false) :

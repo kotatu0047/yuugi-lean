@@ -1,5 +1,7 @@
 // ビジュアルエディタのノードのグラフと、中間表現との変換。
 // ノードの種類とつなぎ方：
+//   公理（全ゲーム共通の前提。表示だけで編集・削除できない）・集合（カードの種類・マナの色・タグの集合。1つだけ、削除できない）
+//   はどこにもつながない
 //   ルール ──▶ ゾーン（上から順に Rules.zones の順番）
 //   カード ──▶ 効果（「発動」「無効（永続）」「攻撃力の変化（永続）」）
 //   発動 ──▶ 動き（「破壊」「手札に戻す」「ドロー」「ダメージ」「回復」。上から順に行う）
@@ -9,12 +11,33 @@ using System.Linq;
 
 namespace CardGen
 {
-    public enum NodeKind { Rules, Zone, Card, Activate, Negate, Destroy, Bounce, Draw, Selector, Damage, Heal, Boost }
+    public enum NodeKind { Rules, Zone, Card, Activate, Negate, Destroy, Bounce, Draw, Selector, Damage, Heal, Boost, Axioms, Sets }
 
-    /// <summary>ルールのノードの中身（ゾーンはつないだノードから作る）</summary>
-    public sealed class RulesData
+    /// <summary>公理：すべてのゲームに共通の前提（中間表現には書かず、Lean のモデルが前提にする）</summary>
+    public static class Axioms
+    {
+        public static readonly string[] Lines =
+        {
+            "プレイヤーは自分と相手の2人",
+            "相手のフィールドは自分のフィールドを逆さまにした形（ゾーンは1人分だけ書く）",
+            $"盤面は最大 50×50 のマス目（ここでは {Grid.Size}×{Grid.Size}。相手のマスは中心のマス（{Grid.Size / 2}, {Grid.Size / 2}）について点対称）",
+            "マスの並びは縦と横の2本の序列で、大小の比較と「1つ隣」だけを使う",
+            "2人で共有するマスはない",
+            "カードの持ち主と、コントロールするプレイヤーは同じ",
+        };
+    }
+
+    /// <summary>集合のノードの中身：カードの種類・マナの色・タグの集合</summary>
+    public sealed class SetsData
     {
         public List<string> CardTypes = new List<string>();
+        public List<string> ManaColors = new List<string>();
+        public List<TagSet> TagSets = new List<TagSet>();
+    }
+
+    /// <summary>ルールのノードの中身（ゾーンはつないだノードから作る。カードの種類とマナの色は集合のノード）</summary>
+    public sealed class RulesData
+    {
         public int DeckSize;
         public int HandSize;
         public int Life;
@@ -27,7 +50,6 @@ namespace CardGen
         public bool AttackTaps;
         public bool SummoningSickness;
         public bool Blocking;
-        public List<string> ManaColors = new List<string>();
     }
 
     /// <summary>カードのノードの中身（効果はつないだノードから作る）</summary>
@@ -50,6 +72,7 @@ namespace CardGen
         public NodeKind Kind;
         public float X, Y;
         public RulesData Rules;
+        public SetsData Sets;
         public Zone Zone;
         public CardData Card;
         public Selector Selector;
@@ -64,6 +87,7 @@ namespace CardGen
             switch (kind)
             {
                 case NodeKind.Rules: n.Rules = new RulesData(); break;
+                case NodeKind.Sets: n.Sets = new SetsData(); break;
                 case NodeKind.Zone: n.Zone = new Zone { Count = 1, Role = ZoneRole.Plain, Capacity = Capacity.One }; break;
                 case NodeKind.Card: n.Card = new CardData(); break;
                 case NodeKind.Selector: n.Selector = new Selector { Side = Side.Both }; break;
@@ -84,6 +108,8 @@ namespace CardGen
             NodeKind.Damage => "ダメージ",
             NodeKind.Heal => "回復",
             NodeKind.Boost => "攻撃力の変化（永続）",
+            NodeKind.Axioms => "公理",
+            NodeKind.Sets => "集合",
             _ => "範囲",
         };
 
@@ -103,7 +129,10 @@ namespace CardGen
             k == NodeKind.Rules || k == NodeKind.Card || k == NodeKind.Activate || TakesSelector(k);
 
         /// <summary>左側（つなぎ先）の丸を持つか</summary>
-        public static bool HasInput(NodeKind k) => k != NodeKind.Rules && k != NodeKind.Card;
+        public static bool HasInput(NodeKind k) => k != NodeKind.Rules && k != NodeKind.Card && !IsFixed(k);
+
+        /// <summary>削除できず、追加もしないノード（公理・集合。どのゲームにも1つずつある）</summary>
+        public static bool IsFixed(NodeKind k) => k == NodeKind.Axioms || k == NodeKind.Sets;
 
         /// <summary>ノードの見出しに出す名前</summary>
         public string Title => Kind switch
@@ -158,6 +187,8 @@ namespace CardGen
 
         public void Remove(int id)
         {
+            var n = Find(id);
+            if (n == null || Node.IsFixed(n.Kind)) return;
             Nodes.RemoveAll(n => n.Id == id);
             Edges.RemoveAll(e => e.From == id || e.To == id);
         }
@@ -174,10 +205,17 @@ namespace CardGen
             var rules = new Rules();
             if (rulesNodes.Count == 0) structure.Add("ルールのノードがありません");
             if (rulesNodes.Count > 1) structure.Add("ルールのノードは1つだけにしてください");
+            var setsNode = Nodes.FirstOrDefault(n => n.Kind == NodeKind.Sets);
+            if (setsNode == null) structure.Add("集合のノードがありません");
+            else
+            {
+                rules.CardTypes = setsNode.Sets.CardTypes.ToList();
+                rules.ManaColors = setsNode.Sets.ManaColors.ToList();
+                rules.TagSets = setsNode.Sets.TagSets.Select(t => new TagSet { Name = t.Name, Values = t.Values.ToList() }).ToList();
+            }
             if (rulesNodes.Count > 0)
             {
                 var r = rulesNodes[0];
-                rules.CardTypes = r.Rules.CardTypes.ToList();
                 rules.DeckSize = r.Rules.DeckSize;
                 rules.HandSize = r.Rules.HandSize;
                 rules.Life = r.Rules.Life;
@@ -190,7 +228,6 @@ namespace CardGen
                 rules.AttackTaps = r.Rules.AttackTaps;
                 rules.SummoningSickness = r.Rules.SummoningSickness;
                 rules.Blocking = r.Rules.Blocking;
-                rules.ManaColors = r.Rules.ManaColors.ToList();
                 rules.Zones = Children(r).Select(z => z.Zone).ToList();
             }
             foreach (var z in Nodes.Where(n => n.Kind == NodeKind.Zone && Parents(n).Count == 0))
@@ -246,6 +283,30 @@ namespace CardGen
             return new Game { Rules = rules, Cards = cards };
         }
 
+        /// <summary>公理と集合のノードの高さの分、ほかのノードを下げる量</summary>
+        public const float FixedHeight = 600;
+
+        /// <summary>公理と集合のノードを左上に加え、ほかのノードをその分下げる。集合のノードを返す</summary>
+        public static Node AddFixedNodes(GraphDoc doc)
+        {
+            foreach (var n in doc.Nodes) n.Y += FixedHeight;
+            var id = doc.NextId;
+            var ax = Node.Make(id, NodeKind.Axioms, 40, 40);
+            var sets = Node.Make(id + 1, NodeKind.Sets, 40, 330);
+            doc.Nodes.Add(ax);
+            doc.Nodes.Add(sets);
+            return sets;
+        }
+
+        /// <summary>新しいゲーム：公理・集合・ルールのノードだけ</summary>
+        public static GraphDoc New()
+        {
+            var doc = new GraphDoc();
+            doc.Nodes.Add(Node.Make(1, NodeKind.Rules, 40, 40));
+            AddFixedNodes(doc);
+            return doc;
+        }
+
         /// <summary>中間表現からグラフを作り、ノードを並べる</summary>
         public static GraphDoc FromGame(Game g)
         {
@@ -260,7 +321,6 @@ namespace CardGen
             const float colCard = 40, colEffect = 300, colAction = 560, colSelector = 820;
 
             var r = Add(NodeKind.Rules, colCard, 40);
-            r.Rules.CardTypes = g.Rules.CardTypes.ToList();
             r.Rules.DeckSize = g.Rules.DeckSize;
             r.Rules.HandSize = g.Rules.HandSize;
             r.Rules.Life = g.Rules.Life;
@@ -273,7 +333,6 @@ namespace CardGen
             r.Rules.AttackTaps = g.Rules.AttackTaps;
             r.Rules.SummoningSickness = g.Rules.SummoningSickness;
             r.Rules.Blocking = g.Rules.Blocking;
-            r.Rules.ManaColors = g.Rules.ManaColors.ToList();
             float zy = 40;
             foreach (var z in g.Rules.Zones)
             {
@@ -350,6 +409,10 @@ namespace CardGen
                 }
                 y = Max(y + 110, ey + 20);
             }
+            var sets = AddFixedNodes(doc);
+            sets.Sets.CardTypes = g.Rules.CardTypes.ToList();
+            sets.Sets.ManaColors = g.Rules.ManaColors.ToList();
+            sets.Sets.TagSets = g.Rules.TagSets.Select(t => new TagSet { Name = t.Name, Values = t.Values.ToList() }).ToList();
             return doc;
         }
 

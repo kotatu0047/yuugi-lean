@@ -30,6 +30,8 @@ namespace CardGen.App
             NodeKind.Boost => new Color(0.25f, 0.55f, 0.55f),
             NodeKind.Damage => new Color(0.80f, 0.35f, 0.50f),
             NodeKind.Heal => new Color(0.35f, 0.65f, 0.35f),
+            NodeKind.Axioms => new Color(0.35f, 0.38f, 0.45f),
+            NodeKind.Sets => new Color(0.20f, 0.55f, 0.50f),
             _ => new Color(0.45f, 0.45f, 0.50f),
         };
 
@@ -38,6 +40,8 @@ namespace CardGen.App
             Node = node;
             style.position = Position.Absolute;
             style.width = Width;
+            // 公理・集合は文が長いので広くする（つなぐ丸はない）
+            if (Node.IsFixed(node.Kind)) style.width = 320;
             style.backgroundColor = new Color(0.17f, 0.17f, 0.19f, 0.97f);
             SetBorder(1, new Color(0.3f, 0.3f, 0.33f));
             style.borderTopLeftRadius = style.borderTopRightRadius = style.borderBottomLeftRadius = style.borderBottomRightRadius = 6;
@@ -127,14 +131,14 @@ namespace CardGen.App
         static string Summary(Node n) => n.Kind switch
         {
             NodeKind.Rules =>
-                $"カードの種類：{List(n.Rules.CardTypes)}\nデッキ {n.Rules.DeckSize}枚・初期手札 {n.Rules.HandSize}枚\n" +
+                $"デッキ {n.Rules.DeckSize}枚・初期手札 {n.Rules.HandSize}枚\n" +
                 $"ライフ {n.Rules.Life}・戦闘できる種類：{List(n.Rules.Fighters)}\n" +
                 $"召喚 {(n.Rules.SummonsPerTurn == 0 ? "制限なし" : $"1ターン{n.Rules.SummonsPerTurn}回")}・ドロー {n.Rules.DrawPerTurn}枚" +
                 (n.Rules.FirstTurnDraw ? "・先攻1ターン目も引く" : "") + (n.Rules.FirstTurnAttack ? "・先攻1ターン目も攻撃" : "") +
                 (n.Rules.PlaceLimits.Count > 0 ? $"\n上限：{string.Join("・", n.Rules.PlaceLimits.Select(l => $"{string.Join("+", l.Types)} {l.Count}枚"))}" : "") +
                 (n.Rules.AttackTaps ? "\n攻撃でタップ" : "") + (n.Rules.SummoningSickness ? (n.Rules.AttackTaps ? "・" : "\n") + "召喚酔い" : "") +
                 (n.Rules.Blocking ? "\nMTG 式の戦闘（ブロック）" : "") +
-                (n.Rules.ManaColors.Count > 0 ? $"\nマナの色：{List(n.Rules.ManaColors)}" : ""),
+                "",
             NodeKind.Zone =>
                 $"{n.Zone.Count}マス・{(n.Zone.Capacity == Capacity.One ? "1枚まで" : "何枚でも")}・" +
                 $"{(n.Zone.Role == ZoneRole.Deck ? "デッキ" : n.Zone.Role == ZoneRole.Grave ? "墓地" : n.Zone.OnField ? "フィールド上" : "フィールド外")}\n" +
@@ -145,6 +149,11 @@ namespace CardGen.App
                 (n.Card.Attack > 0 || n.Card.Defense > 0 ? $"\n攻撃力 {n.Card.Attack}・守備力 {n.Card.Defense}" : "") +
                 (n.Card.Mana > 0 ? $"\nタップで{(n.Card.ManaColor == "" ? "無色" : n.Card.ManaColor)}マナ {n.Card.Mana}" : "") +
                 (n.Card.Cost > 0 || n.Card.ColorCost.Count > 0 ? $"\nコスト {(n.Card.Cost > 0 ? n.Card.Cost.ToString() : "")}{(n.Card.Cost > 0 && n.Card.ColorCost.Count > 0 ? "＋" : "")}{string.Concat(n.Card.ColorCost)}" : ""),
+            NodeKind.Axioms => "編集できません\n" + string.Join("\n", Axioms.Lines.Select((l, i) => $"{i + 1}. {l}")),
+            NodeKind.Sets =>
+                $"カードの種類：{List(n.Sets.CardTypes)}" +
+                (n.Sets.ManaColors.Count > 0 ? $"\nマナの色：{List(n.Sets.ManaColors)}" : "") +
+                string.Concat(n.Sets.TagSets.Select(t => $"\n{t.Name}：{List(t.Values)}")),
             NodeKind.Activate => "発動し、つないだ動きを上から順に行う",
             NodeKind.Destroy => "つないだ範囲のカードをすべて破壊し、持ち主の墓地へ送る",
             NodeKind.Bounce => "つないだ範囲のカードをすべて持ち主の手札に戻す",

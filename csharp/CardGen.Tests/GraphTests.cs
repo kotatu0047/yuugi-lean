@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using CardGen;
@@ -92,5 +93,25 @@ public class GraphTests
         Assert.Equal("証明済み", Report.StatusLabel(r.Claims[0].Status));
         Assert.Equal("self", r.Negation.Groups[0].Board[0].Side);
         Assert.Null(r.Negation.Theorem);
+    }
+
+    [Fact]
+    public void Axioms_and_sets_are_fixed()
+    {
+        var doc = GraphDoc.New();
+        Assert.Contains(doc.Nodes, n => n.Kind == NodeKind.Axioms);
+        var sets = doc.Nodes.Single(n => n.Kind == NodeKind.Sets);
+        var rules = doc.Nodes.Single(n => n.Kind == NodeKind.Rules);
+        // 公理・集合・ルールの順に上から並ぶ
+        Assert.True(doc.Nodes.Single(n => n.Kind == NodeKind.Axioms).Y < sets.Y && sets.Y < rules.Y);
+        foreach (var n in doc.Nodes.Where(n => Node.IsFixed(n.Kind)).ToList()) doc.Remove(n.Id);
+        Assert.Equal(3, doc.Nodes.Count);
+        // カードの種類・マナの色・タグの集合は集合のノードから
+        sets.Sets.CardTypes.Add("土地");
+        sets.Sets.TagSets.Add(new TagSet { Name = "色", Values = new List<string> { "赤" } });
+        var g = doc.ToGame(out var structure);
+        Assert.Empty(structure);
+        Assert.Equal(new[] { "土地" }, g.Rules.CardTypes);
+        Assert.Equal("色", g.Rules.TagSets.Single().Name);
     }
 }

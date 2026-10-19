@@ -15,6 +15,7 @@ namespace CardGen
             if (s.Types.Count == 0) yield return $"{where}：範囲のカードの種類が空です";
             foreach (var t in s.Types.Where(t => !r.CardTypes.Contains(t)))
                 yield return $"{where}：範囲のカードの種類「{t}」はルールにありません";
+            foreach (var t in r.UnknownTags(s.Tags)) yield return $"{where}：範囲のタグ「{t}」はどのタグの集合にもありません";
         }
 
         static IEnumerable<string> Action(Rules r, string where, Action a) => a switch
@@ -51,6 +52,7 @@ namespace CardGen
         static IEnumerable<string> Card(Rules r, Card c)
         {
             if (!r.CardTypes.Contains(c.Type)) yield return $"カード「{c.Name}」：種類「{c.Type}」はルールにありません";
+            foreach (var t in r.UnknownTags(c.Tags)) yield return $"カード「{c.Name}」：タグ「{t}」はどのタグの集合にもありません";
             foreach (var col in c.ColorCost.Distinct().Where(x => !r.ManaColors.Contains(x)))
                 yield return $"カード「{c.Name}」：コストの色「{col}」はルールのマナの色にありません";
             if (c.ManaColor != "" && !r.ManaColors.Contains(c.ManaColor))
@@ -96,6 +98,10 @@ namespace CardGen
                 yield return $"ルール：戦闘できる種類「{t}」はカードの種類にありません";
             if (r.Fighters.Count > 0 && r.Life == 0) yield return "ルール：戦闘できる種類があるのに、初期ライフが0です";
             foreach (var col in Dups(r.ManaColors)) yield return $"ルール：マナの色「{col}」が重複しています";
+            foreach (var n in Dups(r.TagSets.Select(t => t.Name).ToList())) yield return $"ルール：タグの集合「{n}」が重複しています";
+            if (r.TagSets.Any(t => t.Name.Length == 0)) yield return "ルール：タグの集合の名前が空です";
+            foreach (var t in r.TagSets)
+                foreach (var v in Dups(t.Values)) yield return $"ルール：タグの集合「{t.Name}」で「{v}」が重複しています";
             if (r.ManaColors.Contains("")) yield return "ルール：マナの色に空の名前があります";
             foreach (var l in r.PlaceLimits)
             {

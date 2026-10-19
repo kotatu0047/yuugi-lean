@@ -66,6 +66,13 @@ namespace CardGen
         public int Count;
     }
 
+    /// <summary>タグの集合（例：属性＝闇属性・光属性）</summary>
+    public sealed class TagSet
+    {
+        public string Name = "";
+        public List<string> Values = new List<string>();
+    }
+
     /// <summary>ゲームのルール</summary>
     public sealed class Rules
     {
@@ -96,6 +103,13 @@ namespace CardGen
         public bool Blocking;
         /// <summary>マナの色（例：白・青・黒・赤・緑）。空なら色のマナは使わない</summary>
         public List<string> ManaColors = new List<string>();
+        /// <summary>タグの集合。空でなければ、カードと範囲の指定のタグはどれかの集合の値</summary>
+        public List<TagSet> TagSets = new List<TagSet>();
+
+        /// <summary>Rules.unknownTags：タグの集合があるのに、どの集合にもないタグ（重複を除く）</summary>
+        public List<string> UnknownTags(List<string> tags) =>
+            TagSets.Count == 0 ? new List<string>()
+                : tags.Where(t => !TagSets.Any(s => s.Values.Contains(t))).Distinct().ToList();
 
         /// <summary>i 番目のゾーンが「フィールド上」に数えるゾーンか（Rules.onFieldZone）</summary>
         public bool OnFieldZone(int i) =>
@@ -245,7 +259,7 @@ namespace CardGen
     /// <summary>エディタが出力する中間表現の全体</summary>
     public sealed class Game
     {
-        public const int CurrentVersion = 6;
+        public const int CurrentVersion = 7;
         public int Version = CurrentVersion;
         public Rules Rules = new Rules();
         public List<Card> Cards = new List<Card>();

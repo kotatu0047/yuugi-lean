@@ -94,7 +94,7 @@ namespace CardGen.App
             toolbar.Add(sep);
             toolbar.Add(new Label("追加：") { style = { marginRight = 4 } });
             foreach (NodeKind k in Enum.GetValues(typeof(NodeKind)))
-                if (k != NodeKind.Rules) toolbar.Add(MakeButton(Node.KindLabel(k), () => canvas.AddNode(k)));
+                if (k != NodeKind.Rules && !Node.IsFixed(k)) toolbar.Add(MakeButton(Node.KindLabel(k), () => canvas.AddNode(k)));
             toolbar.Add(MakeButton("削除", () => canvas.RemoveSelected()));
             var sep2 = new VisualElement();
             sep2.style.width = 16;
@@ -118,6 +118,7 @@ namespace CardGen.App
             side.style.borderLeftWidth = 1;
             side.style.borderLeftColor = new Color(0.3f, 0.3f, 0.33f);
             inspector = new Inspector();
+            inspector.Sets = () => canvas.Doc.Nodes.FirstOrDefault(x => x.Kind == NodeKind.Sets)?.Sets;
             inspector.Edited += n => { canvas.RefreshNode(n); OnModelChanged(); };
             var inspScroll = new ScrollView();
             inspScroll.style.height = new Length(42, LengthUnit.Percent);
@@ -220,9 +221,7 @@ namespace CardGen.App
 
         void NewDoc()
         {
-            var doc = new GraphDoc();
-            doc.Nodes.Add(Node.Make(1, NodeKind.Rules, 40, 40));
-            SetDoc(doc, "新しいゲームを作りました");
+            SetDoc(GraphDoc.New(), "新しいゲームを作りました（集合のノードで、カードの種類などを決めてください）");
         }
 
         void LoadSample()
@@ -421,7 +420,7 @@ namespace CardGen.App
 
         // ---- コマンドライン（動作確認用）----
         //   -cardgen-mtg                      最初に MTG 風の見本を読み込む
-        //   -cardgen-select <ノードの番号>   そのノードを選ぶ
+        //   -cardgen-select <ノードの番号>   そのノードを選ぶ（Sets・Axioms などの種類の名前なら、その種類の最初のノード）
         //   -cardgen-focus <ノードの番号>    そのノードが見えるようにキャンバスを動かす
         //   -cardgen-check                    Lean で検査する
         //   -cardgen-results-end              検査の結果を一番下まで送る
@@ -443,6 +442,12 @@ namespace CardGen.App
             if (select != null && int.TryParse(select, out var id))
             {
                 var n = canvas.Doc.Find(id);
+                if (n != null) canvas.Select(n);
+            }
+            else if (select != null && Enum.TryParse<NodeKind>(select, true, out var kind))
+            {
+                // 種類の名前でも選べる（例：-cardgen-select Sets）
+                var n = canvas.Doc.Nodes.FirstOrDefault(x => x.Kind == kind);
                 if (n != null) canvas.Select(n);
             }
             var focus = Arg("-cardgen-focus");

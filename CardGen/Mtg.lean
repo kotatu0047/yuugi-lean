@@ -50,6 +50,7 @@ def rules : Rules where
   summoningSickness := true
   blocking := true
   manaColors := ["白", "青", "黒", "赤", "緑"]
+  tagSets := [⟨"色", ["白", "青", "黒", "赤", "緑"]⟩, ⟨"クリーチャー・タイプ", ["騎士", "熊", "ゴブリン", "巨人"]⟩]
 
 def mountain : Card := { name := "山", type := land, tags := [], effects := [], mana := 1, manaColor := "赤" }
 def forest : Card := { name := "森", type := land, tags := [], effects := [], mana := 1, manaColor := "緑" }

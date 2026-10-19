@@ -1,4 +1,4 @@
-{"version": 6,
+{"version": 7,
  "rules":
  {"zones":
   [{"role": "plain",
@@ -39,6 +39,9 @@
     "cells": [],
     "capacity": "many",
     "admits": ["モンスター", "魔法", "罠"]}],
+  "tagSets":
+  [{"values": ["闇属性", "光属性"], "name": "属性"},
+   {"values": ["戦士族", "機械族", "魔法使い族"], "name": "種族"}],
   "summonsPerTurn": 1,
   "summoningSickness": false,
   "placeLimits": [],

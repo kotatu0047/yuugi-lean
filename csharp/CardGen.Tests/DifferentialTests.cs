@@ -277,8 +277,28 @@ public class DifferentialTests
 
     /// <summary>見本から、版 3 にないもの（マスの位置・マスの関係）を除いた JSON と、それを上げたときに期待する Game</summary>
     /// <summary>版 5 で加えたもの（マナ・タップなど）を除く（見本はどれも使っていない）</summary>
+    static JObject WithoutTagSets(JObject o)
+    {
+        o["version"] = 6;
+        ((JObject)o["rules"]).Remove("tagSets");
+        return o;
+    }
+
+    [Fact]
+    public void Version_6_is_upgraded()
+    {
+        var src = (JObject)JToken.Parse(File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "sample.json")));
+        src["rules"]["tagSets"] = new JArray();
+        var o = WithoutTagSets((JObject)src.DeepClone());
+        Assert.Throws<FormatException>(() => IrJson.ParseGame(o.DeepClone()));
+        Assert.True(IrJson.Upgrade(o));
+        Assert.True(JToken.DeepEquals(src, o));
+        Assert.False(IrJson.Upgrade(o));
+    }
+
     static JObject WithoutColors(JObject o)
     {
+        o = WithoutTagSets(o);
         o["version"] = 5;
         ((JObject)o["rules"]).Remove("manaColors");
         foreach (var c in o["cards"]) { ((JObject)c).Remove("colorCost"); ((JObject)c).Remove("manaColor"); }
@@ -289,6 +309,7 @@ public class DifferentialTests
     public void Version_5_is_upgraded()
     {
         var src = (JObject)JToken.Parse(File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "sample.json")));
+        src["rules"]["tagSets"] = new JArray();
         var o = WithoutColors((JObject)src.DeepClone());
         Assert.Throws<FormatException>(() => IrJson.ParseGame(o.DeepClone()));
         Assert.True(IrJson.Upgrade(o));
@@ -319,6 +340,7 @@ public class DifferentialTests
     public void Version_4_is_upgraded()
     {
         var src = (JObject)JToken.Parse(File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "sample.json")));
+        src["rules"]["tagSets"] = new JArray();
         var o = WithoutMana((JObject)src.DeepClone());
         Assert.Throws<FormatException>(() => IrJson.ParseGame(o.DeepClone()));
         Assert.True(IrJson.Upgrade(o));
@@ -331,6 +353,7 @@ public class DifferentialTests
         var o = (JObject)JToken.Parse(File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "sample.json")));
         var expected = IrJson.ParseGame(o.DeepClone());
         foreach (var z in expected.Rules.Zones) z.Cells.Clear();
+        expected.Rules.TagSets.Clear();
         foreach (var c in expected.Cards)
             foreach (var e in c.Effects)
             {

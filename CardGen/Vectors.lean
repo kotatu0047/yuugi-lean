@@ -129,6 +129,8 @@ def checkCases : List Game :=
     { g with rules := { r with life := 0 } },
     { g with rules := { r with placeLimits := [⟨[], 0⟩, ⟨["土地", "罠"], 1⟩] } },
     { g with rules := { r with manaColors := ["赤", "赤", ""] } },
+    { g with rules := { r with tagSets := [⟨"属性", ["闇属性", "闇属性"]⟩, ⟨"属性", []⟩, ⟨"", ["機械族"]⟩] } },
+    { g with rules := { r with tagSets := [⟨"属性", ["闇属性"]⟩] } },
     { g with rules := { r with manaColors := ["赤"] },
              cards := [{ Sample.jinzo with colorCost := ["紫", "赤", "紫"], manaColor := "青" }] },
     { g with cards := [{ Sample.fireball with effects := [.activated [.damage 0, .heal 0]] }] },

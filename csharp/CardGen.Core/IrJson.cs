@@ -152,6 +152,11 @@ namespace CardGen
                 SummoningSickness = Bool(o, "summoningSickness"),
                 Blocking = Bool(o, "blocking"),
                 ManaColors = Strs(o, "manaColors"),
+                TagSets = Arr(o, "tagSets", t =>
+                {
+                    var s = Obj(t);
+                    return new TagSet { Name = Str(s, "name"), Values = Strs(s, "values") };
+                }),
             };
         }
 
@@ -179,7 +184,7 @@ namespace CardGen
         {
             if (o["version"]?.Type != JTokenType.Integer || !(o["rules"] is JObject r)) return false;
             var v = (int)o["version"];
-            if (v < 2 || v > 5) return false;
+            if (v < 2 || v > 6) return false;
             if (v == 2)
             {
                 if (r["summonsPerTurn"] == null) r["summonsPerTurn"] = 1;
@@ -198,6 +203,7 @@ namespace CardGen
             if (r["summoningSickness"] == null) r["summoningSickness"] = false;
             if (r["blocking"] == null) r["blocking"] = false;
             if (r["manaColors"] == null) r["manaColors"] = new JArray();
+            if (r["tagSets"] == null) r["tagSets"] = new JArray();
             if (o["cards"] is JArray cs)
                 foreach (var c in cs.OfType<JObject>())
                 {
@@ -282,6 +288,7 @@ namespace CardGen
             ["summoningSickness"] = r.SummoningSickness,
             ["blocking"] = r.Blocking,
             ["manaColors"] = new JArray(r.ManaColors),
+            ["tagSets"] = new JArray(r.TagSets.Select(t => new JObject { ["name"] = t.Name, ["values"] = new JArray(t.Values) })),
         };
 
         public static JObject ToJson(Game g) => new JObject

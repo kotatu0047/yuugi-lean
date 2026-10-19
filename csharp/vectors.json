@@ -395,6 +395,9 @@
       "cells": [],
       "capacity": "many",
       "admits": ["モンスター", "魔法", "罠"]}],
+    "tagSets":
+    [{"values": ["闇属性", "光属性"], "name": "属性"},
+     {"values": ["戦士族", "機械族", "魔法使い族"], "name": "種族"}],
     "summonsPerTurn": 2,
     "summoningSickness": true,
     "placeLimits": [],
@@ -869,6 +872,9 @@
       "cells": [],
       "capacity": "many",
       "admits": ["モンスター", "魔法", "罠"]}],
+    "tagSets":
+    [{"values": ["闇属性", "光属性"], "name": "属性"},
+     {"values": ["戦士族", "機械族", "魔法使い族"], "name": "種族"}],
     "summonsPerTurn": 1,
     "summoningSickness": false,
     "placeLimits": [{"types": ["罠"], "count": 1}],
@@ -1449,6 +1455,9 @@
       "cells": [],
       "capacity": "many",
       "admits": ["モンスター", "魔法", "罠"]}],
+    "tagSets":
+    [{"values": ["闇属性", "光属性"], "name": "属性"},
+     {"values": ["戦士族", "機械族", "魔法使い族"], "name": "種族"}],
     "summonsPerTurn": 1,
     "summoningSickness": false,
     "placeLimits": [],
@@ -1858,6 +1867,9 @@
       "cells": [],
       "capacity": "many",
       "admits": ["モンスター", "魔法", "罠"]}],
+    "tagSets":
+    [{"values": ["闇属性", "光属性"], "name": "属性"},
+     {"values": ["戦士族", "機械族", "魔法使い族"], "name": "種族"}],
     "summonsPerTurn": 1,
     "summoningSickness": true,
     "placeLimits":
@@ -2351,6 +2363,9 @@
       "cells": [],
       "capacity": "many",
       "admits": ["モンスター", "魔法", "罠"]}],
+    "tagSets":
+    [{"values": ["闇属性", "光属性"], "name": "属性"},
+     {"values": ["戦士族", "機械族", "魔法使い族"], "name": "種族"}],
     "summonsPerTurn": 0,
     "summoningSickness": true,
     "placeLimits": [],
@@ -2844,6 +2859,9 @@
       "cells": [],
       "capacity": "many",
       "admits": ["モンスター", "魔法", "罠"]}],
+    "tagSets":
+    [{"values": ["闇属性", "光属性"], "name": "属性"},
+     {"values": ["戦士族", "機械族", "魔法使い族"], "name": "種族"}],
     "summonsPerTurn": 2,
     "summoningSickness": true,
     "placeLimits":
@@ -3206,6 +3224,9 @@
       "cells": [],
       "capacity": "many",
       "admits": ["モンスター", "魔法", "罠"]}],
+    "tagSets":
+    [{"values": ["闇属性", "光属性"], "name": "属性"},
+     {"values": ["戦士族", "機械族", "魔法使い族"], "name": "種族"}],
     "summonsPerTurn": 1,
     "summoningSickness": false,
     "placeLimits": [],
@@ -3736,6 +3757,9 @@
       "cells": [],
       "capacity": "many",
       "admits": ["モンスター", "魔法", "罠"]}],
+    "tagSets":
+    [{"values": ["闇属性", "光属性"], "name": "属性"},
+     {"values": ["戦士族", "機械族", "魔法使い族"], "name": "種族"}],
     "summonsPerTurn": 1,
     "summoningSickness": false,
     "placeLimits": [],
@@ -4227,6 +4251,9 @@
       "cells": [],
       "capacity": "many",
       "admits": ["モンスター", "魔法", "罠"]}],
+    "tagSets":
+    [{"values": ["闇属性", "光属性"], "name": "属性"},
+     {"values": ["戦士族", "機械族", "魔法使い族"], "name": "種族"}],
     "summonsPerTurn": 0,
     "summoningSickness": true,
     "placeLimits":
@@ -4740,6 +4767,9 @@
       "cells": [],
       "capacity": "many",
       "admits": ["モンスター", "魔法", "罠"]}],
+    "tagSets":
+    [{"values": ["闇属性", "光属性"], "name": "属性"},
+     {"values": ["戦士族", "機械族", "魔法使い族"], "name": "種族"}],
     "summonsPerTurn": 1,
     "summoningSickness": true,
     "placeLimits": [],
@@ -5322,6 +5352,9 @@
       "cells": [],
       "capacity": "many",
       "admits": ["モンスター", "魔法", "罠"]}],
+    "tagSets":
+    [{"values": ["闇属性", "光属性"], "name": "属性"},
+     {"values": ["戦士族", "機械族", "魔法使い族"], "name": "種族"}],
     "summonsPerTurn": 2,
     "summoningSickness": false,
     "placeLimits": [{"types": ["罠"], "count": 1}],
@@ -5852,6 +5885,9 @@
       "cells": [],
       "capacity": "many",
       "admits": ["モンスター", "魔法", "罠"]}],
+    "tagSets":
+    [{"values": ["闇属性", "光属性"], "name": "属性"},
+     {"values": ["戦士族", "機械族", "魔法使い族"], "name": "種族"}],
     "summonsPerTurn": 2,
     "summoningSickness": false,
     "placeLimits": [{"types": ["罠"], "count": 1}],
@@ -6346,6 +6382,9 @@
       "cells": [],
       "capacity": "many",
       "admits": ["モンスター", "魔法", "罠"]}],
+    "tagSets":
+    [{"values": ["闇属性", "光属性"], "name": "属性"},
+     {"values": ["戦士族", "機械族", "魔法使い族"], "name": "種族"}],
     "summonsPerTurn": 1,
     "summoningSickness": true,
     "placeLimits":
@@ -6683,6 +6722,9 @@
       "cells": [],
       "capacity": "many",
       "admits": ["モンスター", "魔法", "罠"]}],
+    "tagSets":
+    [{"values": ["闇属性", "光属性"], "name": "属性"},
+     {"values": ["戦士族", "機械族", "魔法使い族"], "name": "種族"}],
     "summonsPerTurn": 1,
     "summoningSickness": true,
     "placeLimits": [{"types": ["罠"], "count": 1}],
@@ -7130,6 +7172,9 @@
       "cells": [],
       "capacity": "many",
       "admits": ["モンスター", "魔法", "罠"]}],
+    "tagSets":
+    [{"values": ["闇属性", "光属性"], "name": "属性"},
+     {"values": ["戦士族", "機械族", "魔法使い族"], "name": "種族"}],
     "summonsPerTurn": 1,
     "summoningSickness": true,
     "placeLimits": [],
@@ -7523,6 +7568,9 @@
       "cells": [],
       "capacity": "many",
       "admits": ["モンスター", "魔法", "罠"]}],
+    "tagSets":
+    [{"values": ["闇属性", "光属性"], "name": "属性"},
+     {"values": ["戦士族", "機械族", "魔法使い族"], "name": "種族"}],
     "summonsPerTurn": 2,
     "summoningSickness": true,
     "placeLimits":
@@ -8019,6 +8067,9 @@
       "cells": [],
       "capacity": "many",
       "admits": ["モンスター", "魔法", "罠"]}],
+    "tagSets":
+    [{"values": ["闇属性", "光属性"], "name": "属性"},
+     {"values": ["戦士族", "機械族", "魔法使い族"], "name": "種族"}],
     "summonsPerTurn": 1,
     "summoningSickness": false,
     "placeLimits": [],
@@ -8499,6 +8550,9 @@
       "cells": [],
       "capacity": "many",
       "admits": ["モンスター", "魔法", "罠"]}],
+    "tagSets":
+    [{"values": ["闇属性", "光属性"], "name": "属性"},
+     {"values": ["戦士族", "機械族", "魔法使い族"], "name": "種族"}],
     "summonsPerTurn": 0,
     "summoningSickness": true,
     "placeLimits": [{"types": ["罠"], "count": 1}],
@@ -9029,6 +9083,9 @@
       "cells": [],
       "capacity": "many",
       "admits": ["モンスター", "魔法", "罠"]}],
+    "tagSets":
+    [{"values": ["闇属性", "光属性"], "name": "属性"},
+     {"values": ["戦士族", "機械族", "魔法使い族"], "name": "種族"}],
     "summonsPerTurn": 1,
     "summoningSickness": false,
     "placeLimits": [],
@@ -9453,6 +9510,9 @@
       "cells": [],
       "capacity": "many",
       "admits": ["モンスター", "魔法", "罠"]}],
+    "tagSets":
+    [{"values": ["闇属性", "光属性"], "name": "属性"},
+     {"values": ["戦士族", "機械族", "魔法使い族"], "name": "種族"}],
     "summonsPerTurn": 2,
     "summoningSickness": false,
     "placeLimits": [{"types": ["罠"], "count": 1}],
@@ -9840,6 +9900,9 @@
       "cells": [],
       "capacity": "many",
       "admits": ["モンスター", "魔法", "罠"]}],
+    "tagSets":
+    [{"values": ["闇属性", "光属性"], "name": "属性"},
+     {"values": ["戦士族", "機械族", "魔法使い族"], "name": "種族"}],
     "summonsPerTurn": 0,
     "summoningSickness": true,
     "placeLimits": [],
@@ -10278,6 +10341,9 @@
       "cells": [],
       "capacity": "many",
       "admits": ["モンスター", "魔法", "罠"]}],
+    "tagSets":
+    [{"values": ["闇属性", "光属性"], "name": "属性"},
+     {"values": ["戦士族", "機械族", "魔法使い族"], "name": "種族"}],
     "summonsPerTurn": 2,
     "summoningSickness": true,
     "placeLimits":
@@ -10688,6 +10754,9 @@
       "cells": [],
       "capacity": "many",
       "admits": ["モンスター", "魔法", "罠"]}],
+    "tagSets":
+    [{"values": ["闇属性", "光属性"], "name": "属性"},
+     {"values": ["戦士族", "機械族", "魔法使い族"], "name": "種族"}],
     "summonsPerTurn": 2,
     "summoningSickness": false,
     "placeLimits": [],
@@ -11146,6 +11215,9 @@
       "cells": [],
       "capacity": "many",
       "admits": ["モンスター", "魔法", "罠"]}],
+    "tagSets":
+    [{"values": ["闇属性", "光属性"], "name": "属性"},
+     {"values": ["戦士族", "機械族", "魔法使い族"], "name": "種族"}],
     "summonsPerTurn": 2,
     "summoningSickness": true,
     "placeLimits":
@@ -11747,6 +11819,9 @@
       "cells": [],
       "capacity": "many",
       "admits": ["モンスター", "魔法", "罠"]}],
+    "tagSets":
+    [{"values": ["闇属性", "光属性"], "name": "属性"},
+     {"values": ["戦士族", "機械族", "魔法使い族"], "name": "種族"}],
     "summonsPerTurn": 1,
     "summoningSickness": true,
     "placeLimits": [{"types": ["罠"], "count": 1}],
@@ -12130,6 +12205,9 @@
       "cells": [],
       "capacity": "many",
       "admits": ["モンスター", "魔法", "罠"]}],
+    "tagSets":
+    [{"values": ["闇属性", "光属性"], "name": "属性"},
+     {"values": ["戦士族", "機械族", "魔法使い族"], "name": "種族"}],
     "summonsPerTurn": 0,
     "summoningSickness": false,
     "placeLimits":
@@ -12896,6 +12974,9 @@
       "cells": [],
       "capacity": "many",
       "admits": ["モンスター", "魔法", "罠"]}],
+    "tagSets":
+    [{"values": ["闇属性", "光属性"], "name": "属性"},
+     {"values": ["戦士族", "機械族", "魔法使い族"], "name": "種族"}],
     "summonsPerTurn": 0,
     "summoningSickness": true,
     "placeLimits": [],
@@ -13407,6 +13488,9 @@
       "cells": [],
       "capacity": "many",
       "admits": ["モンスター", "魔法", "罠"]}],
+    "tagSets":
+    [{"values": ["闇属性", "光属性"], "name": "属性"},
+     {"values": ["戦士族", "機械族", "魔法使い族"], "name": "種族"}],
     "summonsPerTurn": 0,
     "summoningSickness": true,
     "placeLimits":
@@ -13817,6 +13901,9 @@
       "cells": [],
       "capacity": "many",
       "admits": ["モンスター", "魔法", "罠"]}],
+    "tagSets":
+    [{"values": ["闇属性", "光属性"], "name": "属性"},
+     {"values": ["戦士族", "機械族", "魔法使い族"], "name": "種族"}],
     "summonsPerTurn": 2,
     "summoningSickness": true,
     "placeLimits":
@@ -14258,6 +14345,9 @@
       "cells": [],
       "capacity": "many",
       "admits": ["モンスター", "魔法", "罠"]}],
+    "tagSets":
+    [{"values": ["闇属性", "光属性"], "name": "属性"},
+     {"values": ["戦士族", "機械族", "魔法使い族"], "name": "種族"}],
     "summonsPerTurn": 1,
     "summoningSickness": true,
     "placeLimits": [],
@@ -14845,6 +14935,9 @@
       "cells": [],
       "capacity": "many",
       "admits": ["モンスター", "魔法", "罠"]}],
+    "tagSets":
+    [{"values": ["闇属性", "光属性"], "name": "属性"},
+     {"values": ["戦士族", "機械族", "魔法使い族"], "name": "種族"}],
     "summonsPerTurn": 2,
     "summoningSickness": true,
     "placeLimits": [],
@@ -15477,6 +15570,9 @@
       "cells": [],
       "capacity": "many",
       "admits": ["モンスター", "魔法", "罠"]}],
+    "tagSets":
+    [{"values": ["闇属性", "光属性"], "name": "属性"},
+     {"values": ["戦士族", "機械族", "魔法使い族"], "name": "種族"}],
     "summonsPerTurn": 2,
     "summoningSickness": false,
     "placeLimits":
@@ -16151,6 +16247,9 @@
       "cells": [],
       "capacity": "many",
       "admits": ["モンスター", "魔法", "罠"]}],
+    "tagSets":
+    [{"values": ["闇属性", "光属性"], "name": "属性"},
+     {"values": ["戦士族", "機械族", "魔法使い族"], "name": "種族"}],
     "summonsPerTurn": 0,
     "summoningSickness": false,
     "placeLimits": [{"types": ["罠"], "count": 1}],
@@ -16589,6 +16688,9 @@
       "cells": [],
       "capacity": "many",
       "admits": ["モンスター", "魔法", "罠"]}],
+    "tagSets":
+    [{"values": ["闇属性", "光属性"], "name": "属性"},
+     {"values": ["戦士族", "機械族", "魔法使い族"], "name": "種族"}],
     "summonsPerTurn": 2,
     "summoningSickness": true,
     "placeLimits": [{"types": ["罠"], "count": 1}],
@@ -17254,6 +17356,9 @@
       "cells": [],
       "capacity": "many",
       "admits": ["モンスター", "魔法", "罠"]}],
+    "tagSets":
+    [{"values": ["闇属性", "光属性"], "name": "属性"},
+     {"values": ["戦士族", "機械族", "魔法使い族"], "name": "種族"}],
     "summonsPerTurn": 1,
     "summoningSickness": true,
     "placeLimits": [],
@@ -17644,6 +17749,9 @@
       "cells": [],
       "capacity": "many",
       "admits": ["モンスター", "魔法", "罠"]}],
+    "tagSets":
+    [{"values": ["闇属性", "光属性"], "name": "属性"},
+     {"values": ["戦士族", "機械族", "魔法使い族"], "name": "種族"}],
     "summonsPerTurn": 1,
     "summoningSickness": true,
     "placeLimits":
@@ -18044,6 +18152,9 @@
       "cells": [],
       "capacity": "many",
       "admits": ["モンスター", "魔法", "罠"]}],
+    "tagSets":
+    [{"values": ["闇属性", "光属性"], "name": "属性"},
+     {"values": ["戦士族", "機械族", "魔法使い族"], "name": "種族"}],
     "summonsPerTurn": 0,
     "summoningSickness": true,
     "placeLimits": [{"types": ["罠"], "count": 1}],
@@ -18550,6 +18661,9 @@
       "cells": [],
       "capacity": "many",
       "admits": ["モンスター", "魔法", "罠"]}],
+    "tagSets":
+    [{"values": ["闇属性", "光属性"], "name": "属性"},
+     {"values": ["戦士族", "機械族", "魔法使い族"], "name": "種族"}],
     "summonsPerTurn": 2,
     "summoningSickness": false,
     "placeLimits": [{"types": ["罠"], "count": 1}],
@@ -19146,6 +19260,9 @@
       "cells": [],
       "capacity": "many",
       "admits": ["モンスター", "魔法", "罠"]}],
+    "tagSets":
+    [{"values": ["闇属性", "光属性"], "name": "属性"},
+     {"values": ["戦士族", "機械族", "魔法使い族"], "name": "種族"}],
     "summonsPerTurn": 1,
     "summoningSickness": true,
     "placeLimits": [],
@@ -19637,6 +19754,9 @@
       "cells": [],
       "capacity": "many",
       "admits": ["モンスター", "魔法", "罠"]}],
+    "tagSets":
+    [{"values": ["闇属性", "光属性"], "name": "属性"},
+     {"values": ["戦士族", "機械族", "魔法使い族"], "name": "種族"}],
     "summonsPerTurn": 2,
     "summoningSickness": false,
     "placeLimits": [{"types": ["罠"], "count": 1}],
@@ -20136,6 +20256,9 @@
       "cells": [],
       "capacity": "many",
       "admits": ["モンスター", "魔法", "罠"]}],
+    "tagSets":
+    [{"values": ["闇属性", "光属性"], "name": "属性"},
+     {"values": ["戦士族", "機械族", "魔法使い族"], "name": "種族"}],
     "summonsPerTurn": 2,
     "summoningSickness": true,
     "placeLimits": [],
@@ -20839,6 +20962,9 @@
       "cells": [],
       "capacity": "many",
       "admits": ["モンスター", "魔法", "罠"]}],
+    "tagSets":
+    [{"values": ["闇属性", "光属性"], "name": "属性"},
+     {"values": ["戦士族", "機械族", "魔法使い族"], "name": "種族"}],
     "summonsPerTurn": 2,
     "summoningSickness": false,
     "placeLimits":
@@ -21504,6 +21630,9 @@
       "cells": [],
       "capacity": "many",
       "admits": ["モンスター", "魔法", "罠"]}],
+    "tagSets":
+    [{"values": ["闇属性", "光属性"], "name": "属性"},
+     {"values": ["戦士族", "機械族", "魔法使い族"], "name": "種族"}],
     "summonsPerTurn": 1,
     "summoningSickness": false,
     "placeLimits":
@@ -21944,6 +22073,9 @@
       "cells": [],
       "capacity": "many",
       "admits": ["モンスター", "魔法", "罠"]}],
+    "tagSets":
+    [{"values": ["闇属性", "光属性"], "name": "属性"},
+     {"values": ["戦士族", "機械族", "魔法使い族"], "name": "種族"}],
     "summonsPerTurn": 2,
     "summoningSickness": false,
     "placeLimits": [],
@@ -22646,6 +22778,9 @@
       "cells": [],
       "capacity": "many",
       "admits": ["モンスター", "魔法", "罠"]}],
+    "tagSets":
+    [{"values": ["闇属性", "光属性"], "name": "属性"},
+     {"values": ["戦士族", "機械族", "魔法使い族"], "name": "種族"}],
     "summonsPerTurn": 0,
     "summoningSickness": false,
     "placeLimits": [],
@@ -23043,6 +23178,9 @@
       "cells": [],
       "capacity": "many",
       "admits": ["モンスター", "魔法", "罠"]}],
+    "tagSets":
+    [{"values": ["闇属性", "光属性"], "name": "属性"},
+     {"values": ["戦士族", "機械族", "魔法使い族"], "name": "種族"}],
     "summonsPerTurn": 2,
     "summoningSickness": false,
     "placeLimits": [{"types": ["罠"], "count": 1}],
@@ -23477,6 +23615,9 @@
       "cells": [],
       "capacity": "many",
       "admits": ["モンスター", "魔法", "罠"]}],
+    "tagSets":
+    [{"values": ["闇属性", "光属性"], "name": "属性"},
+     {"values": ["戦士族", "機械族", "魔法使い族"], "name": "種族"}],
     "summonsPerTurn": 2,
     "summoningSickness": false,
     "placeLimits":
@@ -23861,6 +24002,9 @@
       "cells": [],
       "capacity": "many",
       "admits": ["モンスター", "魔法", "罠"]}],
+    "tagSets":
+    [{"values": ["闇属性", "光属性"], "name": "属性"},
+     {"values": ["戦士族", "機械族", "魔法使い族"], "name": "種族"}],
     "summonsPerTurn": 2,
     "summoningSickness": false,
     "placeLimits":
@@ -24316,6 +24460,9 @@
       "cells": [],
       "capacity": "many",
       "admits": ["モンスター", "魔法", "罠"]}],
+    "tagSets":
+    [{"values": ["闇属性", "光属性"], "name": "属性"},
+     {"values": ["戦士族", "機械族", "魔法使い族"], "name": "種族"}],
     "summonsPerTurn": 0,
     "summoningSickness": false,
     "placeLimits":
@@ -24784,6 +24931,9 @@
       "cells": [],
       "capacity": "many",
       "admits": ["モンスター", "魔法", "罠"]}],
+    "tagSets":
+    [{"values": ["闇属性", "光属性"], "name": "属性"},
+     {"values": ["戦士族", "機械族", "魔法使い族"], "name": "種族"}],
     "summonsPerTurn": 2,
     "summoningSickness": true,
     "placeLimits": [],
@@ -25337,6 +25487,9 @@
       "cells": [],
       "capacity": "many",
       "admits": ["モンスター", "魔法", "罠"]}],
+    "tagSets":
+    [{"values": ["闇属性", "光属性"], "name": "属性"},
+     {"values": ["戦士族", "機械族", "魔法使い族"], "name": "種族"}],
     "summonsPerTurn": 2,
     "summoningSickness": false,
     "placeLimits": [{"types": ["罠"], "count": 1}],
@@ -25849,6 +26002,9 @@
       "cells": [],
       "capacity": "many",
       "admits": ["モンスター", "魔法", "罠"]}],
+    "tagSets":
+    [{"values": ["闇属性", "光属性"], "name": "属性"},
+     {"values": ["戦士族", "機械族", "魔法使い族"], "name": "種族"}],
     "summonsPerTurn": 0,
     "summoningSickness": false,
     "placeLimits": [{"types": ["罠"], "count": 1}],
@@ -26456,6 +26612,9 @@
       "cells": [],
       "capacity": "many",
       "admits": ["モンスター", "魔法", "罠"]}],
+    "tagSets":
+    [{"values": ["闇属性", "光属性"], "name": "属性"},
+     {"values": ["戦士族", "機械族", "魔法使い族"], "name": "種族"}],
     "summonsPerTurn": 2,
     "summoningSickness": false,
     "placeLimits":
@@ -26912,6 +27071,9 @@
       "cells": [],
       "capacity": "many",
       "admits": ["モンスター", "魔法", "罠"]}],
+    "tagSets":
+    [{"values": ["闇属性", "光属性"], "name": "属性"},
+     {"values": ["戦士族", "機械族", "魔法使い族"], "name": "種族"}],
     "summonsPerTurn": 0,
     "summoningSickness": true,
     "placeLimits":
@@ -27398,6 +27560,9 @@
       "cells": [],
       "capacity": "many",
       "admits": ["モンスター", "魔法", "罠"]}],
+    "tagSets":
+    [{"values": ["闇属性", "光属性"], "name": "属性"},
+     {"values": ["戦士族", "機械族", "魔法使い族"], "name": "種族"}],
     "summonsPerTurn": 0,
     "summoningSickness": false,
     "placeLimits":
@@ -27820,6 +27985,9 @@
       "cells": [],
       "capacity": "many",
       "admits": ["モンスター", "魔法", "罠"]}],
+    "tagSets":
+    [{"values": ["闇属性", "光属性"], "name": "属性"},
+     {"values": ["戦士族", "機械族", "魔法使い族"], "name": "種族"}],
     "summonsPerTurn": 1,
     "summoningSickness": false,
     "placeLimits": [{"types": ["罠"], "count": 1}],
@@ -28371,6 +28539,9 @@
       "cells": [],
       "capacity": "many",
       "admits": ["モンスター", "魔法", "罠"]}],
+    "tagSets":
+    [{"values": ["闇属性", "光属性"], "name": "属性"},
+     {"values": ["戦士族", "機械族", "魔法使い族"], "name": "種族"}],
     "summonsPerTurn": 1,
     "summoningSickness": false,
     "placeLimits": [{"types": ["罠"], "count": 1}],
@@ -28843,6 +29014,9 @@
       "cells": [],
       "capacity": "many",
       "admits": ["モンスター", "魔法", "罠"]}],
+    "tagSets":
+    [{"values": ["闇属性", "光属性"], "name": "属性"},
+     {"values": ["戦士族", "機械族", "魔法使い族"], "name": "種族"}],
     "summonsPerTurn": 2,
     "summoningSickness": true,
     "placeLimits": [],
@@ -29425,6 +29599,9 @@
       "cells": [],
       "capacity": "many",
       "admits": ["モンスター", "魔法", "罠"]}],
+    "tagSets":
+    [{"values": ["闇属性", "光属性"], "name": "属性"},
+     {"values": ["戦士族", "機械族", "魔法使い族"], "name": "種族"}],
     "summonsPerTurn": 1,
     "summoningSickness": true,
     "placeLimits": [],
@@ -29830,6 +30007,9 @@
       "cells": [],
       "capacity": "many",
       "admits": ["モンスター", "魔法", "罠"]}],
+    "tagSets":
+    [{"values": ["闇属性", "光属性"], "name": "属性"},
+     {"values": ["戦士族", "機械族", "魔法使い族"], "name": "種族"}],
     "summonsPerTurn": 2,
     "summoningSickness": false,
     "placeLimits":
@@ -30292,6 +30472,9 @@
       "cells": [],
       "capacity": "many",
       "admits": ["モンスター", "魔法", "罠"]}],
+    "tagSets":
+    [{"values": ["闇属性", "光属性"], "name": "属性"},
+     {"values": ["戦士族", "機械族", "魔法使い族"], "name": "種族"}],
     "summonsPerTurn": 0,
     "summoningSickness": false,
     "placeLimits":
@@ -30878,6 +31061,9 @@
       "cells": [],
       "capacity": "many",
       "admits": ["モンスター", "魔法", "罠"]}],
+    "tagSets":
+    [{"values": ["闇属性", "光属性"], "name": "属性"},
+     {"values": ["戦士族", "機械族", "魔法使い族"], "name": "種族"}],
     "summonsPerTurn": 2,
     "summoningSickness": false,
     "placeLimits":
@@ -31464,6 +31650,9 @@
       "cells": [],
       "capacity": "many",
       "admits": ["モンスター", "魔法", "罠"]}],
+    "tagSets":
+    [{"values": ["闇属性", "光属性"], "name": "属性"},
+     {"values": ["戦士族", "機械族", "魔法使い族"], "name": "種族"}],
     "summonsPerTurn": 2,
     "summoningSickness": true,
     "placeLimits":
@@ -31925,6 +32114,9 @@
       "cells": [],
       "capacity": "many",
       "admits": ["モンスター", "魔法", "罠"]}],
+    "tagSets":
+    [{"values": ["闇属性", "光属性"], "name": "属性"},
+     {"values": ["戦士族", "機械族", "魔法使い族"], "name": "種族"}],
     "summonsPerTurn": 2,
     "summoningSickness": false,
     "placeLimits": [{"types": ["罠"], "count": 1}],
@@ -32434,6 +32626,9 @@
       "cells": [],
       "capacity": "many",
       "admits": ["モンスター", "魔法", "罠"]}],
+    "tagSets":
+    [{"values": ["闇属性", "光属性"], "name": "属性"},
+     {"values": ["戦士族", "機械族", "魔法使い族"], "name": "種族"}],
     "summonsPerTurn": 1,
     "summoningSickness": true,
     "placeLimits": [],
@@ -33080,6 +33275,9 @@
       "cells": [],
       "capacity": "many",
       "admits": ["モンスター", "魔法", "罠"]}],
+    "tagSets":
+    [{"values": ["闇属性", "光属性"], "name": "属性"},
+     {"values": ["戦士族", "機械族", "魔法使い族"], "name": "種族"}],
     "summonsPerTurn": 0,
     "summoningSickness": false,
     "placeLimits": [{"types": ["罠"], "count": 1}],
@@ -33457,6 +33655,9 @@
       "cells": [],
       "capacity": "many",
       "admits": ["モンスター", "魔法", "罠"]}],
+    "tagSets":
+    [{"values": ["闇属性", "光属性"], "name": "属性"},
+     {"values": ["戦士族", "機械族", "魔法使い族"], "name": "種族"}],
     "summonsPerTurn": 2,
     "summoningSickness": false,
     "placeLimits": [],
@@ -33909,6 +34110,9 @@
       "cells": [],
       "capacity": "many",
       "admits": ["モンスター", "魔法", "罠"]}],
+    "tagSets":
+    [{"values": ["闇属性", "光属性"], "name": "属性"},
+     {"values": ["戦士族", "機械族", "魔法使い族"], "name": "種族"}],
     "summonsPerTurn": 0,
     "summoningSickness": true,
     "placeLimits":
@@ -34392,6 +34596,9 @@
       "cells": [],
       "capacity": "many",
       "admits": ["モンスター", "魔法", "罠"]}],
+    "tagSets":
+    [{"values": ["闇属性", "光属性"], "name": "属性"},
+     {"values": ["戦士族", "機械族", "魔法使い族"], "name": "種族"}],
     "summonsPerTurn": 0,
     "summoningSickness": false,
     "placeLimits": [{"types": ["罠"], "count": 1}],
@@ -34955,6 +35162,9 @@
       "cells": [],
       "capacity": "many",
       "admits": ["モンスター", "魔法", "罠"]}],
+    "tagSets":
+    [{"values": ["闇属性", "光属性"], "name": "属性"},
+     {"values": ["戦士族", "機械族", "魔法使い族"], "name": "種族"}],
     "summonsPerTurn": 0,
     "summoningSickness": true,
     "placeLimits": [],
@@ -35475,6 +35685,9 @@
       "cells": [],
       "capacity": "many",
       "admits": ["モンスター", "魔法", "罠"]}],
+    "tagSets":
+    [{"values": ["闇属性", "光属性"], "name": "属性"},
+     {"values": ["戦士族", "機械族", "魔法使い族"], "name": "種族"}],
     "summonsPerTurn": 0,
     "summoningSickness": false,
     "placeLimits": [],
@@ -35989,6 +36202,9 @@
       "cells": [],
       "capacity": "many",
       "admits": ["モンスター", "魔法", "罠"]}],
+    "tagSets":
+    [{"values": ["闇属性", "光属性"], "name": "属性"},
+     {"values": ["戦士族", "機械族", "魔法使い族"], "name": "種族"}],
     "summonsPerTurn": 2,
     "summoningSickness": false,
     "placeLimits": [],
@@ -36516,6 +36732,9 @@
       "cells": [],
       "capacity": "many",
       "admits": ["モンスター", "魔法", "罠"]}],
+    "tagSets":
+    [{"values": ["闇属性", "光属性"], "name": "属性"},
+     {"values": ["戦士族", "機械族", "魔法使い族"], "name": "種族"}],
     "summonsPerTurn": 1,
     "summoningSickness": false,
     "placeLimits": [],
@@ -36979,6 +37198,9 @@
       "cells": [],
       "capacity": "many",
       "admits": ["モンスター", "魔法", "罠"]}],
+    "tagSets":
+    [{"values": ["闇属性", "光属性"], "name": "属性"},
+     {"values": ["戦士族", "機械族", "魔法使い族"], "name": "種族"}],
     "summonsPerTurn": 2,
     "summoningSickness": false,
     "placeLimits":
@@ -37445,6 +37667,9 @@
       "cells": [],
       "capacity": "many",
       "admits": ["モンスター", "魔法", "罠"]}],
+    "tagSets":
+    [{"values": ["闇属性", "光属性"], "name": "属性"},
+     {"values": ["戦士族", "機械族", "魔法使い族"], "name": "種族"}],
     "summonsPerTurn": 2,
     "summoningSickness": false,
     "placeLimits": [{"types": ["罠"], "count": 1}],
@@ -37925,6 +38150,9 @@
       "cells": [],
       "capacity": "many",
       "admits": ["モンスター", "魔法", "罠"]}],
+    "tagSets":
+    [{"values": ["闇属性", "光属性"], "name": "属性"},
+     {"values": ["戦士族", "機械族", "魔法使い族"], "name": "種族"}],
     "summonsPerTurn": 0,
     "summoningSickness": false,
     "placeLimits": [{"types": ["罠"], "count": 1}],
@@ -38346,6 +38574,9 @@
       "cells": [],
       "capacity": "many",
       "admits": ["モンスター", "魔法", "罠"]}],
+    "tagSets":
+    [{"values": ["闇属性", "光属性"], "name": "属性"},
+     {"values": ["戦士族", "機械族", "魔法使い族"], "name": "種族"}],
     "summonsPerTurn": 0,
     "summoningSickness": true,
     "placeLimits": [],
@@ -38764,6 +38995,9 @@
       "cells": [],
       "capacity": "many",
       "admits": ["モンスター", "魔法", "罠"]}],
+    "tagSets":
+    [{"values": ["闇属性", "光属性"], "name": "属性"},
+     {"values": ["戦士族", "機械族", "魔法使い族"], "name": "種族"}],
     "summonsPerTurn": 2,
     "summoningSickness": false,
     "placeLimits": [],
@@ -39198,6 +39432,9 @@
       "cells": [],
       "capacity": "many",
       "admits": ["モンスター", "魔法", "罠"]}],
+    "tagSets":
+    [{"values": ["闇属性", "光属性"], "name": "属性"},
+     {"values": ["戦士族", "機械族", "魔法使い族"], "name": "種族"}],
     "summonsPerTurn": 0,
     "summoningSickness": true,
     "placeLimits": [{"types": ["罠"], "count": 1}],
@@ -39833,6 +40070,9 @@
       "cells": [],
       "capacity": "many",
       "admits": ["モンスター", "魔法", "罠"]}],
+    "tagSets":
+    [{"values": ["闇属性", "光属性"], "name": "属性"},
+     {"values": ["戦士族", "機械族", "魔法使い族"], "name": "種族"}],
     "summonsPerTurn": 2,
     "summoningSickness": false,
     "placeLimits": [],
@@ -46129,6 +46369,9 @@
     "cells": [],
     "capacity": "many",
     "admits": ["モンスター", "魔法", "罠"]}],
+  "tagSets":
+  [{"values": ["闇属性", "光属性"], "name": "属性"},
+   {"values": ["戦士族", "機械族", "魔法使い族"], "name": "種族"}],
   "summonsPerTurn": 1,
   "summoningSickness": false,
   "placeLimits": [],
@@ -46183,6 +46426,9 @@
     "cells": [],
     "capacity": "many",
     "admits": ["モンスター", "魔法", "罠"]}],
+  "tagSets":
+  [{"values": ["闇属性", "光属性"], "name": "属性"},
+   {"values": ["戦士族", "機械族", "魔法使い族"], "name": "種族"}],
   "summonsPerTurn": 1,
   "summoningSickness": false,
   "placeLimits": [],
@@ -99491,7 +99737,7 @@
     "deck": ["サンダー・ボルト", "二枚引き"]}}],
  "check":
  [{"game":
-   {"version": 6,
+   {"version": 7,
     "rules":
     {"zones":
      [{"role": "plain",
@@ -99532,6 +99778,9 @@
        "cells": [],
        "capacity": "many",
        "admits": ["モンスター", "魔法", "罠"]}],
+     "tagSets":
+     [{"values": ["闇属性", "光属性"], "name": "属性"},
+      {"values": ["戦士族", "機械族", "魔法使い族"], "name": "種族"}],
      "summonsPerTurn": 1,
      "summoningSickness": false,
      "placeLimits": [],
@@ -99798,7 +100047,7 @@
       "attack": 1200}]},
    "errors": []},
   {"game":
-   {"version": 6,
+   {"version": 7,
     "rules":
     {"zones":
      [{"role": "plain",
@@ -99839,6 +100088,9 @@
        "cells": [],
        "capacity": "one",
        "admits": ["モンスター"]}],
+     "tagSets":
+     [{"values": ["闇属性", "光属性"], "name": "属性"},
+      {"values": ["戦士族", "機械族", "魔法使い族"], "name": "種族"}],
      "summonsPerTurn": 1,
      "summoningSickness": false,
      "placeLimits": [],
@@ -99950,6 +100202,9 @@
        "cells": [],
        "capacity": "many",
        "admits": ["モンスター", "魔法", "罠"]}],
+     "tagSets":
+     [{"values": ["闇属性", "光属性"], "name": "属性"},
+      {"values": ["戦士族", "機械族", "魔法使い族"], "name": "種族"}],
      "summonsPerTurn": 1,
      "summoningSickness": false,
      "placeLimits": [],
@@ -100214,9 +100469,9 @@
       "cost": 0,
       "colorCost": [],
       "attack": 1200}]},
-   "errors": ["中間表現の版 1 には対応していません（対応は 6）"]},
+   "errors": ["中間表現の版 1 には対応していません（対応は 7）"]},
   {"game":
-   {"version": 6,
+   {"version": 7,
     "rules":
     {"zones":
      [{"role": "plain",
@@ -100257,6 +100512,9 @@
        "cells": [],
        "capacity": "many",
        "admits": ["モンスター", "魔法", "罠"]}],
+     "tagSets":
+     [{"values": ["闇属性", "光属性"], "name": "属性"},
+      {"values": ["戦士族", "機械族", "魔法使い族"], "name": "種族"}],
      "summonsPerTurn": 1,
      "summoningSickness": false,
      "placeLimits": [],
@@ -100563,7 +100821,7 @@
     "カード「援護の兵士」：種類「モンスター」はルールにありません",
     "カード「援護の兵士」の攻撃力の変化：範囲のカードの種類「モンスター」はルールにありません"]},
   {"game":
-   {"version": 6,
+   {"version": 7,
     "rules":
     {"zones":
      [{"role": "plain",
@@ -100604,6 +100862,9 @@
        "cells": [],
        "capacity": "many",
        "admits": ["モンスター", "魔法", "罠"]}],
+     "tagSets":
+     [{"values": ["闇属性", "光属性"], "name": "属性"},
+      {"values": ["戦士族", "機械族", "魔法使い族"], "name": "種族"}],
      "summonsPerTurn": 1,
      "summoningSickness": false,
      "placeLimits": [],
@@ -100870,7 +101131,7 @@
       "attack": 1200}]},
    "errors": ["ルール：カードの種類「魔法」が重複しています"]},
   {"game":
-   {"version": 6,
+   {"version": 7,
     "rules":
     {"zones":
      [{"role": "plain",
@@ -100911,6 +101172,9 @@
        "cells": [],
        "capacity": "many",
        "admits": ["モンスター", "魔法", "罠"]}],
+     "tagSets":
+     [{"values": ["闇属性", "光属性"], "name": "属性"},
+      {"values": ["戦士族", "機械族", "魔法使い族"], "name": "種族"}],
      "summonsPerTurn": 1,
      "summoningSickness": false,
      "placeLimits": [],
@@ -101177,7 +101441,7 @@
       "attack": 1200}]},
    "errors": ["ルール：初期手札（41枚）がデッキの枚数（40枚）より多いです"]},
   {"game":
-   {"version": 6,
+   {"version": 7,
     "rules":
     {"zones":
      [{"role": "plain",
@@ -101230,6 +101494,9 @@
         {"row": 25, "col": 26}],
        "capacity": "one",
        "admits": ["モンスター"]}],
+     "tagSets":
+     [{"values": ["闇属性", "光属性"], "name": "属性"},
+      {"values": ["戦士族", "機械族", "魔法使い族"], "name": "種族"}],
      "summonsPerTurn": 1,
      "summoningSickness": false,
      "placeLimits": [],
@@ -101507,7 +101774,7 @@
     "ルール：マス（23, 23）が重なっています（相手の側のマスも含む）",
     "ルール：マス（22, 23）が重なっています（相手の側のマスも含む）"]},
   {"game":
-   {"version": 6,
+   {"version": 7,
     "rules":
     {"zones":
      [{"role": "plain",
@@ -101541,6 +101808,9 @@
        "cells": [],
        "capacity": "many",
        "admits": ["モンスター", "魔法", "罠"]}],
+     "tagSets":
+     [{"values": ["闇属性", "光属性"], "name": "属性"},
+      {"values": ["戦士族", "機械族", "魔法使い族"], "name": "種族"}],
      "summonsPerTurn": 1,
      "summoningSickness": false,
      "placeLimits": [],
@@ -101807,7 +102077,7 @@
       "attack": 1200}]},
    "errors": ["ルール：墓地の役割のゾーンがちょうど1つ必要です（0個あります）"]},
   {"game":
-   {"version": 6,
+   {"version": 7,
     "rules":
     {"zones":
      [{"role": "plain",
@@ -101848,6 +102118,9 @@
        "cells": [],
        "capacity": "many",
        "admits": ["モンスター", "魔法", "罠"]}],
+     "tagSets":
+     [{"values": ["闇属性", "光属性"], "name": "属性"},
+      {"values": ["戦士族", "機械族", "魔法使い族"], "name": "種族"}],
      "summonsPerTurn": 1,
      "summoningSickness": false,
      "placeLimits": [],
@@ -102115,7 +102388,7 @@
    "errors":
    ["ゾーン「モンスターカードゾーン」：マスの数が0です", "ゾーン「モンスターカードゾーン」：マスの位置の数（5）がマスの数（0）と違います"]},
   {"game":
-   {"version": 6,
+   {"version": 7,
     "rules":
     {"zones":
      [{"role": "plain",
@@ -102156,6 +102429,9 @@
        "cells": [],
        "capacity": "many",
        "admits": ["モンスター", "魔法", "罠"]}],
+     "tagSets":
+     [{"values": ["闇属性", "光属性"], "name": "属性"},
+      {"values": ["戦士族", "機械族", "魔法使い族"], "name": "種族"}],
      "summonsPerTurn": 1,
      "summoningSickness": false,
      "placeLimits": [],
@@ -102422,7 +102698,7 @@
       "attack": 1200}]},
    "errors": ["ゾーン「魔法罠ゾーン」：置けるカードの種類が空です"]},
   {"game":
-   {"version": 6,
+   {"version": 7,
     "rules":
     {"zones":
      [{"role": "plain",
@@ -102463,6 +102739,9 @@
        "cells": [],
        "capacity": "many",
        "admits": ["モンスター", "魔法", "罠"]}],
+     "tagSets":
+     [{"values": ["闇属性", "光属性"], "name": "属性"},
+      {"values": ["戦士族", "機械族", "魔法使い族"], "name": "種族"}],
      "summonsPerTurn": 1,
      "summoningSickness": false,
      "placeLimits": [],
@@ -102729,7 +103008,7 @@
       "attack": 1200}]},
    "errors": ["ゾーン「魔法罠ゾーン」：カードの種類「儀式」はルールにありません"]},
   {"game":
-   {"version": 6,
+   {"version": 7,
     "rules":
     {"zones":
      [{"role": "plain",
@@ -102770,6 +103049,9 @@
        "cells": [],
        "capacity": "many",
        "admits": ["モンスター", "魔法", "罠"]}],
+     "tagSets":
+     [{"values": ["闇属性", "光属性"], "name": "属性"},
+      {"values": ["戦士族", "機械族", "魔法使い族"], "name": "種族"}],
      "summonsPerTurn": 1,
      "summoningSickness": false,
      "placeLimits": [],
@@ -103036,7 +103318,7 @@
       "attack": 1200}]},
    "errors": ["ゾーン「デッキゾーン」：デッキや墓地の役割のゾーンは「フィールド上」に数えないでください"]},
   {"game":
-   {"version": 6,
+   {"version": 7,
     "rules":
     {"zones":
      [{"role": "plain",
@@ -103077,6 +103359,9 @@
        "cells": [],
        "capacity": "one",
        "admits": ["モンスター", "魔法", "罠"]}],
+     "tagSets":
+     [{"values": ["闇属性", "光属性"], "name": "属性"},
+      {"values": ["戦士族", "機械族", "魔法使い族"], "name": "種族"}],
      "summonsPerTurn": 1,
      "summoningSickness": false,
      "placeLimits": [],
@@ -103345,7 +103630,7 @@
    ["ゾーン「墓地ゾーン」：デッキや墓地の役割のゾーンは「何枚でも」にしてください",
     "ゾーン「墓地ゾーン」：デッキや墓地の役割のゾーンはマスを1つにしてください"]},
   {"game":
-   {"version": 6,
+   {"version": 7,
     "rules":
     {"zones":
      [{"role": "plain",
@@ -103386,6 +103671,9 @@
        "cells": [],
        "capacity": "many",
        "admits": ["モンスター", "魔法", "罠"]}],
+     "tagSets":
+     [{"values": ["闇属性", "光属性"], "name": "属性"},
+      {"values": ["戦士族", "機械族", "魔法使い族"], "name": "種族"}],
      "summonsPerTurn": 1,
      "summoningSickness": false,
      "placeLimits": [],
@@ -103662,7 +103950,7 @@
     "ルール：マス（23, 23）が重なっています（相手の側のマスも含む）",
     "ルール：マス（22, 23）が重なっています（相手の側のマスも含む）"]},
   {"game":
-   {"version": 6,
+   {"version": 7,
     "rules":
     {"zones":
      [{"role": "plain",
@@ -103703,6 +103991,9 @@
        "cells": [],
        "capacity": "many",
        "admits": ["モンスター", "魔法", "罠"]}],
+     "tagSets":
+     [{"values": ["闇属性", "光属性"], "name": "属性"},
+      {"values": ["戦士族", "機械族", "魔法使い族"], "name": "種族"}],
      "summonsPerTurn": 1,
      "summoningSickness": false,
      "placeLimits": [],
@@ -103974,7 +104265,7 @@
     "ルール：マス（25, 24）が重なっています（相手の側のマスも含む）",
     "ルール：マス（26, 24）が重なっています（相手の側のマスも含む）"]},
   {"game":
-   {"version": 6,
+   {"version": 7,
     "rules":
     {"zones":
      [{"role": "plain",
@@ -104011,6 +104302,9 @@
        "cells": [],
        "capacity": "many",
        "admits": ["モンスター", "魔法", "罠"]}],
+     "tagSets":
+     [{"values": ["闇属性", "光属性"], "name": "属性"},
+      {"values": ["戦士族", "機械族", "魔法使い族"], "name": "種族"}],
      "summonsPerTurn": 1,
      "summoningSickness": false,
      "placeLimits": [],
@@ -104277,7 +104571,7 @@
       "attack": 1200}]},
    "errors": ["ゾーン「魔法罠ゾーン」：マスの位置の数（3）がマスの数（5）と違います"]},
   {"game":
-   {"version": 6,
+   {"version": 7,
     "rules":
     {"zones":
      [{"role": "plain",
@@ -104318,6 +104612,9 @@
        "cells": [],
        "capacity": "many",
        "admits": ["モンスター", "魔法", "罠"]}],
+     "tagSets":
+     [{"values": ["闇属性", "光属性"], "name": "属性"},
+      {"values": ["戦士族", "機械族", "魔法使い族"], "name": "種族"}],
      "summonsPerTurn": 1,
      "summoningSickness": false,
      "placeLimits": [],
@@ -104586,7 +104883,7 @@
    ["ゾーン「魔法罠ゾーン」：マス（49, 2）が盤面（49×49）の外です",
     "ゾーン「魔法罠ゾーン」：マス（2, 51）が盤面（49×49）の外です"]},
   {"game":
-   {"version": 6,
+   {"version": 7,
     "rules":
     {"zones":
      [{"role": "plain",
@@ -104627,6 +104924,9 @@
        "cells": [],
        "capacity": "many",
        "admits": ["モンスター", "魔法", "罠"]}],
+     "tagSets":
+     [{"values": ["闇属性", "光属性"], "name": "属性"},
+      {"values": ["戦士族", "機械族", "魔法使い族"], "name": "種族"}],
      "summonsPerTurn": 1,
      "summoningSickness": false,
      "placeLimits": [],
@@ -104893,7 +105193,7 @@
       "attack": 1200}]},
    "errors": ["ゾーン「デッキゾーン」：デッキや墓地の役割のゾーンにはマスの位置を付けないでください"]},
   {"game":
-   {"version": 6,
+   {"version": 7,
     "rules":
     {"zones":
      [{"role": "plain",
@@ -104934,6 +105234,9 @@
        "cells": [],
        "capacity": "many",
        "admits": ["モンスター", "魔法", "罠"]}],
+     "tagSets":
+     [{"values": ["闇属性", "光属性"], "name": "属性"},
+      {"values": ["戦士族", "機械族", "魔法使い族"], "name": "種族"}],
      "summonsPerTurn": 1,
      "summoningSickness": false,
      "placeLimits": [],
@@ -104969,7 +105272,7 @@
       "attack": 0}]},
    "errors": ["カード「スキルドレイン」：無効の範囲には、マスの関係（隣・同じ縦列）はまだ使えません"]},
   {"game":
-   {"version": 6,
+   {"version": 7,
     "rules":
     {"zones":
      [{"role": "plain",
@@ -105010,6 +105313,9 @@
        "cells": [],
        "capacity": "many",
        "admits": ["モンスター", "魔法", "罠"]}],
+     "tagSets":
+     [{"values": ["闇属性", "光属性"], "name": "属性"},
+      {"values": ["戦士族", "機械族", "魔法使い族"], "name": "種族"}],
      "summonsPerTurn": 1,
      "summoningSickness": false,
      "placeLimits": [],
@@ -105296,7 +105602,7 @@
       "attack": 0}]},
    "errors": ["カード「サンダー・ボルト」が重複しています"]},
   {"game":
-   {"version": 6,
+   {"version": 7,
     "rules":
     {"zones":
      [{"role": "plain",
@@ -105337,6 +105643,9 @@
        "cells": [],
        "capacity": "many",
        "admits": ["モンスター", "魔法", "罠"]}],
+     "tagSets":
+     [{"values": ["闇属性", "光属性"], "name": "属性"},
+      {"values": ["戦士族", "機械族", "魔法使い族"], "name": "種族"}],
      "summonsPerTurn": 1,
      "summoningSickness": false,
      "placeLimits": [],
@@ -105374,7 +105683,7 @@
       "attack": 0}]},
    "errors": ["カード「サンダー・ボルト」の破壊：範囲のカードの種類が空です"]},
   {"game":
-   {"version": 6,
+   {"version": 7,
     "rules":
     {"zones":
      [{"role": "plain",
@@ -105415,6 +105724,9 @@
        "cells": [],
        "capacity": "many",
        "admits": ["モンスター", "魔法", "罠"]}],
+     "tagSets":
+     [{"values": ["闇属性", "光属性"], "name": "属性"},
+      {"values": ["戦士族", "機械族", "魔法使い族"], "name": "種族"}],
      "summonsPerTurn": 1,
      "summoningSickness": false,
      "placeLimits": [],
@@ -105450,7 +105762,7 @@
       "attack": 0}]},
    "errors": ["カード「スキルドレイン」の無効：範囲のカードの種類「融合」はルールにありません"]},
   {"game":
-   {"version": 6,
+   {"version": 7,
     "rules":
     {"zones":
      [{"role": "plain",
@@ -105491,6 +105803,9 @@
        "cells": [],
        "capacity": "many",
        "admits": ["モンスター", "魔法", "罠"]}],
+     "tagSets":
+     [{"values": ["闇属性", "光属性"], "name": "属性"},
+      {"values": ["戦士族", "機械族", "魔法使い族"], "name": "種族"}],
      "summonsPerTurn": 1,
      "summoningSickness": false,
      "placeLimits": [],
@@ -105530,7 +105845,7 @@
    "errors":
    ["カード「二枚引き」：ドローの枚数が0です", "カード「二枚引き」の手札に戻す動き：範囲のカードの種類「儀式」はルールにありません"]},
   {"game":
-   {"version": 6,
+   {"version": 7,
     "rules":
     {"zones":
      [{"role": "plain",
@@ -105571,6 +105886,9 @@
        "cells": [],
        "capacity": "many",
        "admits": ["モンスター", "魔法", "罠"]}],
+     "tagSets":
+     [{"values": ["闇属性", "光属性"], "name": "属性"},
+      {"values": ["戦士族", "機械族", "魔法使い族"], "name": "種族"}],
      "summonsPerTurn": 1,
      "summoningSickness": false,
      "placeLimits": [],
@@ -105841,7 +106159,7 @@
     "カード「闇の加護」：攻撃力を変える範囲に、戦闘できる種類のカードがありません",
     "カード「援護の兵士」：攻撃力を変える範囲に、戦闘できる種類のカードがありません"]},
   {"game":
-   {"version": 6,
+   {"version": 7,
     "rules":
     {"zones":
      [{"role": "plain",
@@ -105882,6 +106200,9 @@
        "cells": [],
        "capacity": "many",
        "admits": ["モンスター", "魔法", "罠"]}],
+     "tagSets":
+     [{"values": ["闇属性", "光属性"], "name": "属性"},
+      {"values": ["戦士族", "機械族", "魔法使い族"], "name": "種族"}],
      "summonsPerTurn": 1,
      "summoningSickness": false,
      "placeLimits": [],
@@ -106148,7 +106469,7 @@
       "attack": 1200}]},
    "errors": ["ルール：戦闘できる種類があるのに、初期ライフが0です"]},
   {"game":
-   {"version": 6,
+   {"version": 7,
     "rules":
     {"zones":
      [{"role": "plain",
@@ -106189,6 +106510,9 @@
        "cells": [],
        "capacity": "many",
        "admits": ["モンスター", "魔法", "罠"]}],
+     "tagSets":
+     [{"values": ["闇属性", "光属性"], "name": "属性"},
+      {"values": ["戦士族", "機械族", "魔法使い族"], "name": "種族"}],
      "summonsPerTurn": 1,
      "summoningSickness": false,
      "placeLimits":
@@ -106459,7 +106783,7 @@
     "ルール：「」を置ける枚数の上限が0です",
     "ルール：置ける枚数の上限の種類「土地」はカードの種類にありません"]},
   {"game":
-   {"version": 6,
+   {"version": 7,
     "rules":
     {"zones":
      [{"role": "plain",
@@ -106500,6 +106824,9 @@
        "cells": [],
        "capacity": "many",
        "admits": ["モンスター", "魔法", "罠"]}],
+     "tagSets":
+     [{"values": ["闇属性", "光属性"], "name": "属性"},
+      {"values": ["戦士族", "機械族", "魔法使い族"], "name": "種族"}],
      "summonsPerTurn": 1,
      "summoningSickness": false,
      "placeLimits": [],
@@ -106766,7 +107093,7 @@
       "attack": 1200}]},
    "errors": ["ルール：マナの色「赤」が重複しています", "ルール：マナの色に空の名前があります"]},
   {"game":
-   {"version": 6,
+   {"version": 7,
     "rules":
     {"zones":
      [{"role": "plain",
@@ -106807,6 +107134,640 @@
        "cells": [],
        "capacity": "many",
        "admits": ["モンスター", "魔法", "罠"]}],
+     "tagSets":
+     [{"values": ["闇属性", "闇属性"], "name": "属性"},
+      {"values": [], "name": "属性"},
+      {"values": ["機械族"], "name": ""}],
+     "summonsPerTurn": 1,
+     "summoningSickness": false,
+     "placeLimits": [],
+     "manaColors": [],
+     "life": 8000,
+     "handSize": 5,
+     "firstTurnDraw": false,
+     "firstTurnAttack": false,
+     "fighters": ["モンスター"],
+     "drawPerTurn": 1,
+     "deckSize": 40,
+     "cardTypes": ["モンスター", "魔法", "罠"],
+     "blocking": false,
+     "attackTaps": false},
+    "cards":
+    [{"type": "魔法",
+      "tags": [],
+      "name": "サンダー・ボルト",
+      "manaColor": "",
+      "mana": 0,
+      "effects":
+      [{"activated":
+        {"actions":
+         [{"destroy":
+           {"target":
+            {"types": ["モンスター"],
+             "tags": [],
+             "side": "opp",
+             "near": "any",
+             "faceUpOnly": false,
+             "excludeSelf": false}}}]}}],
+      "defense": 0,
+      "cost": 0,
+      "colorCost": [],
+      "attack": 0},
+     {"type": "魔法",
+      "tags": [],
+      "name": "ハーピィの羽根帚",
+      "manaColor": "",
+      "mana": 0,
+      "effects":
+      [{"activated":
+        {"actions":
+         [{"destroy":
+           {"target":
+            {"types": ["魔法", "罠"],
+             "tags": [],
+             "side": "opp",
+             "near": "any",
+             "faceUpOnly": false,
+             "excludeSelf": false}}}]}}],
+      "defense": 0,
+      "cost": 0,
+      "colorCost": [],
+      "attack": 0},
+     {"type": "罠",
+      "tags": [],
+      "name": "スキルドレイン",
+      "manaColor": "",
+      "mana": 0,
+      "effects":
+      [{"negate":
+        {"target":
+         {"types": ["モンスター"],
+          "tags": [],
+          "side": "both",
+          "near": "any",
+          "faceUpOnly": true,
+          "excludeSelf": false}}}],
+      "defense": 0,
+      "cost": 0,
+      "colorCost": [],
+      "attack": 0},
+     {"type": "罠",
+      "tags": [],
+      "name": "王宮のお触れ",
+      "manaColor": "",
+      "mana": 0,
+      "effects":
+      [{"negate":
+        {"target":
+         {"types": ["罠"],
+          "tags": [],
+          "side": "both",
+          "near": "any",
+          "faceUpOnly": true,
+          "excludeSelf": true}}}],
+      "defense": 0,
+      "cost": 0,
+      "colorCost": [],
+      "attack": 0},
+     {"type": "モンスター",
+      "tags": ["闇属性", "機械族"],
+      "name": "人造人間－サイコ・ショッカー",
+      "manaColor": "",
+      "mana": 0,
+      "effects":
+      [{"negate":
+        {"target":
+         {"types": ["罠"],
+          "tags": [],
+          "side": "both",
+          "near": "any",
+          "faceUpOnly": true,
+          "excludeSelf": false}}}],
+      "defense": 1500,
+      "cost": 0,
+      "colorCost": [],
+      "attack": 2400},
+     {"type": "モンスター",
+      "tags": ["闇属性", "戦士族"],
+      "name": "D－HERO Bloo－D",
+      "manaColor": "",
+      "mana": 0,
+      "effects":
+      [{"negate":
+        {"target":
+         {"types": ["モンスター"],
+          "tags": [],
+          "side": "opp",
+          "near": "any",
+          "faceUpOnly": true,
+          "excludeSelf": false}}}],
+      "defense": 600,
+      "cost": 0,
+      "colorCost": [],
+      "attack": 1900},
+     {"type": "魔法",
+      "tags": [],
+      "name": "一斉送還",
+      "manaColor": "",
+      "mana": 0,
+      "effects":
+      [{"activated":
+        {"actions":
+         [{"bounce":
+           {"target":
+            {"types": ["モンスター"],
+             "tags": [],
+             "side": "opp",
+             "near": "any",
+             "faceUpOnly": false,
+             "excludeSelf": false}}}]}}],
+      "defense": 0,
+      "cost": 0,
+      "colorCost": [],
+      "attack": 0},
+     {"type": "魔法",
+      "tags": [],
+      "name": "二枚引き",
+      "manaColor": "",
+      "mana": 0,
+      "effects": [{"activated": {"actions": [{"draw": {"count": 2}}]}}],
+      "defense": 0,
+      "cost": 0,
+      "colorCost": [],
+      "attack": 0},
+     {"type": "モンスター",
+      "tags": ["闇属性", "魔法使い族"],
+      "name": "ブラック・マジシャン",
+      "manaColor": "",
+      "mana": 0,
+      "effects": [],
+      "defense": 2100,
+      "cost": 0,
+      "colorCost": [],
+      "attack": 2500},
+     {"type": "モンスター",
+      "tags": ["闇属性", "戦士族"],
+      "name": "闇の指揮官",
+      "manaColor": "",
+      "mana": 0,
+      "effects":
+      [{"boost":
+        {"target":
+         {"types": ["モンスター"],
+          "tags": ["闇属性"],
+          "side": "self",
+          "near": "any",
+          "faceUpOnly": true,
+          "excludeSelf": true},
+         "amount": 300}}],
+      "defense": 1000,
+      "cost": 0,
+      "colorCost": [],
+      "attack": 1600},
+     {"type": "魔法",
+      "tags": [],
+      "name": "闇の加護",
+      "manaColor": "",
+      "mana": 0,
+      "effects":
+      [{"boost":
+        {"target":
+         {"types": ["モンスター"],
+          "tags": ["闇属性"],
+          "side": "self",
+          "near": "any",
+          "faceUpOnly": true,
+          "excludeSelf": false},
+         "amount": 500}}],
+      "defense": 0,
+      "cost": 0,
+      "colorCost": [],
+      "attack": 0},
+     {"type": "魔法",
+      "tags": [],
+      "name": "ファイヤー・ボール",
+      "manaColor": "",
+      "mana": 0,
+      "effects": [{"activated": {"actions": [{"damage": {"amount": 500}}]}}],
+      "defense": 0,
+      "cost": 0,
+      "colorCost": [],
+      "attack": 0},
+     {"type": "魔法",
+      "tags": [],
+      "name": "レッド・ポーション",
+      "manaColor": "",
+      "mana": 0,
+      "effects": [{"activated": {"actions": [{"heal": {"amount": 500}}]}}],
+      "defense": 0,
+      "cost": 0,
+      "colorCost": [],
+      "attack": 0},
+     {"type": "魔法",
+      "tags": [],
+      "name": "縦一閃",
+      "manaColor": "",
+      "mana": 0,
+      "effects":
+      [{"activated":
+        {"actions":
+         [{"destroy":
+           {"target":
+            {"types": ["モンスター", "魔法", "罠"],
+             "tags": [],
+             "side": "opp",
+             "near": "sameColumn",
+             "faceUpOnly": false,
+             "excludeSelf": false}}}]}}],
+      "defense": 0,
+      "cost": 0,
+      "colorCost": [],
+      "attack": 0},
+     {"type": "モンスター",
+      "tags": ["戦士族"],
+      "name": "援護の兵士",
+      "manaColor": "",
+      "mana": 0,
+      "effects":
+      [{"boost":
+        {"target":
+         {"types": ["モンスター"],
+          "tags": [],
+          "side": "self",
+          "near": "adjacent",
+          "faceUpOnly": true,
+          "excludeSelf": true},
+         "amount": 400}}],
+      "defense": 1200,
+      "cost": 0,
+      "colorCost": [],
+      "attack": 1200}]},
+   "errors":
+   ["ルール：タグの集合「属性」が重複しています",
+    "ルール：タグの集合の名前が空です",
+    "ルール：タグの集合「属性」で「闇属性」が重複しています",
+    "カード「D－HERO Bloo－D」：タグ「戦士族」はどのタグの集合にもありません",
+    "カード「ブラック・マジシャン」：タグ「魔法使い族」はどのタグの集合にもありません",
+    "カード「闇の指揮官」：タグ「戦士族」はどのタグの集合にもありません",
+    "カード「援護の兵士」：タグ「戦士族」はどのタグの集合にもありません"]},
+  {"game":
+   {"version": 7,
+    "rules":
+    {"zones":
+     [{"role": "plain",
+       "onField": true,
+       "name": "モンスターカードゾーン",
+       "count": 5,
+       "cells":
+       [{"row": 25, "col": 22},
+        {"row": 25, "col": 23},
+        {"row": 25, "col": 24},
+        {"row": 25, "col": 25},
+        {"row": 25, "col": 26}],
+       "capacity": "one",
+       "admits": ["モンスター"]},
+      {"role": "plain",
+       "onField": true,
+       "name": "魔法罠ゾーン",
+       "count": 5,
+       "cells":
+       [{"row": 26, "col": 22},
+        {"row": 26, "col": 23},
+        {"row": 26, "col": 24},
+        {"row": 26, "col": 25},
+        {"row": 26, "col": 26}],
+       "capacity": "one",
+       "admits": ["魔法", "罠"]},
+      {"role": "deck",
+       "onField": false,
+       "name": "デッキゾーン",
+       "count": 1,
+       "cells": [],
+       "capacity": "many",
+       "admits": ["モンスター", "魔法", "罠"]},
+      {"role": "grave",
+       "onField": false,
+       "name": "墓地ゾーン",
+       "count": 1,
+       "cells": [],
+       "capacity": "many",
+       "admits": ["モンスター", "魔法", "罠"]}],
+     "tagSets": [{"values": ["闇属性"], "name": "属性"}],
+     "summonsPerTurn": 1,
+     "summoningSickness": false,
+     "placeLimits": [],
+     "manaColors": [],
+     "life": 8000,
+     "handSize": 5,
+     "firstTurnDraw": false,
+     "firstTurnAttack": false,
+     "fighters": ["モンスター"],
+     "drawPerTurn": 1,
+     "deckSize": 40,
+     "cardTypes": ["モンスター", "魔法", "罠"],
+     "blocking": false,
+     "attackTaps": false},
+    "cards":
+    [{"type": "魔法",
+      "tags": [],
+      "name": "サンダー・ボルト",
+      "manaColor": "",
+      "mana": 0,
+      "effects":
+      [{"activated":
+        {"actions":
+         [{"destroy":
+           {"target":
+            {"types": ["モンスター"],
+             "tags": [],
+             "side": "opp",
+             "near": "any",
+             "faceUpOnly": false,
+             "excludeSelf": false}}}]}}],
+      "defense": 0,
+      "cost": 0,
+      "colorCost": [],
+      "attack": 0},
+     {"type": "魔法",
+      "tags": [],
+      "name": "ハーピィの羽根帚",
+      "manaColor": "",
+      "mana": 0,
+      "effects":
+      [{"activated":
+        {"actions":
+         [{"destroy":
+           {"target":
+            {"types": ["魔法", "罠"],
+             "tags": [],
+             "side": "opp",
+             "near": "any",
+             "faceUpOnly": false,
+             "excludeSelf": false}}}]}}],
+      "defense": 0,
+      "cost": 0,
+      "colorCost": [],
+      "attack": 0},
+     {"type": "罠",
+      "tags": [],
+      "name": "スキルドレイン",
+      "manaColor": "",
+      "mana": 0,
+      "effects":
+      [{"negate":
+        {"target":
+         {"types": ["モンスター"],
+          "tags": [],
+          "side": "both",
+          "near": "any",
+          "faceUpOnly": true,
+          "excludeSelf": false}}}],
+      "defense": 0,
+      "cost": 0,
+      "colorCost": [],
+      "attack": 0},
+     {"type": "罠",
+      "tags": [],
+      "name": "王宮のお触れ",
+      "manaColor": "",
+      "mana": 0,
+      "effects":
+      [{"negate":
+        {"target":
+         {"types": ["罠"],
+          "tags": [],
+          "side": "both",
+          "near": "any",
+          "faceUpOnly": true,
+          "excludeSelf": true}}}],
+      "defense": 0,
+      "cost": 0,
+      "colorCost": [],
+      "attack": 0},
+     {"type": "モンスター",
+      "tags": ["闇属性", "機械族"],
+      "name": "人造人間－サイコ・ショッカー",
+      "manaColor": "",
+      "mana": 0,
+      "effects":
+      [{"negate":
+        {"target":
+         {"types": ["罠"],
+          "tags": [],
+          "side": "both",
+          "near": "any",
+          "faceUpOnly": true,
+          "excludeSelf": false}}}],
+      "defense": 1500,
+      "cost": 0,
+      "colorCost": [],
+      "attack": 2400},
+     {"type": "モンスター",
+      "tags": ["闇属性", "戦士族"],
+      "name": "D－HERO Bloo－D",
+      "manaColor": "",
+      "mana": 0,
+      "effects":
+      [{"negate":
+        {"target":
+         {"types": ["モンスター"],
+          "tags": [],
+          "side": "opp",
+          "near": "any",
+          "faceUpOnly": true,
+          "excludeSelf": false}}}],
+      "defense": 600,
+      "cost": 0,
+      "colorCost": [],
+      "attack": 1900},
+     {"type": "魔法",
+      "tags": [],
+      "name": "一斉送還",
+      "manaColor": "",
+      "mana": 0,
+      "effects":
+      [{"activated":
+        {"actions":
+         [{"bounce":
+           {"target":
+            {"types": ["モンスター"],
+             "tags": [],
+             "side": "opp",
+             "near": "any",
+             "faceUpOnly": false,
+             "excludeSelf": false}}}]}}],
+      "defense": 0,
+      "cost": 0,
+      "colorCost": [],
+      "attack": 0},
+     {"type": "魔法",
+      "tags": [],
+      "name": "二枚引き",
+      "manaColor": "",
+      "mana": 0,
+      "effects": [{"activated": {"actions": [{"draw": {"count": 2}}]}}],
+      "defense": 0,
+      "cost": 0,
+      "colorCost": [],
+      "attack": 0},
+     {"type": "モンスター",
+      "tags": ["闇属性", "魔法使い族"],
+      "name": "ブラック・マジシャン",
+      "manaColor": "",
+      "mana": 0,
+      "effects": [],
+      "defense": 2100,
+      "cost": 0,
+      "colorCost": [],
+      "attack": 2500},
+     {"type": "モンスター",
+      "tags": ["闇属性", "戦士族"],
+      "name": "闇の指揮官",
+      "manaColor": "",
+      "mana": 0,
+      "effects":
+      [{"boost":
+        {"target":
+         {"types": ["モンスター"],
+          "tags": ["闇属性"],
+          "side": "self",
+          "near": "any",
+          "faceUpOnly": true,
+          "excludeSelf": true},
+         "amount": 300}}],
+      "defense": 1000,
+      "cost": 0,
+      "colorCost": [],
+      "attack": 1600},
+     {"type": "魔法",
+      "tags": [],
+      "name": "闇の加護",
+      "manaColor": "",
+      "mana": 0,
+      "effects":
+      [{"boost":
+        {"target":
+         {"types": ["モンスター"],
+          "tags": ["闇属性"],
+          "side": "self",
+          "near": "any",
+          "faceUpOnly": true,
+          "excludeSelf": false},
+         "amount": 500}}],
+      "defense": 0,
+      "cost": 0,
+      "colorCost": [],
+      "attack": 0},
+     {"type": "魔法",
+      "tags": [],
+      "name": "ファイヤー・ボール",
+      "manaColor": "",
+      "mana": 0,
+      "effects": [{"activated": {"actions": [{"damage": {"amount": 500}}]}}],
+      "defense": 0,
+      "cost": 0,
+      "colorCost": [],
+      "attack": 0},
+     {"type": "魔法",
+      "tags": [],
+      "name": "レッド・ポーション",
+      "manaColor": "",
+      "mana": 0,
+      "effects": [{"activated": {"actions": [{"heal": {"amount": 500}}]}}],
+      "defense": 0,
+      "cost": 0,
+      "colorCost": [],
+      "attack": 0},
+     {"type": "魔法",
+      "tags": [],
+      "name": "縦一閃",
+      "manaColor": "",
+      "mana": 0,
+      "effects":
+      [{"activated":
+        {"actions":
+         [{"destroy":
+           {"target":
+            {"types": ["モンスター", "魔法", "罠"],
+             "tags": [],
+             "side": "opp",
+             "near": "sameColumn",
+             "faceUpOnly": false,
+             "excludeSelf": false}}}]}}],
+      "defense": 0,
+      "cost": 0,
+      "colorCost": [],
+      "attack": 0},
+     {"type": "モンスター",
+      "tags": ["戦士族"],
+      "name": "援護の兵士",
+      "manaColor": "",
+      "mana": 0,
+      "effects":
+      [{"boost":
+        {"target":
+         {"types": ["モンスター"],
+          "tags": [],
+          "side": "self",
+          "near": "adjacent",
+          "faceUpOnly": true,
+          "excludeSelf": true},
+         "amount": 400}}],
+      "defense": 1200,
+      "cost": 0,
+      "colorCost": [],
+      "attack": 1200}]},
+   "errors":
+   ["カード「人造人間－サイコ・ショッカー」：タグ「機械族」はどのタグの集合にもありません",
+    "カード「D－HERO Bloo－D」：タグ「戦士族」はどのタグの集合にもありません",
+    "カード「ブラック・マジシャン」：タグ「魔法使い族」はどのタグの集合にもありません",
+    "カード「闇の指揮官」：タグ「戦士族」はどのタグの集合にもありません",
+    "カード「援護の兵士」：タグ「戦士族」はどのタグの集合にもありません"]},
+  {"game":
+   {"version": 7,
+    "rules":
+    {"zones":
+     [{"role": "plain",
+       "onField": true,
+       "name": "モンスターカードゾーン",
+       "count": 5,
+       "cells":
+       [{"row": 25, "col": 22},
+        {"row": 25, "col": 23},
+        {"row": 25, "col": 24},
+        {"row": 25, "col": 25},
+        {"row": 25, "col": 26}],
+       "capacity": "one",
+       "admits": ["モンスター"]},
+      {"role": "plain",
+       "onField": true,
+       "name": "魔法罠ゾーン",
+       "count": 5,
+       "cells":
+       [{"row": 26, "col": 22},
+        {"row": 26, "col": 23},
+        {"row": 26, "col": 24},
+        {"row": 26, "col": 25},
+        {"row": 26, "col": 26}],
+       "capacity": "one",
+       "admits": ["魔法", "罠"]},
+      {"role": "deck",
+       "onField": false,
+       "name": "デッキゾーン",
+       "count": 1,
+       "cells": [],
+       "capacity": "many",
+       "admits": ["モンスター", "魔法", "罠"]},
+      {"role": "grave",
+       "onField": false,
+       "name": "墓地ゾーン",
+       "count": 1,
+       "cells": [],
+       "capacity": "many",
+       "admits": ["モンスター", "魔法", "罠"]}],
+     "tagSets":
+     [{"values": ["闇属性", "光属性"], "name": "属性"},
+      {"values": ["戦士族", "機械族", "魔法使い族"], "name": "種族"}],
      "summonsPerTurn": 1,
      "summoningSickness": false,
      "placeLimits": [],
@@ -106845,7 +107806,7 @@
     "カード「人造人間－サイコ・ショッカー」：出るマナの色「青」はルールのマナの色にありません",
     "カード「人造人間－サイコ・ショッカー」：マナの色があるのに、出るマナの量が0です"]},
   {"game":
-   {"version": 6,
+   {"version": 7,
     "rules":
     {"zones":
      [{"role": "plain",
@@ -106886,6 +107847,9 @@
        "cells": [],
        "capacity": "many",
        "admits": ["モンスター", "魔法", "罠"]}],
+     "tagSets":
+     [{"values": ["闇属性", "光属性"], "name": "属性"},
+      {"values": ["戦士族", "機械族", "魔法使い族"], "name": "種族"}],
      "summonsPerTurn": 1,
      "summoningSickness": false,
      "placeLimits": [],
@@ -106915,7 +107879,7 @@
       "attack": 0}]},
    "errors": ["カード「ファイヤー・ボール」：ダメージが0です", "カード「ファイヤー・ボール」：回復する量が0です"]},
   {"game":
-   {"version": 6,
+   {"version": 7,
     "rules":
     {"zones":
      [{"role": "plain",
@@ -106956,6 +107920,9 @@
        "cells": [],
        "capacity": "many",
        "admits": ["モンスター", "魔法", "罠"]}],
+     "tagSets":
+     [{"values": ["闇属性", "光属性"], "name": "属性"},
+      {"values": ["戦士族", "機械族", "魔法使い族"], "name": "種族"}],
      "summonsPerTurn": 1,
      "summoningSickness": false,
      "placeLimits": [],

@@ -120,7 +120,7 @@ namespace CardGen.App
 
         public void RemoveSelected()
         {
-            if (selected == null) return;
+            if (selected == null || Node.IsFixed(selected.Kind)) return;
             Doc.Remove(selected.Id);
             selected = null;
             Rebuild();
