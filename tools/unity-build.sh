@@ -3,6 +3,7 @@
 #
 #   tools/unity-build.sh                     写してビルドする
 #   tools/unity-build.sh --reset             先に Windows 側のクローンの変更を捨てて git pull する
+#   tools/unity-build.sh --test              写して、エディタと画面の自動テスト（EditMode）を動かす（ビルドはしない）
 #   tools/unity-build.sh --shot 画面.png [exe の引数…]
 #                                            ビルドしたアプリを動かして画面を保存する（例：-cardgen-play 7）
 #
@@ -24,9 +25,11 @@ UNITY=${CARDGEN_UNITY:-"/mnt/c/Program Files/Unity/Hub/Editor/$VERSION/Editor/Un
 
 reset=0
 shot=""
+test=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --reset) reset=1; shift ;;
+    --test) test=1; shift ;;
     --shot) shot=$2; shift 2; break ;;
     *) echo "不明な引数：$1" >&2; exit 2 ;;
   esac
@@ -49,6 +52,35 @@ echo "== 写す：$SRC → $DST"
 rsync -a "$SRC/csharp/CardGen.Core/" "$DST/csharp/CardGen.Core/"
 rsync -a "$SRC/$PROJ_REL/Assets/" "$DST/$PROJ_REL/Assets/"
 rsync -a "$SRC/$PROJ_REL/Packages/manifest.json" "$DST/$PROJ_REL/Packages/manifest.json"
+
+if [ $test = 1 ]; then
+  echo "== テスト（Unity $VERSION・EditMode）"
+  RES="$DST/$PROJ_REL/Logs/cardgen-tests.xml"
+  TLOG="$DST/$PROJ_REL/Logs/cardgen-tests.log"
+  rm -f "$RES"
+  (cd "$DST/$PROJ_REL" && "$UNITY" -batchmode -nographics -projectPath . -runTests -testPlatform EditMode \
+     -testResults "$(wslpath -w "$RES")" -logFile "$(wslpath -w "$TLOG")") >/dev/null || true
+  # Unity が書き換えた packages-lock.json を WSL 側に戻す（パッケージを加えたとき）
+  cp "$DST/$PROJ_REL/Packages/packages-lock.json" "$SRC/$PROJ_REL/Packages/packages-lock.json"
+  if [ ! -f "$RES" ]; then
+    grep -E "error CS|Exception" "$TLOG" | head -20 >&2 || true
+    echo "テストを動かせませんでした。ログ：$TLOG" >&2
+    exit 1
+  fi
+  python3 - "$RES" <<'PY'
+import sys, xml.etree.ElementTree as ET
+root = ET.parse(sys.argv[1]).getroot()
+print(f"合計 {root.get('total')}・成功 {root.get('passed')}・失敗 {root.get('failed')}・スキップ {root.get('skipped')}")
+for tc in root.iter("test-case"):
+    mark = {"Passed": "○", "Failed": "×"}.get(tc.get("result"), "－")
+    print(f"  {mark} {tc.get('fullname')}")
+    if tc.get("result") == "Failed":
+        msg = tc.find("failure/message")
+        if msg is not None and msg.text: print("      " + msg.text.strip().replace("\n", "\n      ")[:800])
+sys.exit(0 if root.get("result", "").startswith("Passed") else 2)
+PY
+  exit $?
+fi
 
 echo "== ビルド（Unity $VERSION）"
 LOG="$DST/$PROJ_REL/Logs/cardgen-build.log"

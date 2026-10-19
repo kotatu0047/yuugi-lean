@@ -88,7 +88,7 @@ namespace CardGen.App
 
         static Button Chip(string text, Color bg, System.Action click)
         {
-            var b = new Button(click) { text = text };
+            var b = UiTest.Btn(text, click);
             b.style.backgroundColor = bg;
             b.style.marginLeft = 0;
             b.style.marginRight = 4;
@@ -204,7 +204,7 @@ namespace CardGen.App
             var head = Wrap();
             if (nameField != null) { nameField.style.flexGrow = 1; head.Add(nameField); }
             else head.Add(new Label(title) { style = { unityFontStyleAndWeight = FontStyle.Bold, color = Color.white, flexGrow = 1 } });
-            if (remove != null) head.Add(new Button(remove) { text = "集合を削除" });
+            if (remove != null) head.Add(UiTest.Btn("集合を削除", remove));
             box.Add(head);
             var chips = Wrap();
             foreach (var v in values)
@@ -241,7 +241,7 @@ namespace CardGen.App
                 }
                 to.RegisterCallback<KeyDownEvent>(e => { if (e.keyCode == KeyCode.Return || e.keyCode == KeyCode.KeypadEnter) Apply(); });
                 rrow.Add(to);
-                rrow.Add(new Button(Apply) { text = "名前を変える" });
+                rrow.Add(UiTest.Btn("名前を変える", Apply));
                 box.Add(rrow);
                 box.Add(new Label("使っているカード・ゾーン・ルール・範囲も、まとめて新しい名前に変わります") { style = { fontSize = 10, color = new Color(0.8f, 0.7f, 0.4f) } });
             }
@@ -261,7 +261,7 @@ namespace CardGen.App
             }
             input.RegisterCallback<KeyDownEvent>(e => { if (e.keyCode == KeyCode.Return || e.keyCode == KeyCode.KeypadEnter) AddValue(); });
             addRow.Add(input);
-            addRow.Add(new Button(AddValue) { text = "加える" });
+            addRow.Add(UiTest.Btn("加える", AddValue));
             box.Add(addRow);
             box.Add(new Label(placeholder) { style = { fontSize = 10, color = new Color(0.55f, 0.55f, 0.6f) } });
             Add(box);
@@ -371,14 +371,14 @@ namespace CardGen.App
                         SetEditor(SetKind.Tag, t.Name, t.Values, "値を加える（例：闇属性、光属性）",
                             remove: () => { n.Sets.TagSets.Remove(t); Changed(); Show(n); }, nameField: nameField);
                     }
-                    var newSet = new Button(() =>
+                    var newSet = UiTest.Btn("タグの集合を加える", () =>
                     {
                         var k = 1;
                         while (n.Sets.TagSets.Any(x => x.Name == $"タグの集合{k}")) k++;
                         n.Sets.TagSets.Add(new TagSet { Name = $"タグの集合{k}" });
                         Changed();
                         Show(n);
-                    }) { text = "タグの集合を加える" };
+                    });
                     newSet.style.marginTop = 8;
                     Add(newSet);
                     break;
@@ -444,14 +444,14 @@ namespace CardGen.App
                     row.Add(lineCol);
                     row.Add(lineRow);
                     Add(row);
-                    var line = new Button(() =>
+                    var line = UiTest.Btn("マスの数だけ横に並べる", () =>
                     {
                         n.Zone.Cells = Enumerable.Range(0, n.Zone.Count).Select(i => new Cell(lineCol.value + i, lineRow.value)).ToList();
                         Changed();
                         Show(n);
-                    }) { text = "マスの数だけ横に並べる" };
+                    });
                     Add(line);
-                    var clear = new Button(() => { n.Zone.Cells = new List<Cell>(); Changed(); Show(n); }) { text = "マス目の上に置かない" };
+                    var clear = UiTest.Btn("マス目の上に置かない", () => { n.Zone.Cells = new List<Cell>(); Changed(); Show(n); });
                     Add(clear);
                     Hint($"盤面全体（2人分）は {Grid.Size}×{Grid.Size} のマス目です。マスの位置は「列,行」をマスの数だけ並べます（自分の側。" +
                          $"相手の側は中心のマス（{Grid.Size / 2}, {Grid.Size / 2}）について点対称の位置）。空なら、マス目の上にないゾーンです" +

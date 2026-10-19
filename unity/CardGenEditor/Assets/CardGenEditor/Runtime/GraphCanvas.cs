@@ -123,7 +123,7 @@ namespace CardGen.App
             foreach (var k in GraphDoc.Candidates(v.Node.Kind))
             {
                 var kind = k;
-                var b = new Button(() => AddCandidate(kind)) { text = Node.KindLabel(kind) };
+                var b = UiTest.Btn(Node.KindLabel(kind), () => AddCandidate(kind));
                 b.style.marginLeft = b.style.marginRight = 0;
                 b.style.marginTop = b.style.marginBottom = 1;
                 b.style.unityTextAlign = TextAnchor.MiddleLeft;
@@ -140,6 +140,11 @@ namespace CardGen.App
             popup.style.display = DisplayStyle.Flex;
             popup.BringToFront();
         }
+
+        /// <summary>つなぎ先の候補の一覧（自動テスト用。UiTest.Press でボタンを押せる）</summary>
+        public VisualElement CandidatePopup => popup;
+        /// <summary>候補の一覧が出ているか</summary>
+        public bool CandidatesShown => popup.style.display == DisplayStyle.Flex;
 
         /// <summary>ノード n のつなぎ先の候補を出す（動作確認用）</summary>
         public void ShowCandidatesFor(Node n)

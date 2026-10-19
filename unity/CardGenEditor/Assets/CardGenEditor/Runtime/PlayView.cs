@@ -285,6 +285,19 @@ namespace CardGen.App
 
         static string Who(bool p) => p ? "自分" : "相手";
 
+        // ---- 自動テスト用 ----
+
+        /// <summary>今の対戦（テスト用）</summary>
+        public Match CurrentMatch => match;
+        /// <summary>記録（古い順。テスト用）</summary>
+        public IReadOnlyList<string> Log => log;
+        /// <summary>p の手札の i 番目を選ぶ（カードの表示をクリックしたのと同じ）</summary>
+        public void SelectHand(bool p, int i) { selPlayer = p; selHand = i; selField = -1; customPay = null; Render(); }
+        /// <summary>p のフィールドの i 番目を選ぶ</summary>
+        public void SelectField(bool p, int i) { selPlayer = p; selField = i; selHand = -1; customPay = null; Render(); }
+        /// <summary>p の手札の i 番目が「置ける」と表示されるか</summary>
+        public bool ShowsPlaceable(bool p, int i) => CanPlaceNow(p, i);
+
         /// <summary>両者が続けてパスする（デモと場面づくり用）</summary>
         void PassBoth()
         {
@@ -312,7 +325,7 @@ namespace CardGen.App
             row.Add(Text($"優先権：{Who(t.Prio)}", 14, Good, true));
             if (t.Passes < 2 && !match.Over(game.Rules))
             {
-                var b = new Button(() => Do(TChoice.Pass(), $"{Who(match.Turn.Prio)}：パス")) { text = $"{Who(t.Prio)}がパスする" };
+                var b = UiTest.Btn($"{Who(t.Prio)}がパスする", () => Do(TChoice.Pass(), $"{Who(match.Turn.Prio)}：パス"));
                 b.style.marginLeft = 12;
                 row.Add(b);
             }
@@ -587,7 +600,7 @@ namespace CardGen.App
 
         VisualElement Chip(Card c, bool faceUp, string status, bool selected, System.Action onClick, string stats = null)
         {
-            var b = new Button(onClick);
+            var b = UiTest.Btn("", onClick);
             b.style.width = 120;
             b.style.flexShrink = 0;
             b.style.minHeight = CellHeight;
@@ -631,7 +644,7 @@ namespace CardGen.App
             head.Add(Text($"　デッキ {s.Deck.Count} 枚・墓地 {s.Grave.Count} 枚", 12, Quiet));
             if (p == turn)
             {
-                var end = new Button(() => { EndTurn(); Render(); }) { text = "ターン終了" };
+                var end = UiTest.Btn("ターン終了", () => { EndTurn(); Render(); });
                 end.style.marginLeft = 12;
                 head.Add(end);
             }
@@ -749,7 +762,7 @@ namespace CardGen.App
         /// <summary>空いているマスに置くボタン</summary>
         VisualElement PlaceButton(int zi, int cell)
         {
-            var b = new Button(() => PlaceSelected(zi, cell)) { text = $"ここに{(placeUp ? "表側" : "裏側")}で置く" };
+            var b = UiTest.Btn($"ここに{(placeUp ? "表側" : "裏側")}で置く", () => PlaceSelected(zi, cell));
             b.style.width = 120;
             b.style.flexShrink = 0;
             b.style.height = CellHeight;
@@ -902,7 +915,7 @@ namespace CardGen.App
                 void Opt(string label, int? a)
                 {
                     var on = a == null ? !has : has && cur == a.Value;
-                    var b = new Button(() => { if (a == null) blockPlan.Remove(jj); else blockPlan[jj] = a.Value; Render(); }) { text = label };
+                    var b = UiTest.Btn(label, () => { if (a == null) blockPlan.Remove(jj); else blockPlan[jj] = a.Value; Render(); });
                     b.style.backgroundColor = on ? new Color(0.28f, 0.45f, 0.62f) : new Color(0.22f, 0.22f, 0.25f);
                     row.Add(b);
                 }
@@ -992,10 +1005,10 @@ namespace CardGen.App
                 var cc = col;
                 var used = (customPay ?? new List<string>()).Count(x => x == cc);
                 if (used >= pool.Count(x => x == cc)) continue;
-                row.Add(new Button(() => { customPay = (customPay ?? new List<string>()).Append(cc).ToList(); Render(); }) { text = $"＋{ColorName(cc)}" });
+                row.Add(UiTest.Btn($"＋{ColorName(cc)}", () => { customPay = (customPay ?? new List<string>()).Append(cc).ToList(); Render(); }));
             }
-            row.Add(new Button(() => { customPay = new List<string>(); Render(); }) { text = "選び直す" });
-            if (customPay != null) row.Add(new Button(() => { customPay = null; Render(); }) { text = "自動の払い方に戻す" });
+            row.Add(UiTest.Btn("選び直す", () => { customPay = new List<string>(); Render(); }));
+            if (customPay != null) row.Add(UiTest.Btn("自動の払い方に戻す", () => { customPay = null; Render(); }));
             side.Add(row);
         }
 
@@ -1009,7 +1022,7 @@ namespace CardGen.App
 
         void ActionButton(string text, System.Action a)
         {
-            var b = new Button(a) { text = text };
+            var b = UiTest.Btn(text, a);
             b.style.marginTop = 4;
             b.style.whiteSpace = WhiteSpace.Normal;
             side.Add(b);
@@ -1028,7 +1041,7 @@ namespace CardGen.App
             var top = Row();
             top.style.alignItems = Align.Center;
             top.Add(Text("テストプレイ", 16, Color.white, true));
-            var restart = new Button(() => { seed++; Start(game); }) { text = "最初から（混ぜ直す）" };
+            var restart = UiTest.Btn("最初から（混ぜ直す）", () => { seed++; Start(game); });
             restart.style.marginLeft = 12;
             top.Add(restart);
             side.Add(top);
@@ -1036,11 +1049,11 @@ namespace CardGen.App
             turnRow.style.alignItems = Align.Center;
             turnRow.style.marginTop = 6;
             turnRow.Add(Text($"第{turnCount}ターン：{Who(turn)}のターン", 14, Warn, true));
-            var endTurn = new Button(() => { EndTurn(); Render(); }) { text = "ターン終了" };
+            var endTurn = UiTest.Btn("ターン終了", () => { EndTurn(); Render(); });
             endTurn.style.marginLeft = 12;
             endTurn.SetEnabled(match.Turn.Quiet && !match.Over(game.Rules) && match.Turn.Prio == turn && match.Turn.Passes < 2);
             turnRow.Add(endTurn);
-            var swap = new Button(() => { firstPlayer = !firstPlayer; Start(game); }) { text = $"{Who(!firstPlayer)}の先攻で最初から" };
+            var swap = UiTest.Btn($"{Who(!firstPlayer)}の先攻で最初から", () => { firstPlayer = !firstPlayer; Start(game); });
             swap.style.marginLeft = 6;
             turnRow.Add(swap);
             side.Add(turnRow);
@@ -1096,7 +1109,7 @@ namespace CardGen.App
                     foreach (var up in new[] { true, false })
                     {
                         var u = up;
-                        var b = new Button(() => { placeUp = u; Render(); }) { text = (up ? "表側" : "裏側") + (placeUp == up ? "（選択中）" : "") };
+                        var b = UiTest.Btn((up ? "表側" : "裏側") + (placeUp == up ? "（選択中）" : ""), () => { placeUp = u; Render(); });
                         upRow.Add(b);
                     }
                     side.Add(upRow);

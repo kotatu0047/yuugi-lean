@@ -38,6 +38,7 @@ lake exe cardgen CardGen/mtg.json --text
 python3 jobs/accept.py --recheck                 # 受け入れ済みの証明のジョブを検査し直す
 cd csharp/CardGen.Tests && dotnet test           # C# の差分テスト
 tools/unity-build.sh                             # Unity のエディタをビルド（Windows 側で）
+tools/unity-build.sh --test                      # Unity の画面の自動テスト
 ```
 
 中間表現は版 9（`CardGen/中間表現.md`）。

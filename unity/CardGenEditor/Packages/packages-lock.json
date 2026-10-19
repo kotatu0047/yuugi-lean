@@ -8,12 +8,28 @@
         "com.unity.nuget.newtonsoft-json": "3.2.1"
       }
     },
+    "com.unity.ext.nunit": {
+      "version": "2.1.0",
+      "depth": 1,
+      "source": "builtin",
+      "dependencies": {}
+    },
     "com.unity.nuget.newtonsoft-json": {
       "version": "3.2.2",
       "depth": 1,
       "source": "registry",
       "dependencies": {},
       "url": "https://packages.unity.com"
+    },
+    "com.unity.test-framework": {
+      "version": "1.8.0",
+      "depth": 0,
+      "source": "builtin",
+      "dependencies": {
+        "com.unity.ext.nunit": "2.1.0",
+        "com.unity.modules.imgui": "1.0.0",
+        "com.unity.modules.jsonserialize": "1.0.0"
+      }
     },
     "com.unity.modules.animation": {
       "version": "1.0.0",

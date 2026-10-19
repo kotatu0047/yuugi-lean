@@ -66,8 +66,8 @@ namespace CardGen.App
             Add(n);
             var row = new VisualElement();
             row.style.flexDirection = FlexDirection.Row;
-            row.Add(new Button(() => _ = Submit()) { text = "反例を探してジョブにする" });
-            row.Add(new Button(() => _ = Refresh()) { text = "ジョブの状態を更新" });
+            row.Add(UiTest.Btn("反例を探してジョブにする", () => _ = Submit()));
+            row.Add(UiTest.Btn("ジョブの状態を更新", () => _ = Refresh()));
             Add(row);
             message.style.whiteSpace = WhiteSpace.Normal;
             message.style.fontSize = 12;
@@ -80,6 +80,10 @@ namespace CardGen.App
         static readonly Color ChipOn = new Color(0.28f, 0.45f, 0.62f);
         static readonly Color ChipOff = new Color(0.22f, 0.22f, 0.25f);
         static readonly Color ChipBad = new Color(0.55f, 0.22f, 0.22f);
+
+        /// <summary>選んでいるカードの種類とタグ（自動テスト用）</summary>
+        public IReadOnlyList<string> SelectedTypes => types;
+        public IReadOnlyList<string> SelectedTags => tags;
 
         /// <summary>別のゲームを開いたとき：そのゲームの集合にない種類・タグの選択を外す（何も残らなければ最初の種類を選ぶ）</summary>
         public void DropUnknown(Game g)
@@ -111,7 +115,7 @@ namespace CardGen.App
             row.style.flexWrap = Wrap.Wrap;
             Button Chip(string text, Color bg, System.Action click)
             {
-                var b = new Button(click) { text = text };
+                var b = UiTest.Btn(text, click);
                 b.style.backgroundColor = bg;
                 b.style.borderTopLeftRadius = b.style.borderTopRightRadius = b.style.borderBottomLeftRadius = b.style.borderBottomRightRadius = 10;
                 return b;
