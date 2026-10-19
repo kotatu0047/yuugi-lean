@@ -79,7 +79,7 @@ namespace CardGen.App
                 var row = Row();
                 row.style.alignItems = Align.Center;
                 row.style.marginTop = 4;
-                var name = Text($"{tl.Card.Name}（{state.AtkOf(game.Rules, negs, (o, j), tl)}/{state.DefOf(game.Rules, negs, (o, j), tl)}）", 11, Color.white);
+                var name = Text($"{tl.Card.Name}（{state.AtkOf(game.Rules, negs, (o, j), tl)}/{state.DefOf(game.Rules, negs, (o, j), tl)}）", 11, Theme.Bright);
                 name.style.width = 150;
                 row.Add(name);
                 int jj = j;
@@ -97,7 +97,8 @@ namespace CardGen.App
                 {
                     var on = a == null ? !has : has && cur == a.Value;
                     var b = UiTest.Btn(label, () => { if (a == null) blockPlan.Remove(jj); else blockPlan[jj] = a.Value; Render(); });
-                    b.style.backgroundColor = on ? new Color(0.28f, 0.45f, 0.62f) : new Color(0.22f, 0.22f, 0.25f);
+                    b.style.backgroundColor = on ? Theme.Alpha(Theme.Cyan, 0.25f) : Theme.Alpha(Theme.Cyan, 0.03f);
+                    if (on) Theme.Border(b.style, 1, Theme.Cyan);
                     row.Add(b);
                 }
                 Opt("ブロックしない", null);
@@ -193,13 +194,19 @@ namespace CardGen.App
             side.Add(row);
         }
 
-        void Section(string title)
-        {
-            var l = Text(title, 14, Color.white, true);
-            l.style.marginTop = 12;
-            l.style.marginBottom = 4;
-            side.Add(l);
-        }
+        void Section(string title) => side.Add(Theme.Heading(title, SectionTag(title)));
+
+        /// <summary>右の欄の見出しの英字のタグ</summary>
+        static string SectionTag(string title) =>
+            title.StartsWith("選んでいるカード") ? "unit // selected"
+            : title.StartsWith("無効の状態") ? "negation // state"
+            : title.StartsWith("盤面の制約") ? "invariants // lean"
+            : title.StartsWith("記録") ? "event log"
+            : title.StartsWith("勝敗") ? "outcome"
+            : title.StartsWith("スタック") ? "stack"
+            : title.StartsWith("ブロック") ? "combat // block"
+            : title.StartsWith("対象") ? "targeting"
+            : null;
 
         void ActionButton(string text, System.Action a)
         {
@@ -225,7 +232,10 @@ namespace CardGen.App
             side.Clear();
             var top = Row();
             top.style.alignItems = Align.Center;
-            top.Add(Text("テストプレイ", 16, Color.white, true));
+            var titleCol = new VisualElement();
+            titleCol.Add(Theme.Tag("sim // test play", Theme.Cyan, 9));
+            titleCol.Add(Text("テストプレイ", 16, Theme.Bright, true));
+            top.Add(titleCol);
             var restart = UiTest.Btn("最初から（混ぜ直す）", () => { seed++; Start(game); });
             restart.style.marginLeft = 12;
             top.Add(restart);
@@ -276,7 +286,7 @@ namespace CardGen.App
             if (selHand >= 0 && selHand < s.Hand.Count)
             {
                 var c = s.Hand[selHand];
-                side.Add(Text($"{Who(selPlayer)}の手札：{c.Name}（{c.Type}）", 12, Color.white));
+                side.Add(Text($"{Who(selPlayer)}の手札：{c.Name}（{c.Type}）", 12, Theme.Bright));
                 bool any = false;
                 if (selPlayer != turn && !TurnInfo.Instant(game.Rules, c))
                 {
@@ -332,7 +342,7 @@ namespace CardGen.App
             else if (selField >= 0 && selField < s.Field.Count)
             {
                 var sl = s.Field[selField];
-                side.Add(Text($"{Who(selPlayer)}のフィールド：{sl.Card.Name}（{sl.Card.Type}・{(sl.FaceUp ? "表側" : "裏側")}）", 12, Color.white));
+                side.Add(Text($"{Who(selPlayer)}のフィールド：{sl.Card.Name}（{sl.Card.Type}・{(sl.FaceUp ? "表側" : "裏側")}）", 12, Theme.Bright));
                 neg.TryGetValue((selPlayer, selField), out var st);
                 if (st != null) side.Add(Text($"効果の状態：{st}", 12, st == "有効" ? Good : st == "無効" ? Bad : Warn));
                 var hasAct = sl.Card.Effects.Any(e => e is Activated);

@@ -17,58 +17,50 @@ namespace CardGen.App
         public readonly VisualElement InPort;
         public readonly VisualElement OutPort;
 
-        public static Color KindColor(NodeKind k) => k switch
-        {
-            NodeKind.Rules => new Color(0.55f, 0.35f, 0.75f),
-            NodeKind.Zone => new Color(0.25f, 0.50f, 0.75f),
-            NodeKind.Card => new Color(0.80f, 0.55f, 0.20f),
-            NodeKind.Activate => new Color(0.70f, 0.40f, 0.25f),
-            NodeKind.Destroy => new Color(0.75f, 0.30f, 0.30f),
-            NodeKind.Bounce => new Color(0.30f, 0.55f, 0.70f),
-            NodeKind.Draw => new Color(0.55f, 0.50f, 0.25f),
-            NodeKind.Negate => new Color(0.30f, 0.60f, 0.40f),
-            NodeKind.Boost => new Color(0.25f, 0.55f, 0.55f),
-            NodeKind.Toughen => new Color(0.25f, 0.45f, 0.65f),
-            NodeKind.Strike => new Color(0.80f, 0.45f, 0.30f),
-            NodeKind.Pump => new Color(0.45f, 0.65f, 0.30f),
-            NodeKind.Counter => new Color(0.35f, 0.40f, 0.75f),
-            NodeKind.Damage => new Color(0.80f, 0.35f, 0.50f),
-            NodeKind.Heal => new Color(0.35f, 0.65f, 0.35f),
-            NodeKind.Axioms => new Color(0.35f, 0.38f, 0.45f),
-            NodeKind.Sets => new Color(0.20f, 0.55f, 0.50f),
-            _ => new Color(0.45f, 0.45f, 0.50f),
-        };
+        public static Color KindColor(NodeKind k) => Theme.Kind(k);
+
+        bool selected, problem;
+        readonly VisualElement brackets;
 
         public NodeView(Node node)
         {
             Node = node;
+            var kc = KindColor(node.Kind);
             style.position = Position.Absolute;
             style.width = Width;
             // 公理・集合は文が長いので広くする（つなぐ丸はない）
             if (Node.IsFixed(node.Kind)) style.width = 320;
-            style.backgroundColor = new Color(0.17f, 0.17f, 0.19f, 0.97f);
-            SetBorder(1, new Color(0.3f, 0.3f, 0.33f));
-            style.borderTopLeftRadius = style.borderTopRightRadius = style.borderBottomLeftRadius = style.borderBottomRightRadius = 6;
+            Theme.Round(style, 2);
+            // 四隅のブラケット：選んでいればアンバー、問題があれば赤、ふだんは種類の色
+            Paint();
 
             var header = new VisualElement { name = "header" };
             header.style.height = HeaderHeight;
             header.style.flexDirection = FlexDirection.Row;
             header.style.alignItems = Align.Center;
-            header.style.paddingLeft = 14;
-            header.style.paddingRight = 14;
-            header.style.backgroundColor = KindColor(node.Kind);
-            header.style.borderTopLeftRadius = header.style.borderTopRightRadius = 5;
+            header.style.paddingLeft = 12;
+            header.style.paddingRight = 12;
+            header.style.backgroundColor = Theme.Alpha(kc, 0.16f);
+            header.style.borderLeftWidth = 3;
+            header.style.borderLeftColor = kc;
+            header.style.borderBottomWidth = 1;
+            header.style.borderBottomColor = Theme.Alpha(kc, 0.55f);
             kindLabel = new Label(Node.KindLabel(node.Kind));
             kindLabel.style.fontSize = 11;
-            kindLabel.style.color = new Color(1, 1, 1, 0.8f);
+            kindLabel.style.color = kc;
+            kindLabel.style.unityFontStyleAndWeight = FontStyle.Bold;
             kindLabel.style.marginRight = 6;
             titleLabel = new Label();
             titleLabel.style.unityFontStyleAndWeight = FontStyle.Bold;
-            titleLabel.style.color = Color.white;
+            titleLabel.style.color = Theme.Bright;
             titleLabel.style.overflow = Overflow.Hidden;
             titleLabel.style.flexShrink = 1;
+            titleLabel.style.flexGrow = 1;
             header.Add(kindLabel);
             header.Add(titleLabel);
+            var id = Theme.Tag($"#{node.Id:D3}", Theme.Alpha(kc, 0.65f), 9);
+            id.style.flexShrink = 0;
+            header.Add(id);
             Add(header);
 
             body = new Label();
@@ -78,44 +70,51 @@ namespace CardGen.App
             body.style.paddingTop = 6;
             body.style.paddingBottom = 8;
             body.style.fontSize = 12;
-            body.style.color = new Color(0.85f, 0.85f, 0.88f);
+            body.style.color = Theme.Text;
             Add(body);
 
             InPort = MakePort(left: true);
             OutPort = MakePort(left: false);
             if (Node.HasInput(node.Kind)) Add(InPort);
             if (Node.HasOutput(node.Kind)) Add(OutPort);
+            brackets = Theme.BracketsOverlay(() => selected ? Theme.Amber : problem ? Theme.Red : Theme.Alpha(kc, 0.9f), 10, 2f);
+            Add(brackets);
 
             Refresh();
         }
 
         VisualElement MakePort(bool left)
         {
+            // つなぐ丸：中が暗く、種類の色の輪（ひし形に回して HUD らしくする）
+            var kc = KindColor(Node.Kind);
             var p = new VisualElement { name = left ? "in-port" : "out-port" };
             p.style.position = Position.Absolute;
-            p.style.width = 14;
-            p.style.height = 14;
-            p.style.top = HeaderHeight / 2 - 7;
+            p.style.width = 12;
+            p.style.height = 12;
+            p.style.top = HeaderHeight / 2 - 6;
             if (left) p.style.left = -7; else p.style.right = -7;
-            p.style.backgroundColor = new Color(0.9f, 0.9f, 0.92f);
-            p.style.borderTopLeftRadius = p.style.borderTopRightRadius = p.style.borderBottomLeftRadius = p.style.borderBottomRightRadius = 7;
-            p.style.borderLeftWidth = p.style.borderRightWidth = p.style.borderTopWidth = p.style.borderBottomWidth = 2;
-            var c = new Color(0.15f, 0.15f, 0.17f);
-            p.style.borderLeftColor = p.style.borderRightColor = p.style.borderTopColor = p.style.borderBottomColor = c;
+            p.style.backgroundColor = Theme.Deep;
+            p.style.rotate = new Rotate(45);
+            Theme.Border(p.style, 2, kc);
+            var core = new VisualElement { pickingMode = PickingMode.Ignore };
+            core.style.position = Position.Absolute;
+            core.style.left = core.style.top = 2;
+            core.style.width = core.style.height = 4;
+            core.style.backgroundColor = kc;
+            p.Add(core);
             return p;
         }
 
-        void SetBorder(float w, Color c)
+        void Paint()
         {
-            style.borderLeftWidth = style.borderRightWidth = style.borderTopWidth = style.borderBottomWidth = w;
-            style.borderLeftColor = style.borderRightColor = style.borderTopColor = style.borderBottomColor = c;
+            style.backgroundColor = problem ? Theme.Alpha(Theme.Red, 0.14f) : Theme.Panel;
+            Theme.Border(style, 1, selected ? Theme.Amber : problem ? Theme.Alpha(Theme.Red, 0.8f) : Theme.Line);
+            brackets?.MarkDirtyRepaint();
         }
 
-        public void SetSelected(bool on) =>
-            SetBorder(on ? 2 : 1, on ? new Color(1f, 0.85f, 0.3f) : new Color(0.3f, 0.3f, 0.33f));
+        public void SetSelected(bool on) { selected = on; Paint(); }
 
-        public void SetProblem(bool on) => style.backgroundColor = on
-            ? new Color(0.30f, 0.14f, 0.14f, 0.97f) : new Color(0.17f, 0.17f, 0.19f, 0.97f);
+        public void SetProblem(bool on) { problem = on; Paint(); }
 
         /// <summary>位置と表示を中身に合わせる</summary>
         public void Refresh()

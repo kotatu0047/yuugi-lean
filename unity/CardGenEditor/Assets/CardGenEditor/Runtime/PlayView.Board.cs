@@ -43,14 +43,15 @@ namespace CardGen.App
             b.style.alignItems = Align.FlexStart;
             b.style.paddingLeft = 6;
             b.style.paddingTop = 4;
-            var color = NodeView.KindColor(NodeKind.Card);
-            b.style.backgroundColor = faceUp ? new Color(0.24f, 0.22f, 0.2f) : new Color(0.2f, 0.2f, 0.26f);
-            b.style.borderLeftWidth = b.style.borderRightWidth = b.style.borderTopWidth = b.style.borderBottomWidth = selected ? 2 : 1;
-            var bc = selected ? new Color(1f, 0.85f, 0.3f) : color;
-            b.style.borderLeftColor = b.style.borderRightColor = b.style.borderTopColor = b.style.borderBottomColor = bc;
-            b.Add(Text(c.Name, 11, Color.white, true));
+            // HUD のカード：表側はアンバー、裏側は紫の、透ける地と細い枠。選んでいれば枠と四隅のブラケットを明るく
+            var color = faceUp ? Theme.Amber : Theme.Kind(NodeKind.Counter);
+            b.style.backgroundColor = Theme.Alpha(color, selected ? 0.16f : 0.06f);
+            Theme.Border(b.style, 1, selected ? Theme.Amber : Theme.Alpha(color, 0.45f));
+            Theme.Round(b.style, 1);
+            Theme.Brackets(b, () => selected ? Theme.Amber : Theme.Alpha(color, 0.8f), selected ? 10 : 6, selected ? 2f : 1.2f);
+            b.Add(Text(c.Name, 11, Theme.Bright, true));
             b.Add(Text(c.Type + (faceUp ? "" : "・裏側"), 10, Quiet));
-            if (stats != null) b.Add(Text(stats, 10, new Color(0.85f, 0.8f, 0.6f)));
+            if (stats != null) b.Add(Text(stats, 10, Theme.Alpha(Theme.Amber, 0.9f)));
             if (status != null)
                 b.Add(Text(status, 10, status == "有効" || status == "置ける" ? Good : status == "無効" ? Bad : Warn, true));
             return b;
@@ -65,12 +66,14 @@ namespace CardGen.App
             box.style.paddingRight = 10;
             box.style.paddingTop = 8;
             box.style.paddingBottom = 4;
-            box.style.backgroundColor = new Color(0.15f, 0.15f, 0.17f);
-            box.style.borderTopLeftRadius = box.style.borderTopRightRadius = box.style.borderBottomLeftRadius = box.style.borderBottomRightRadius = 6;
+            Theme.Frame(box, p == turn ? Theme.LineHi : Theme.Line, Theme.Panel, p == turn ? Theme.Amber : Theme.Alpha(Theme.Cyan, 0.6f));
 
             var head = Row();
             head.style.alignItems = Align.Center;
-            head.Add(Text(Who(p), 15, Color.white, true));
+            var unit = Theme.Tag(p ? "unit // self" : "unit // opponent", p == turn ? Theme.Amber : Theme.Muted, 9);
+            unit.style.marginRight = 8;
+            head.Add(unit);
+            head.Add(Text(Who(p), 15, Theme.Bright, true));
             if (p == turn) head.Add(Text("　ターン中", 12, Warn, true));
             if (game.Rules.Life > 0)
                 head.Add(Text($"　ライフ {s.Life}", 15, s.Life == 0 ? Bad : Good, true));
@@ -203,8 +206,9 @@ namespace CardGen.App
             b.style.marginRight = 6;
             b.style.marginBottom = 6;
             b.style.fontSize = 11;
-            b.style.backgroundColor = new Color(0.22f, 0.3f, 0.22f);
-            b.style.borderLeftColor = b.style.borderRightColor = b.style.borderTopColor = b.style.borderBottomColor = Good;
+            b.style.backgroundColor = Theme.Alpha(Good, 0.08f);
+            Theme.Border(b.style, 1, Theme.Alpha(Good, 0.75f));
+            b.style.color = Good;
             return b;
         }
 
@@ -221,7 +225,7 @@ namespace CardGen.App
             empty.style.borderLeftColor = empty.style.borderRightColor = empty.style.borderTopColor = empty.style.borderBottomColor = Line;
             if (label != null)
             {
-                var l = Text(label, 9, new Color(0.45f, 0.45f, 0.5f));
+                var l = Text(label, 9, Theme.Dim);
                 l.style.paddingLeft = 4;
                 l.style.paddingTop = 2;
                 empty.Add(l);
@@ -260,11 +264,15 @@ namespace CardGen.App
             box.style.paddingLeft = 10;
             box.style.paddingTop = 8;
             box.style.paddingBottom = 4;
-            box.style.backgroundColor = new Color(0.13f, 0.14f, 0.16f);
-            box.style.borderTopLeftRadius = box.style.borderTopRightRadius = box.style.borderBottomLeftRadius = box.style.borderBottomRightRadius = 6;
+            box.style.paddingRight = 10;
+            Theme.Frame(box, Theme.Line, Theme.Alpha(Theme.Panel, 0.7f));
             int c0 = at.Keys.Min(c => c.Col), c1 = at.Keys.Max(c => c.Col);
             int r0 = at.Keys.Min(c => c.Row), r1 = at.Keys.Max(c => c.Row);
             var head = Row();
+            head.style.alignItems = Align.Center;
+            var grid = Theme.Tag("tactical grid", Theme.Cyan, 9);
+            grid.style.marginRight = 8;
+            head.Add(grid);
             head.Add(Text($"フィールド（盤面のマス目の列 {c0}〜{c1}・行 {r0}〜{r1}。上が相手、下が自分）", 11, Quiet));
             box.Add(head);
             for (int r = r0; r <= r1; r++)
@@ -272,7 +280,7 @@ namespace CardGen.App
                 if (!at.Keys.Any(c => c.Row == r))
                 {
                     // マスのない行（見本では盤面の中心の行）は細い区切りにする
-                    var sep = Text($"行 {r}（マスなし）", 9, new Color(0.45f, 0.45f, 0.5f));
+                    var sep = Text($"行 {r}（マスなし）", 9, Theme.Dim);
                     sep.style.marginTop = 2;
                     sep.style.marginBottom = 8;
                     sep.style.borderBottomWidth = 1;

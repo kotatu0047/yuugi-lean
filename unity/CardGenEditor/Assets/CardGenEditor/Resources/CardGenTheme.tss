@@ -1,33 +1,81 @@
 @import url("unity-theme://default");
 
-/* 暗い背景に合わせて、入力欄とボタンも暗い色にする */
+/* SF 映画の画面のような HUD 風の見た目。色は Theme.cs と揃える
+   （シアン rgb(0,229,255)・アンバー rgb(255,184,0)・本文 rgb(200,236,255)） */
+
+/* ボタン：透ける暗い地に、細いシアンの線。角はほぼ四角 */
 .unity-button {
-    background-color: rgb(58, 58, 64);
-    color: rgb(235, 235, 240);
-    border-color: rgb(85, 85, 92);
+    background-color: rgba(0, 229, 255, 0.05);
+    color: rgb(200, 236, 255);
+    border-width: 1px;
+    border-color: rgba(0, 229, 255, 0.32);
+    border-radius: 2px;
+    padding-left: 8px;
+    padding-right: 8px;
+    -unity-text-align: middle-center;
 }
 .unity-button:hover {
-    background-color: rgb(74, 74, 82);
+    background-color: rgba(0, 229, 255, 0.14);
+    border-color: rgba(0, 229, 255, 0.85);
+    color: rgb(235, 250, 255);
 }
 .unity-button:active {
-    background-color: rgb(95, 95, 105);
+    background-color: rgba(0, 229, 255, 0.32);
+    border-color: rgb(0, 229, 255);
+    color: rgb(255, 255, 255);
 }
+.unity-button:disabled {
+    background-color: rgba(0, 229, 255, 0.02);
+    border-color: rgba(108, 142, 162, 0.25);
+    color: rgba(108, 142, 162, 0.7);
+}
+
+/* 入力欄：ほぼ黒の地に細い線。選んでいるときはシアン */
 .unity-base-text-field__input,
 .unity-base-field__input,
 .unity-base-popup-field__input {
-    background-color: rgb(36, 36, 40);
-    color: rgb(235, 235, 240);
-    border-color: rgb(80, 80, 88);
+    background-color: rgba(0, 0, 0, 0.45);
+    color: rgb(200, 236, 255);
+    border-width: 1px;
+    border-color: rgba(0, 229, 255, 0.22);
+    border-radius: 2px;
+}
+.unity-base-text-field:focus .unity-base-text-field__input,
+.unity-base-field:focus .unity-base-field__input {
+    border-color: rgba(0, 229, 255, 0.9);
 }
 .unity-base-field__label {
-    color: rgb(200, 200, 208);
+    color: rgb(108, 142, 162);
+}
+.unity-text-element--inner-input-field-component {
+    color: rgb(200, 236, 255);
 }
 .unity-toggle__checkmark {
-    background-color: rgb(36, 36, 40);
-    border-color: rgb(110, 110, 120);
+    background-color: rgba(0, 0, 0, 0.45);
+    border-color: rgba(0, 229, 255, 0.45);
+    border-radius: 1px;
+    -unity-background-image-tint-color: rgb(0, 229, 255);
+}
+.unity-popup-field__arrow,
+.unity-base-popup-field__arrow {
+    -unity-background-image-tint-color: rgb(0, 229, 255);
 }
 
-/* スクロールバー：細く、矢印なし、溝は透明、つまみは角の丸い半透明（マウスを乗せると明るく） */
+/* 選ぶ形の入力の一覧 */
+.unity-base-dropdown__container-outer {
+    background-color: rgb(8, 19, 29);
+    border-color: rgba(0, 229, 255, 0.55);
+    border-width: 1px;
+}
+.unity-base-dropdown__item:hover,
+.unity-base-dropdown__item:checked {
+    background-color: rgba(0, 229, 255, 0.18);
+}
+.unity-base-dropdown__label {
+    color: rgb(200, 236, 255);
+}
+
+/* スクロールバー：細く、矢印なし、溝はうっすら、つまみは半透明のシアン（マウスを乗せると明るく、つかむとアンバー） */
 .unity-scroller--vertical {
     width: 8px;
     min-width: 8px;
@@ -70,7 +118,7 @@
     flex-grow: 1;
 }
 .unity-scroller .unity-base-slider__tracker {
-    background-color: rgba(255, 255, 255, 0.04);
+    background-color: rgba(0, 229, 255, 0.05);
     border-width: 0;
     border-radius: 4px;
     top: 0;
@@ -80,7 +128,7 @@
     margin: 0;
 }
 .unity-scroller .unity-base-slider__dragger {
-    background-color: rgba(200, 200, 215, 0.28);
+    background-color: rgba(0, 229, 255, 0.28);
     border-width: 0;
     border-radius: 4px;
     margin: 0;
@@ -94,10 +142,10 @@
     top: 0;
 }
 .unity-scroller .unity-base-slider__dragger:hover {
-    background-color: rgba(220, 220, 235, 0.5);
+    background-color: rgba(0, 229, 255, 0.55);
 }
 .unity-scroller .unity-base-slider__dragger:active {
-    background-color: rgba(240, 200, 90, 0.7);
+    background-color: rgba(255, 184, 0, 0.8);
 }
 .unity-scroller .unity-base-slider__dragger-border {
     display: none;

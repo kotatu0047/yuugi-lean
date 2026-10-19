@@ -22,9 +22,9 @@ namespace CardGen.App
         List<string> renameList;
         string renameValue;
 
-        static readonly Color ChipOn = new Color(0.28f, 0.45f, 0.62f);
-        static readonly Color ChipOff = new Color(0.22f, 0.22f, 0.25f);
-        static readonly Color ChipBad = new Color(0.55f, 0.22f, 0.22f);
+        static readonly Color ChipOn = Theme.Cyan;
+        static readonly Color ChipOff = Theme.Muted;
+        static readonly Color ChipBad = Theme.Red;
 
         public Inspector()
         {
@@ -88,15 +88,19 @@ namespace CardGen.App
 
         static Button Chip(string text, Color bg, System.Action click)
         {
+            // 選んでいる値は色の地と枠、選んでいない値は枠だけ
             var b = UiTest.Btn(text, click);
-            b.style.backgroundColor = bg;
+            var off = bg == ChipOff;
+            b.style.backgroundColor = Theme.Alpha(bg, off ? 0.03f : 0.18f);
+            Theme.Border(b.style, 1, Theme.Alpha(bg, off ? 0.3f : 0.85f));
+            b.style.color = off ? Theme.Muted : Theme.Bright;
             b.style.marginLeft = 0;
             b.style.marginRight = 4;
             b.style.marginTop = 2;
             b.style.marginBottom = 2;
             b.style.paddingLeft = 8;
             b.style.paddingRight = 8;
-            b.style.borderTopLeftRadius = b.style.borderTopRightRadius = b.style.borderBottomLeftRadius = b.style.borderBottomRightRadius = 10;
+            Theme.Round(b.style, 1);
             return b;
         }
 
@@ -105,7 +109,7 @@ namespace CardGen.App
             var l = new Label(text);
             l.style.marginTop = 6;
             l.style.marginBottom = 2;
-            l.style.color = new Color(0.82f, 0.82f, 0.86f);
+            l.style.color = Theme.Text;
             return l;
         }
 
@@ -129,7 +133,7 @@ namespace CardGen.App
             }
             foreach (var bad in selected.Where(x => !options.Contains(x)).Distinct().ToList())
                 row.Add(Chip($"{bad}（集合にない）×", ChipBad, () => { selected.RemoveAll(x => x == bad); Changed(); Show(node); }));
-            if (row.childCount == 0) row.Add(new Label(empty) { style = { color = new Color(0.6f, 0.6f, 0.65f), fontSize = 11 } });
+            if (row.childCount == 0) row.Add(new Label(empty) { style = { color = Theme.Muted, fontSize = 11 } });
             Add(row);
         }
 
@@ -164,7 +168,7 @@ namespace CardGen.App
                 var name = new Label(ts.Name);
                 name.style.width = Length.Percent(100);
                 name.style.fontSize = 11;
-                name.style.color = new Color(0.65f, 0.65f, 0.7f);
+                name.style.color = Theme.Muted;
                 row.Add(name);
                 foreach (var o in ts.Values)
                 {
@@ -199,11 +203,10 @@ namespace CardGen.App
             box.style.paddingRight = 8;
             box.style.paddingTop = 6;
             box.style.paddingBottom = 6;
-            box.style.backgroundColor = new Color(0.14f, 0.15f, 0.17f);
-            box.style.borderTopLeftRadius = box.style.borderTopRightRadius = box.style.borderBottomLeftRadius = box.style.borderBottomRightRadius = 6;
+            Theme.Frame(box, Theme.Line, Theme.Alpha(Theme.Cyan, 0.03f), Theme.Alpha(Theme.Cyan, 0.5f));
             var head = Wrap();
             if (nameField != null) { nameField.style.flexGrow = 1; head.Add(nameField); }
-            else head.Add(new Label(title) { style = { unityFontStyleAndWeight = FontStyle.Bold, color = Color.white, flexGrow = 1 } });
+            else head.Add(new Label(title) { style = { unityFontStyleAndWeight = FontStyle.Bold, color = Theme.Bright, flexGrow = 1 } });
             if (remove != null) head.Add(UiTest.Btn("集合を削除", remove));
             box.Add(head);
             var chips = Wrap();
@@ -212,7 +215,7 @@ namespace CardGen.App
                 var x = v;
                 // 値を押すと名前を変える欄が出る。× で消す
                 var editing = renameList == values && renameValue == x;
-                chips.Add(Chip(v, editing ? new Color(0.55f, 0.45f, 0.2f) : ChipOn, () =>
+                chips.Add(Chip(v, editing ? Theme.Amber : ChipOn, () =>
                 {
                     (renameList, renameValue) = editing ? (null, null) : (values, x);
                     Show(node);
@@ -222,7 +225,7 @@ namespace CardGen.App
                 del.style.marginRight = 8;
                 chips.Add(del);
             }
-            if (values.Count == 0) chips.Add(new Label("（まだありません）") { style = { color = new Color(0.6f, 0.6f, 0.65f), fontSize = 11 } });
+            if (values.Count == 0) chips.Add(new Label("（まだありません）") { style = { color = Theme.Muted, fontSize = 11 } });
             box.Add(chips);
             if (renameList == values && values.Contains(renameValue))
             {
@@ -243,7 +246,7 @@ namespace CardGen.App
                 rrow.Add(to);
                 rrow.Add(UiTest.Btn("名前を変える", Apply));
                 box.Add(rrow);
-                box.Add(new Label("使っているカード・ゾーン・ルール・範囲も、まとめて新しい名前に変わります") { style = { fontSize = 10, color = new Color(0.8f, 0.7f, 0.4f) } });
+                box.Add(new Label("使っているカード・ゾーン・ルール・範囲も、まとめて新しい名前に変わります") { style = { fontSize = 10, color = Theme.Amber } });
             }
             var addRow = Wrap();
             addRow.style.flexWrap = UnityEngine.UIElements.Wrap.NoWrap;
@@ -263,18 +266,16 @@ namespace CardGen.App
             addRow.Add(input);
             addRow.Add(UiTest.Btn("加える", AddValue));
             box.Add(addRow);
-            box.Add(new Label(placeholder) { style = { fontSize = 10, color = new Color(0.55f, 0.55f, 0.6f) } });
+            box.Add(new Label(placeholder) { style = { fontSize = 10, color = Theme.Muted } });
             Add(box);
         }
 
         void Heading(string text)
         {
-            var l = new Label(text);
-            l.style.unityFontStyleAndWeight = FontStyle.Bold;
-            l.style.fontSize = 15;
-            l.style.marginBottom = 8;
-            l.style.color = Color.white;
-            Add(l);
+            var h = Theme.Heading(text, node != null ? $"node #{node.Id:D3} // inspect" : "inspect", node != null ? Theme.Kind(node.Kind) : (Color?)null, 15);
+            h.style.marginTop = 0;
+            h.style.marginBottom = 8;
+            Add(h);
         }
 
         void Hint(string text)
@@ -282,7 +283,7 @@ namespace CardGen.App
             var l = new Label(text);
             l.style.whiteSpace = WhiteSpace.Normal;
             l.style.fontSize = 11;
-            l.style.color = new Color(0.7f, 0.7f, 0.75f);
+            l.style.color = Theme.Muted;
             l.style.marginBottom = 6;
             Add(l);
         }
@@ -352,7 +353,7 @@ namespace CardGen.App
                         var l = new Label($"{i + 1}. {Axioms.Lines[i]}");
                         l.style.whiteSpace = WhiteSpace.Normal;
                         l.style.marginBottom = 4;
-                        l.style.color = new Color(0.88f, 0.88f, 0.9f);
+                        l.style.color = Theme.Text;
                         Add(l);
                     }
                     break;

@@ -42,7 +42,7 @@ namespace CardGen.App
         {
             style.flexGrow = 1;
             style.overflow = Overflow.Hidden;
-            style.backgroundColor = new Color(0.11f, 0.11f, 0.12f);
+            style.backgroundColor = Theme.Deep;
             focusable = true;
 
             content = new VisualElement { name = "content", pickingMode = PickingMode.Ignore };
@@ -53,6 +53,8 @@ namespace CardGen.App
             content.style.height = 4000;
             content.style.transformOrigin = new TransformOrigin(0, 0);
             Add(content);
+            // 方眼（キャンバスと一緒に動き、拡大縮小する）
+            content.Add(Theme.Grid());
 
             edgeLayer = new VisualElement { name = "edges", pickingMode = PickingMode.Ignore };
             edgeLayer.style.position = Position.Absolute;
@@ -66,14 +68,9 @@ namespace CardGen.App
             popup = new VisualElement { name = "candidates" };
             popup.style.position = Position.Absolute;
             popup.style.display = DisplayStyle.None;
-            popup.style.backgroundColor = new Color(0.16f, 0.16f, 0.19f, 0.98f);
-            popup.style.borderTopLeftRadius = popup.style.borderTopRightRadius =
-                popup.style.borderBottomLeftRadius = popup.style.borderBottomRightRadius = 6;
-            popup.style.borderLeftWidth = popup.style.borderRightWidth = popup.style.borderTopWidth = popup.style.borderBottomWidth = 1;
-            popup.style.borderLeftColor = popup.style.borderRightColor = popup.style.borderTopColor = popup.style.borderBottomColor =
-                new Color(1f, 0.85f, 0.3f, 0.7f);
-            popup.style.paddingLeft = popup.style.paddingRight = 6;
-            popup.style.paddingTop = popup.style.paddingBottom = 6;
+            Theme.Frame(popup, Theme.LineHi, Theme.Panel, Theme.Amber);
+            popup.style.paddingLeft = popup.style.paddingRight = 8;
+            popup.style.paddingTop = popup.style.paddingBottom = 8;
             popup.RegisterCallback<PointerEnterEvent>(_ => overPopup = true);
             popup.RegisterCallback<PointerLeaveEvent>(_ => { overPopup = false; HideSoon(); });
             Add(popup);
@@ -119,7 +116,8 @@ namespace CardGen.App
         {
             popupFor = v;
             popup.Clear();
-            var head = new Label($"{v.Node.Title} につなぐ") { style = { fontSize = 11, color = new Color(0.8f, 0.8f, 0.85f), marginBottom = 4 } };
+            popup.Add(Theme.Tag("link // candidates", Theme.Alpha(Theme.Cyan, 0.7f), 9));
+            var head = new Label($"{v.Node.Title} につなぐ") { style = { fontSize = 12, color = Theme.Bright, marginBottom = 4, unityFontStyleAndWeight = FontStyle.Bold } };
             popup.Add(head);
             foreach (var k in GraphDoc.Candidates(v.Node.Kind))
             {
@@ -133,7 +131,7 @@ namespace CardGen.App
                 popup.Add(b);
             }
             if (Node.TakesSelector(v.Node.Kind) && Doc.Children(v.Node).Count > 0)
-                popup.Add(new Label("（今の範囲と入れ替わります）") { style = { fontSize = 10, color = new Color(0.65f, 0.65f, 0.7f) } });
+                popup.Add(new Label("（今の範囲と入れ替わります）") { style = { fontSize = 10, color = Theme.Muted } });
             var port = v.OutPort.worldBound;
             var local = this.WorldToLocal(new Vector2(port.xMax + 6, port.yMin - 4));
             popup.style.left = Mathf.Min(local.x, Mathf.Max(0, layout.width - 200));
@@ -351,13 +349,24 @@ namespace CardGen.App
 
         void DrawCurve(Painter2D p, Vector2 a, Vector2 b, Color c)
         {
+            // 光る線：太く薄い線の上に、細く明るい線を重ねる。両端に小さな点
             float dx = Mathf.Max(40, Mathf.Abs(b.x - a.x) * 0.5f);
-            p.strokeColor = c;
-            p.lineWidth = 2.5f;
-            p.BeginPath();
-            p.MoveTo(a);
-            p.BezierCurveTo(a + new Vector2(dx, 0), b - new Vector2(dx, 0), b);
-            p.Stroke();
+            foreach (var (w, alpha) in new[] { (7f, 0.12f), (3.5f, 0.28f), (1.4f, 1f) })
+            {
+                p.strokeColor = Theme.Alpha(c, alpha);
+                p.lineWidth = w;
+                p.BeginPath();
+                p.MoveTo(a);
+                p.BezierCurveTo(a + new Vector2(dx, 0), b - new Vector2(dx, 0), b);
+                p.Stroke();
+            }
+            p.fillColor = c;
+            foreach (var q in new[] { a, b })
+            {
+                p.BeginPath();
+                p.Arc(q, 2.5f, 0, 360);
+                p.Fill();
+            }
         }
 
         void DrawEdges(MeshGenerationContext ctx)
@@ -371,7 +380,7 @@ namespace CardGen.App
                 DrawCurve(p, OutPos(a), InPos(b), NodeView.KindColor(a.Kind));
             }
             if (drag == Drag.Connect && dragNode != null)
-                DrawCurve(p, OutPos(dragNode.Node), connectEnd, new Color(1f, 0.85f, 0.3f));
+                DrawCurve(p, OutPos(dragNode.Node), connectEnd, Theme.Amber);
         }
 
         NodeView NodeAt(Vector2 panelPos)

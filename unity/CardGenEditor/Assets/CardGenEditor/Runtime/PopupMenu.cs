@@ -37,15 +37,15 @@ namespace CardGen.App
     /// </summary>
     public sealed class PopupMenu : VisualElement
     {
-        static readonly Color Back = new Color(0.15f, 0.15f, 0.18f, 0.99f);
-        static readonly Color TitleBack = new Color(0.22f, 0.22f, 0.27f);
-        static readonly Color Edge = new Color(0.4f, 0.4f, 0.47f);
-        static readonly Color Line = new Color(0.28f, 0.28f, 0.33f);
-        static readonly Color Text = new Color(0.94f, 0.94f, 0.96f);
-        static readonly Color Muted = new Color(0.62f, 0.62f, 0.7f);
-        static readonly Color Hover = new Color(0.27f, 0.29f, 0.38f);
-        static readonly Color Accent = new Color(1f, 0.82f, 0.3f);
-        static readonly Color DangerText = new Color(1f, 0.55f, 0.5f);
+        static readonly Color Back = Theme.Alpha(Theme.Panel, 0.98f);
+        static readonly Color TitleBack = Theme.PanelHi;
+        static readonly Color Edge = Theme.LineHi;
+        static readonly Color Line = Theme.Line;
+        static readonly Color Text = Theme.Text;
+        static readonly Color Muted = Theme.Muted;
+        static readonly Color Hover = Theme.Alpha(Theme.Cyan, 0.13f);
+        static readonly Color Accent = Theme.Cyan;
+        static readonly Color DangerText = Theme.Red;
         const float Width = 300;
 
         /// <summary>今出ているメニュー（なければ null。自動テストと動作確認用）</summary>
@@ -84,8 +84,7 @@ namespace CardGen.App
             return m;
         }
 
-        static void Round(IStyle s, float r) =>
-            s.borderTopLeftRadius = s.borderTopRightRadius = s.borderBottomLeftRadius = s.borderBottomRightRadius = r;
+        static void Round(IStyle s, float r) => Theme.Round(s, r);
 
         PopupMenu(List<MenuEntry> items)
         {
@@ -103,8 +102,8 @@ namespace CardGen.App
             // 影（少しずらした半透明の黒）
             shadow = new VisualElement { pickingMode = PickingMode.Ignore };
             shadow.style.position = Position.Absolute;
-            shadow.style.backgroundColor = new Color(0, 0, 0, 0.45f);
-            Round(shadow.style, 9);
+            shadow.style.backgroundColor = new Color(0, 0, 0, 0.55f);
+            Round(shadow.style, 2);
             Add(shadow);
 
             frame = new VisualElement();
@@ -113,8 +112,8 @@ namespace CardGen.App
             frame.style.backgroundColor = Back;
             frame.style.borderLeftWidth = frame.style.borderRightWidth = frame.style.borderTopWidth = frame.style.borderBottomWidth = 1;
             frame.style.borderLeftColor = frame.style.borderRightColor = frame.style.borderTopColor = frame.style.borderBottomColor = Edge;
+            Round(frame.style, 2);
             frame.style.overflow = Overflow.Hidden;
-            Round(frame.style, 8);
             var title = items.Find(i => i.IsTitle);
             if (title != null) frame.Add(TitleRow(title));
             var list = new ScrollView(ScrollViewMode.Vertical);
@@ -123,6 +122,7 @@ namespace CardGen.App
             list.style.flexShrink = 1;
             foreach (var it in items) if (!it.IsTitle) list.Add(Row(it));
             frame.Add(list);
+            frame.Add(Theme.BracketsOverlay(() => Theme.Amber, 11, 2f));
             Add(frame);
         }
 
@@ -164,7 +164,8 @@ namespace CardGen.App
             if (it.Swatch is Color c) row.Add(Swatch(c, 12));
             var col = new VisualElement();
             col.style.flexShrink = 1;
-            col.Add(Lbl(it.Text, 14, Text, true));
+            col.Add(Theme.Tag("ctx // menu", Theme.Alpha(Theme.Cyan, 0.7f), 8));
+            col.Add(Lbl(it.Text, 14, Theme.Bright, true));
             if (!string.IsNullOrEmpty(it.Hint)) col.Add(Lbl(it.Hint, 11, Muted));
             row.Add(col);
             return row;

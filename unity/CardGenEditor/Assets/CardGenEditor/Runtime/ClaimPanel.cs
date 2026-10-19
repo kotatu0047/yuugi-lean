@@ -32,9 +32,9 @@ namespace CardGen.App
         readonly VisualElement jobs = new VisualElement();
         bool busy;
 
-        static readonly Color Good = new Color(0.45f, 0.8f, 0.5f);
-        static readonly Color Bad = new Color(0.95f, 0.45f, 0.4f);
-        static readonly Color Quiet = new Color(0.7f, 0.7f, 0.75f);
+        static readonly Color Good = Theme.Green;
+        static readonly Color Bad = Theme.Red;
+        static readonly Color Quiet = Theme.Muted;
 
         public ClaimPanel(Func<Game> getGame, Func<string> getCommand)
         {
@@ -44,14 +44,9 @@ namespace CardGen.App
             style.paddingRight = 12;
             style.paddingBottom = 16;
             style.borderTopWidth = 1;
-            style.borderTopColor = new Color(0.3f, 0.3f, 0.33f);
+            style.borderTopColor = Theme.Line;
 
-            var head = new Label("命題とジョブ");
-            head.style.fontSize = 14;
-            head.style.unityFontStyleAndWeight = FontStyle.Bold;
-            head.style.color = Color.white;
-            head.style.marginTop = 10;
-            Add(head);
+            Add(Theme.Heading("命題とジョブ", "claim // jobs"));
             var hint = new Label("「（フィールド上・手札・墓地・デッキ）の、条件に合うカードは最大 n 枚」を追加できます。反例がなければ証明のジョブになり、" +
                                  "開発中は Claude が証明します（「キューを処理して」と頼む）。");
             hint.style.whiteSpace = WhiteSpace.Normal;
@@ -89,9 +84,9 @@ namespace CardGen.App
                 tags.Count > 0 ? "タグの条件なしになります" : "タグを選んでいません"),
         };
 
-        static readonly Color ChipOn = new Color(0.28f, 0.45f, 0.62f);
-        static readonly Color ChipOff = new Color(0.22f, 0.22f, 0.25f);
-        static readonly Color ChipBad = new Color(0.55f, 0.22f, 0.22f);
+        static readonly Color ChipOn = Theme.Cyan;
+        static readonly Color ChipOff = Theme.Muted;
+        static readonly Color ChipBad = Theme.Red;
 
         /// <summary>選んでいるカードの種類とタグ（自動テスト用）</summary>
         public IReadOnlyList<string> SelectedTypes => types;
@@ -120,7 +115,7 @@ namespace CardGen.App
         void Fill(VisualElement box, string label, List<string> options, List<string> selected, string empty)
         {
             box.Clear();
-            var l = new Label(label) { style = { marginTop = 4, color = new Color(0.82f, 0.82f, 0.86f) } };
+            var l = new Label(label) { style = { marginTop = 4, color = Theme.Text } };
             box.Add(l);
             var row = new VisualElement();
             row.style.flexDirection = FlexDirection.Row;
@@ -128,8 +123,11 @@ namespace CardGen.App
             Button Chip(string text, Color bg, System.Action click)
             {
                 var b = UiTest.Btn(text, click);
-                b.style.backgroundColor = bg;
-                b.style.borderTopLeftRadius = b.style.borderTopRightRadius = b.style.borderBottomLeftRadius = b.style.borderBottomRightRadius = 10;
+                var off = bg == ChipOff;
+                b.style.backgroundColor = Theme.Alpha(bg, off ? 0.03f : 0.18f);
+                Theme.Border(b.style, 1, Theme.Alpha(bg, off ? 0.3f : 0.85f));
+                b.style.color = off ? Theme.Muted : Theme.Bright;
+                Theme.Round(b.style, 1);
                 return b;
             }
             foreach (var o in options)

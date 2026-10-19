@@ -14,7 +14,7 @@ namespace CardGen.App
             {
                 var cam = new GameObject("Camera").AddComponent<Camera>();
                 cam.clearFlags = CameraClearFlags.SolidColor;
-                cam.backgroundColor = new Color(0.13f, 0.13f, 0.14f);
+                cam.backgroundColor = Theme.Void;
                 cam.tag = "MainCamera";
             }
             var settings = Resources.Load<PanelSettings>("CardGenPanelSettings");

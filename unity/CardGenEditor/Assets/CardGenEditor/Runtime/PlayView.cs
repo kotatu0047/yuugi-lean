@@ -60,12 +60,12 @@ namespace CardGen.App
         /// <summary>「エディタに戻る」（アプリが設定する）</summary>
         public System.Action Exit;
 
-        static readonly Color Panel = new Color(0.16f, 0.16f, 0.18f);
-        static readonly Color Line = new Color(0.3f, 0.3f, 0.33f);
-        static readonly Color Good = new Color(0.45f, 0.8f, 0.5f);
-        static readonly Color Bad = new Color(0.95f, 0.45f, 0.4f);
-        static readonly Color Warn = new Color(0.95f, 0.75f, 0.35f);
-        static readonly Color Quiet = new Color(0.7f, 0.7f, 0.75f);
+        static readonly Color Panel = Theme.Panel;
+        static readonly Color Line = Theme.Line;
+        static readonly Color Good = Theme.Green;
+        static readonly Color Bad = Theme.Red;
+        static readonly Color Warn = Theme.Amber;
+        static readonly Color Quiet = Theme.Muted;
         // フィールドのマス1つの高さ（カードの表示と空きのマスで揃える）
         const float CellHeight = 100;
 
@@ -75,6 +75,7 @@ namespace CardGen.App
             style.flexDirection = FlexDirection.Row;
             var boardScroll = new ScrollView(ScrollViewMode.VerticalAndHorizontal);
             boardScroll.style.flexGrow = 1;
+            boardScroll.style.backgroundColor = Theme.Deep;
             boards = new VisualElement();
             boards.style.paddingLeft = 16;
             boards.style.paddingRight = 16;
@@ -86,7 +87,7 @@ namespace CardGen.App
             sideScroll.style.width = 420;
             sideScroll.style.backgroundColor = Panel;
             sideScroll.style.borderLeftWidth = 1;
-            sideScroll.style.borderLeftColor = Line;
+            sideScroll.style.borderLeftColor = Theme.LineHi;
             side = new VisualElement();
             side.style.paddingLeft = 12;
             side.style.paddingRight = 12;

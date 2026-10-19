@@ -70,17 +70,28 @@ namespace CardGen.App
         void Build(VisualElement root)
         {
             root.style.flexGrow = 1;
-            root.style.backgroundColor = new Color(0.13f, 0.13f, 0.14f);
-            root.style.color = new Color(0.92f, 0.92f, 0.94f);
+            root.style.backgroundColor = Theme.Void;
+            root.style.color = Theme.Text;
 
             var toolbar = Row();
             toolbar.style.paddingLeft = 8;
             toolbar.style.paddingTop = 6;
             toolbar.style.paddingBottom = 6;
-            toolbar.style.backgroundColor = new Color(0.18f, 0.18f, 0.2f);
+            toolbar.style.backgroundColor = Theme.Panel;
+            toolbar.style.borderBottomWidth = 1;
+            toolbar.style.borderBottomColor = Theme.LineHi;
             toolbar.style.flexWrap = Wrap.Wrap;
             // 折り返したときに下の領域に押しつぶされないようにする
             toolbar.style.flexShrink = 0;
+            // アプリの名前（英字の HUD 風）
+            var brand = new VisualElement();
+            brand.style.marginRight = 14;
+            brand.style.paddingRight = 14;
+            brand.style.borderRightWidth = 1;
+            brand.style.borderRightColor = Theme.Line;
+            brand.Add(Theme.Tag("cardgen", Theme.Cyan, 15));
+            brand.Add(Theme.Tag("verified game forge", Theme.Muted, 8));
+            toolbar.Add(brand);
             toolbar.Add(MakeButton("新規", NewDoc));
             toolbar.Add(MakeButton("整列", () => canvas.Arrange()));
             toolbar.Add(MakeButton("見本", LoadSample));
@@ -93,7 +104,9 @@ namespace CardGen.App
             var sep = new VisualElement();
             sep.style.width = 16;
             toolbar.Add(sep);
-            toolbar.Add(new Label("追加：") { style = { marginRight = 4 } });
+            var addTag = Theme.Tag("add //", Theme.Alpha(Theme.Cyan, 0.7f), 9);
+            addTag.style.marginRight = 6;
+            toolbar.Add(addTag);
             foreach (NodeKind k in Enum.GetValues(typeof(NodeKind)))
                 if (k != NodeKind.Rules && !Node.IsFixed(k)) toolbar.Add(MakeButton(Node.KindLabel(k), () => canvas.AddNode(k)));
             toolbar.Add(MakeButton("削除", () => canvas.RemoveSelected()));
@@ -115,9 +128,9 @@ namespace CardGen.App
 
             var side = new VisualElement();
             side.style.width = 420;
-            side.style.backgroundColor = new Color(0.16f, 0.16f, 0.18f);
+            side.style.backgroundColor = Theme.Panel;
             side.style.borderLeftWidth = 1;
-            side.style.borderLeftColor = new Color(0.3f, 0.3f, 0.33f);
+            side.style.borderLeftColor = Theme.LineHi;
             inspector = new Inspector();
             inspector.Sets = () => canvas.Doc.Nodes.FirstOrDefault(x => x.Kind == NodeKind.Sets)?.Sets;
             inspector.Rename = (k, from, to) =>
@@ -142,7 +155,7 @@ namespace CardGen.App
             checkRow.style.paddingTop = 6;
             checkRow.style.paddingBottom = 6;
             checkRow.style.borderTopWidth = 1;
-            checkRow.style.borderTopColor = new Color(0.3f, 0.3f, 0.33f);
+            checkRow.style.borderTopColor = Theme.Line;
             var checkButton = MakeButton("Lean で検査", () => _ = RunLeanCheck());
             checkButton.style.unityFontStyleAndWeight = FontStyle.Bold;
             checkRow.Add(checkButton);
@@ -172,13 +185,31 @@ namespace CardGen.App
             playView.style.display = DisplayStyle.None;
             root.Add(playView);
 
+            // 下の帯：状態の点・英字のタグ・知らせ
+            var statusBar = Row();
+            statusBar.style.flexShrink = 0;
+            statusBar.style.paddingLeft = 10;
+            statusBar.style.paddingRight = 10;
+            statusBar.style.paddingTop = 3;
+            statusBar.style.paddingBottom = 3;
+            statusBar.style.backgroundColor = Theme.Void;
+            statusBar.style.borderTopWidth = 1;
+            statusBar.style.borderTopColor = Theme.Line;
+            var dot = Theme.Dot(Theme.Green);
+            dot.style.marginRight = 6;
+            statusBar.Add(dot);
+            var sys = Theme.Tag("sys // online", Theme.Green, 9);
+            sys.style.marginRight = 12;
+            statusBar.Add(sys);
             status = new Label();
-            status.style.paddingLeft = 8;
-            status.style.paddingTop = 3;
-            status.style.paddingBottom = 3;
             status.style.fontSize = 11;
-            status.style.backgroundColor = new Color(0.1f, 0.1f, 0.11f);
-            root.Add(status);
+            status.style.color = Theme.Text;
+            status.style.flexGrow = 1;
+            statusBar.Add(status);
+            statusBar.Add(Theme.Tag("lean 4 // proof-checked", Theme.Dim, 9));
+            root.Add(statusBar);
+            // 画面全体にうっすらと走査線を重ねる（クリックは下に通す）
+            root.Add(Theme.Scanlines());
         }
 
         /// <summary>既定の UI のフォントは日本語を含まないので、OS の日本語フォントを使う</summary>
@@ -311,31 +342,29 @@ namespace CardGen.App
 
         static Color StatusColor(string s) => s switch
         {
-            "proved" => new Color(0.45f, 0.8f, 0.5f),
-            "counterexample" => new Color(0.95f, 0.45f, 0.4f),
-            "choice" => new Color(0.95f, 0.75f, 0.35f),
-            _ => new Color(0.7f, 0.7f, 0.75f),
+            "proved" => Theme.Green,
+            "counterexample" => Theme.Red,
+            "choice" => Theme.Amber,
+            _ => Theme.Muted,
         };
 
         static VisualElement Badge(string status)
         {
-            var l = Text(Report.StatusLabel(status), 11, Color.black, true);
-            l.style.backgroundColor = StatusColor(status);
+            // 枠線だけの札（地は状態の色をうっすら）
+            var c = StatusColor(status);
+            var l = Text(Report.StatusLabel(status), 11, c, true);
+            l.style.backgroundColor = Theme.Alpha(c, 0.12f);
+            Theme.Border(l.style, 1, Theme.Alpha(c, 0.8f));
+            Theme.Round(l.style, 1);
             l.style.paddingLeft = 6;
             l.style.paddingRight = 6;
-            l.style.marginRight = 6;
-            l.style.borderTopLeftRadius = l.style.borderTopRightRadius = l.style.borderBottomLeftRadius = l.style.borderBottomRightRadius = 3;
+            l.style.marginRight = 8;
+            l.style.flexShrink = 0;
             l.style.alignSelf = Align.FlexStart;
             return l;
         }
 
-        static void Section(VisualElement parent, string title)
-        {
-            var l = Text(title, 14, Color.white, true);
-            l.style.marginTop = 12;
-            l.style.marginBottom = 4;
-            parent.Add(l);
-        }
+        static void Section(VisualElement parent, string title, string tag = null) => parent.Add(Theme.Heading(title, tag));
 
         /// <summary>ノードが変わったら、形式の検査をその場でやり直す</summary>
         void OnModelChanged()
@@ -352,13 +381,13 @@ namespace CardGen.App
             var errors = structure.Concat(Check.Game(game)).ToList();
             canvas.SetProblems(ProblemNodes(errors));
 
-            Section(results, "形式の検査（その場で）");
+            Section(results, "形式の検査（その場で）", "format // live");
             if (errors.Count == 0) results.Add(Text("問題ありません", 12, StatusColor("proved")));
             foreach (var e in errors) results.Add(Text("・" + e, 12, StatusColor("counterexample")));
 
-            Section(results, "Lean による検査" + (reportStale ? "（編集後は未実行）" : ""));
+            Section(results, "Lean による検査" + (reportStale ? "（編集後は未実行）" : ""), "lean // verify");
             if (checking) { results.Add(Text("検査しています…")); return; }
-            if (lastReport == null) { results.Add(Text("「Lean で検査」を押すと、ルールから導いた性質（★）と無効の関係を検査します。", 12, new Color(0.7f, 0.7f, 0.75f))); return; }
+            if (lastReport == null) { results.Add(Text("「Lean で検査」を押すと、ルールから導いた性質（★）と無効の関係を検査します。", 12, Theme.Muted)); return; }
             RenderReport(lastReport);
         }
 
@@ -378,7 +407,7 @@ namespace CardGen.App
                 foreach (var e in r.Errors) results.Add(Text("・" + e, 12, StatusColor("counterexample")));
                 return;
             }
-            results.Add(Text("★ ルールから導いた性質", 12, Color.white, true));
+            results.Add(Text("★ ルールから導いた性質", 12, Theme.Bright, true));
             foreach (var c in r.Claims)
             {
                 var row = Row();
@@ -387,20 +416,20 @@ namespace CardGen.App
                 row.Add(Badge(c.Status));
                 var col = new VisualElement();
                 col.style.flexShrink = 1;
-                col.Add(Text(c.Text, 12, Color.white));
-                col.Add(Text("根拠：" + string.Join("、", c.Grounds), 10, new Color(0.65f, 0.65f, 0.7f)));
+                col.Add(Text(c.Text, 12, Theme.Bright));
+                col.Add(Text("根拠：" + string.Join("、", c.Grounds), 10, Theme.Muted));
                 row.Add(col);
                 results.Add(row);
             }
             if (r.Negation != null)
             {
-                var t = Text("無効の関係", 12, Color.white, true);
+                var t = Text("無効の関係", 12, Theme.Bright, true);
                 t.style.marginTop = 10;
                 results.Add(t);
                 var row = Row();
                 row.style.alignItems = Align.FlexStart;
                 row.Add(Badge(r.Negation.Status));
-                var msg = Text(r.Negation.Message, 12, Color.white);
+                var msg = Text(r.Negation.Message, 12, Theme.Bright);
                 msg.style.flexShrink = 1;
                 row.Add(msg);
                 results.Add(row);
@@ -411,12 +440,12 @@ namespace CardGen.App
                     box.style.paddingLeft = 8;
                     box.style.borderLeftWidth = 3;
                     box.style.borderLeftColor = StatusColor(g.Status);
-                    box.Add(Text("循環：" + string.Join(" ⇄ ", g.Cards), 12, Color.white));
+                    box.Add(Text("循環：" + string.Join(" ⇄ ", g.Cards), 12, Theme.Bright));
                     box.Add(Text($"[{Report.StatusLabel(g.Status)}] {g.Message}", 11, StatusColor(g.Status)));
                     if (g.Board.Count > 0)
-                        box.Add(Text("盤面：" + string.Join("、", g.Board.Select(b => (b.Side == "self" ? "自分：" : "相手：") + b.Card)), 11, new Color(0.8f, 0.8f, 0.85f)));
+                        box.Add(Text("盤面：" + string.Join("、", g.Board.Select(b => (b.Side == "self" ? "自分：" : "相手：") + b.Card)), 11, Theme.Text));
                     if (!string.IsNullOrEmpty(g.Detail))
-                        box.Add(Text("参考：" + g.Detail, 10, new Color(0.65f, 0.65f, 0.7f)));
+                        box.Add(Text("参考：" + g.Detail, 10, Theme.Muted));
                     results.Add(box);
                 }
             }
