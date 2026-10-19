@@ -624,6 +624,7 @@ namespace CardGen.App
         //                                     右クリックのメニューを出す（最初の発動のノード／テストプレイの空き場所／自分の最初の手札／
         //                                     相手の場の戦闘できるカード／自分の戦場の 6 番目のマス／自分の盤面）
         //   -cardgen-rclick <x>,<y>           画面の位置（幅と高さに対する割合、例 0.17,0.22）を右クリックする
+        //   -cardgen-drag <x1>,<y1>,<x2>,<y2>[,hold]  画面の位置 1 から 2 へマウスでドラッグする（hold なら離さない）
         //   -cardgen-screenshot <パス>        画面を保存して終了する
 
         static string Arg(string name)
@@ -721,6 +722,41 @@ namespace CardGen.App
                         : playView.FieldMenu(false, Math.Max(0, m.G.P2.Field.FindIndex(x => x.Card.Attack > 0 || x.Card.Defense > 0)));
                     PopupMenu.Open(playView, new Vector2(b.x + b.width * 0.3f, b.y + b.height * 0.15f), items);
                 }
+            }
+            // 画面の位置 a から b へ、マウスでドラッグしたのと同じイベントを送る（ドラッグアンドドロップの動作確認用）
+            var drag = Arg("-cardgen-drag");
+            if (drag != null)
+            {
+                for (int i = 0; i < 10; i++) yield return null;
+                var root = GetComponent<UIDocument>().rootVisualElement;
+                var v = drag.Split(',').Where(x => x != "hold").Select(x => float.Parse(x, System.Globalization.CultureInfo.InvariantCulture)).ToArray();
+                if (drag.EndsWith(",hold")) v = v.Append(0).ToArray();
+                Vector2 At(float fx, float fy) => new Vector2(root.layout.width * fx, root.layout.height * fy);
+                var a = At(v[0], v[1]);
+                var b = At(v[2], v[3]);
+                var before = playView.CurrentMatch?.G.P1.Field.Count + playView.CurrentMatch?.G.P2.Field.Count;
+                var picked = root.panel.Pick(a);
+                Debug.Log($"CardGen: drag from {a} ({picked?.GetType().Name}) to {b}");
+                using (var down = PointerDownEvent.GetPooled(new Event { type = EventType.MouseDown, button = 0, mousePosition = a, clickCount = 1 }))
+                {
+                    down.target = picked;
+                    picked?.SendEvent(down);
+                }
+                yield return null;
+                for (int k = 1; k <= 10; k++)
+                {
+                    var p = Vector2.Lerp(a, b, k / 10f);
+                    using (var mv = PointerMoveEvent.GetPooled(new Event { type = EventType.MouseDrag, button = 0, mousePosition = p }))
+                        root.panel.visualTree.SendEvent(mv);
+                    yield return null;
+                }
+                // 5つ目の値があれば、離さずに止める（ドラッグ中の画面の確認用）
+                if (v.Length < 5)
+                    using (var up = PointerUpEvent.GetPooled(new Event { type = EventType.MouseUp, button = 0, mousePosition = b, clickCount = 1 }))
+                        root.panel.visualTree.SendEvent(up);
+                yield return null;
+                var after = playView.CurrentMatch?.G.P1.Field.Count + playView.CurrentMatch?.G.P2.Field.Count;
+                Debug.Log($"CardGen: drag result {(after > before ? "placed" : "none")}：{playView.Log.LastOrDefault()}");
             }
             // 画面の位置（幅と高さに対する割合）を右クリックしたのと同じイベントを送る（右クリックの動作確認用）
             var rclick = Arg("-cardgen-rclick");

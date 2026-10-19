@@ -50,6 +50,7 @@ namespace CardGen.App
         // 対象を選んでいる発動（プレイヤー・フィールドの位置・効果の番号・説明）
         (bool p, int k, int e, string what)? targeting;
 
+        readonly ScrollView boardScroll;
         readonly VisualElement boards;
         readonly VisualElement side;
         // 右の欄の動きのボタン（右クリックのメニューにも出す）：選んでいるカードの動きと、それ以外（対象・スタック・ブロックなど）
@@ -73,7 +74,7 @@ namespace CardGen.App
         {
             style.flexGrow = 1;
             style.flexDirection = FlexDirection.Row;
-            var boardScroll = new ScrollView(ScrollViewMode.VerticalAndHorizontal);
+            boardScroll = new ScrollView(ScrollViewMode.VerticalAndHorizontal);
             boardScroll.style.flexGrow = 1;
             boardScroll.style.backgroundColor = Theme.Deep;
             boards = new VisualElement();
@@ -95,6 +96,7 @@ namespace CardGen.App
             sideScroll.Add(side);
             Add(sideScroll);
             PopupMenu.Attach(sideScroll, _ => GeneralMenu());
+            RegisterDragEvents();
         }
 
         /// <summary>カードの一覧から山札を作る（土地は色のコストに合わせて選び、山札全体にむらなく散らす。C# の中核の DeckBuilder）</summary>
@@ -174,16 +176,6 @@ namespace CardGen.App
         {
             var z = game.Rules.Zones[zi];
             return z.Capacity == Capacity.One && z.Count > 1 ? $"{z.Name}の{cell + 1}番目のマス" : z.Name;
-        }
-
-        /// <summary>手札のカードを、ゾーン zi の cell 番目のマスに置く動き（選んでいる手札と表裏で）</summary>
-        void PlaceSelected(int zi, int cell)
-        {
-            var c = state.Get(selPlayer).Hand[selHand];
-            var pay = SelectedPay(selPlayer);
-            Do(PlaceChoice(selPlayer, zi, cell, pay),
-               $"{Who(selPlayer)}：{c.Name} を{CellName(zi, cell)}に{(placeUp ? "表側" : "裏側")}で置く{PayText(pay)}" +
-               (selPlayer != turn ? "（相手のターンにインスタントとして）" : ""));
         }
 
         /// <summary>選んでいる手札を置く動き（ターンプレイヤーなら place、そうでなければインスタントの cast）</summary>

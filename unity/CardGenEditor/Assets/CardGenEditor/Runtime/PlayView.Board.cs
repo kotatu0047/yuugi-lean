@@ -114,12 +114,9 @@ namespace CardGen.App
                 {
                     foreach (var (sl, i) in s.Field.Select((sl, i) => (sl, i)).Where(x => x.sl.Zone == zi))
                         zr.Add(SlotChip(p, i, sl, neg));
-                    if (CanPlaceSelected(p, zi, 0))
-                    {
-                        var pb = PlaceButton(zi, 0);
-                        PopupMenu.Attach(pb, _ => CellMenu(p, zi, 0));
-                        zr.Add(pb);
-                    }
+                    // 「何枚でも」のゾーンは、行全体がドロップ先
+                    RegisterDrop(zr, p, zi, 0);
+                    if (CanPlaceSelected(p, zi, 0)) zr.Add(Text("← ここへドラッグして置ける", 10, Good));
                 }
                 zones.Add(zr);
             }
@@ -133,8 +130,10 @@ namespace CardGen.App
             {
                 int idx = i;
                 var hc = s.Hand[i];
-                hand.Add(Chip(hc, true, CanPlaceNow(p, idx) ? "置ける" : null, selPlayer == p && selHand == idx, () => { selPlayer = p; selHand = idx; selField = -1; customPay = null; Render(); },
-                    UsesMana ? (hc.Mana > 0 ? ManaText(hc) : $"コスト {CostText(hc)}") : null, () => HandMenu(p, idx)));
+                var hchip = Chip(hc, true, CanPlaceNow(p, idx) ? "置ける（ドラッグ）" : null, selPlayer == p && selHand == idx, () => { selPlayer = p; selHand = idx; selField = -1; customPay = null; Render(); },
+                    UsesMana ? (hc.Mana > 0 ? ManaText(hc) : $"コスト {CostText(hc)}") : null, () => HandMenu(p, idx));
+                AttachHandDrag(hchip, p, idx);
+                hand.Add(hchip);
             }
 
             // 相手のフィールドは自分のフィールドを逆さまにした形（共通ルール②）
@@ -203,24 +202,7 @@ namespace CardGen.App
             return false;
         }
 
-        /// <summary>空いているマスに置くボタン</summary>
-        VisualElement PlaceButton(int zi, int cell)
-        {
-            var b = UiTest.Btn($"ここに{(placeUp ? "表側" : "裏側")}で置く", () => PlaceSelected(zi, cell));
-            b.style.width = 120;
-            b.style.flexShrink = 0;
-            b.style.height = CellHeight;
-            b.style.marginLeft = 0;
-            b.style.marginRight = 6;
-            b.style.marginBottom = 6;
-            b.style.fontSize = 11;
-            b.style.backgroundColor = Theme.Alpha(Good, 0.08f);
-            Theme.Border(b.style, 1, Theme.Alpha(Good, 0.75f));
-            b.style.color = Good;
-            return b;
-        }
-
-        /// <summary>空きのマス（置けない）</summary>
+        /// <summary>空きのマス</summary>
         VisualElement EmptyCell(string label)
         {
             var empty = new VisualElement();
@@ -247,8 +229,16 @@ namespace CardGen.App
             var f = state.Get(p).Field;
             var i = f.FindIndex(sl => sl.Zone == zi && sl.Cell == k);
             if (i >= 0) return SlotChip(p, i, f[i], neg);
-            // 空きのマスの右クリック：そこに置ける手札
-            var cell = CanPlaceSelected(p, zi, k) ? PlaceButton(zi, k) : EmptyCell(emptyLabel);
+            // 空きのマスはドロップ先。選んでいる手札を置けるマスは緑の枠で示す。右クリック：そこに置ける手札
+            var cell = EmptyCell(emptyLabel);
+            if (CanPlaceSelected(p, zi, k))
+            {
+                Theme.Border(cell.style, 1, Theme.Alpha(Good, 0.7f));
+                var hint = Text("ドラッグして置ける", 10, Good);
+                hint.style.paddingLeft = 4;
+                cell.Add(hint);
+            }
+            RegisterDrop(cell, p, zi, k);
             PopupMenu.Attach(cell, _ => CellMenu(p, zi, k));
             return cell;
         }

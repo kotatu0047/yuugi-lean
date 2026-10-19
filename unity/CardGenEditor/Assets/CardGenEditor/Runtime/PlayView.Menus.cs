@@ -68,7 +68,7 @@ namespace CardGen.App
                 MenuEntry.Title(c.Name, $"{Who(p)}の手札・{c.Type}" + (UsesMana ? $"・コスト {CostText(c)}" : ""), NodeView.KindColor(NodeKind.Card)),
             };
             items.AddRange(SelectionItems());
-            if (selectionActions.Any(a => a.Text.Contains("で置く")))
+            if (CanGrab(p, i))
                 items.Add(MenuEntry.Item($"置く向きを{(placeUp ? "裏側" : "表側")}にする", () => { placeUp = !placeUp; Render(); },
                     hint: $"今は{(placeUp ? "表側" : "裏側")}で置きます"));
             items.Add(MenuEntry.Separator());
@@ -198,45 +198,33 @@ namespace CardGen.App
 
         // ---- 空きのマス ----
 
-        /// <summary>p の手札の h 番目を、ゾーン zi の cell 番目のマスに置く動き（自動の払い方）</summary>
-        TChoice PlaceAt(bool p, int h, int zi, int cell, bool up)
-        {
-            var pay = TurnInfo.AutoPay(state.Get(p).Hand[h], PoolOf(p)) ?? new List<string>();
-            return p == turn ? TChoice.Place(h, zi, cell, up, pay) : TChoice.Cast(h, zi, cell, up, pay);
-        }
-
-        /// <summary>p のゾーン zi の cell 番目の空きのマスの右クリックのメニュー：そこに置ける手札</summary>
+        /// <summary>p のゾーン zi の cell 番目の空きのマスの右クリックのメニュー：そこに置ける手札（置くのはドラッグで）</summary>
         public List<MenuEntry> CellMenu(bool p, int zi, int cell)
         {
             var items = new List<MenuEntry> { MenuEntry.Title(CellName(zi, cell), $"{Who(p)}の側・空きのマス") };
             var hand = state.Get(p).Hand;
-            var any = false;
             var dir = placeUp ? "表側" : "裏側";
-            items.Add(MenuEntry.Header($"{Who(p)}の手札から{dir}で置く"));
+            items.Add(MenuEntry.Header($"ここに{dir}で置ける手札（手札からドラッグして置く）"));
             var seen = new HashSet<string>();
+            var any = false;
             for (int h = 0; h < hand.Count; h++)
             {
                 var c = hand[h];
-                // 同じカードが何枚あっても1つだけ出す
-                if (!seen.Add(c.Name)) continue;
-                var ch = PlaceAt(p, h, zi, cell, placeUp);
+                if (!seen.Add(c.Name) || !CanGrab(p, h)) continue;
+                var ch = PlaceFor(p, h, zi, cell);
                 if (match.Step(game.Rules, ch) == null) continue;
-                var pay = ch.Pay;
                 var n = hand.Count(x => x.Name == c.Name);
-                items.Add(MenuEntry.Item($"{c.Name}を置く",
-                    () => Do(ch, $"{Who(p)}：{c.Name} を{CellName(zi, cell)}に{dir}で置く{PayText(pay)}" +
-                                 (p != turn ? "（相手のターンにインスタントとして）" : "")),
-                    hint: c.Type + (n > 1 ? $"・手札に {n} 枚" : "") +
-                          (UsesMana && (c.Cost > 0 || c.ColorCost.Count > 0) ? $"・コスト {CostText(c)}{PayText(pay)}" : ""),
-                    swatch: NodeView.KindColor(NodeKind.Card)));
+                items.Add(MenuEntry.Info(c.Name, c.Type + (n > 1 ? $"・手札に {n} 枚" : "") +
+                    (UsesMana && (c.Cost > 0 || c.ColorCost.Count > 0) ? $"・コスト {CostText(c)}{PayText(ch.Pay)}" : ""),
+                    NodeView.KindColor(NodeKind.Card)));
                 any = true;
             }
+            if (!any)
+                items.Add(MenuEntry.Info("ここに置ける手札はありません",
+                    p != turn ? $"{Who(turn)}のターンです（{Who(p)}が置けるのはいつでも置けるカードだけ）" : "置ける種類・マナ・1ターンの上限を確かめてください"));
             items.Add(MenuEntry.Separator());
             items.Add(MenuEntry.Item($"置く向きを{(placeUp ? "裏側" : "表側")}にする", () => { placeUp = !placeUp; Render(); },
                 hint: $"今は{dir}で置きます"));
-            if (!any)
-                items.Add(MenuEntry.Item("ここに置ける手札はありません", null, false,
-                    p != turn ? $"{Who(turn)}のターンです（{Who(p)}が置けるのはいつでも置けるカードだけ）" : "置ける種類・マナ・1ターンの上限を確かめてください"));
             return items;
         }
 

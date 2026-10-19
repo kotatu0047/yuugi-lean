@@ -223,6 +223,7 @@ namespace CardGen.App
             if (game == null) return;
             selectionActions.Clear();
             panelActions.Clear();
+            dropTargets.Clear();
             inSelection = false;
             var neg = NegationStatus(out var negSummary);
             boards.Clear();
@@ -343,13 +344,10 @@ namespace CardGen.App
                             continue;
                         }
                         any = true;
-                        int zz = zi;
-                        int first = free[0];
-                        var where = z.Capacity == Capacity.One && z.Count > 1
-                            ? $"（空いているマス：{string.Join("・", free.Select(k => k + 1))}。{first + 1}番目に置く）" : "";
-                        ActionButton($"{z.Name}に{(placeUp ? "表側" : "裏側")}で置く{where}", () => PlaceSelected(zz, first));
+                        var where = z.Capacity == Capacity.One && z.Count > 1 ? $"（空いているマス：{string.Join("・", free.Select(k => k + 1))}）" : "";
+                        side.Add(Text($"置ける場所：{z.Name}{where}", 12, Good));
                     }
-                    if (any) side.Add(Text("フィールドの「ここに置く」のマスをクリックしても置けます", 11, Quiet));
+                    if (any) side.Add(Text($"手札のこのカードを、盤面の緑のマスへドラッグして{(placeUp ? "表側" : "裏側")}で置きます（ほかの方法では置けません）", 11, Quiet));
                 }
                 if (!any) side.Add(Text("置けるゾーンがありません", 12, Warn));
             }

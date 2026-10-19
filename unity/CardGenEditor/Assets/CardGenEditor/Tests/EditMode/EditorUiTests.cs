@@ -82,7 +82,10 @@ namespace CardGen.App.Tests
             Assert.GreaterOrEqual(land, 0, "最初の手札に土地がある");
             Assert.IsTrue(view.ShowsPlaceable(true, land), "土地は「置ける」");
             view.SelectHand(true, land);
-            Assert.IsTrue(UiTest.Press(view, "戦場に表側で置く"), string.Join(" / ", UiTest.Buttons(view)));
+            // 置くのはドラッグアンドドロップだけ（置くボタンはない）
+            Assert.IsFalse(UiTest.Buttons(view).Any(b => b.Contains("で置く")), string.Join(" / ", UiTest.Buttons(view)));
+            Assert.IsTrue(view.CanGrab(true, land));
+            Assert.IsTrue(view.DropHand(true, land, 0, 0));
             Assert.AreEqual(1, view.CurrentMatch.G.P1.Field.Count);
             view.SelectField(true, 0);
             Assert.IsTrue(UiTest.Press(view, "タップしてマナを出す"), string.Join(" / ", UiTest.Buttons(view)));
@@ -266,7 +269,8 @@ namespace CardGen.App.Tests
             var buttons = UiTest.Buttons(view);
             foreach (var t in menu.Where(i => i.Enabled && !i.IsHeader && !i.IsSeparator && !i.Text.StartsWith("置く向き")))
                 CollectionAssert.Contains(buttons, t.Text);
-            Assert.IsTrue(PopupMenu.Choose(menu, "戦場に表側で置く"), string.Join(" / ", PopupMenu.Texts(menu)));
+            Assert.IsFalse(menu.Any(i => i.Enabled && i.Text.Contains("で置く")), "メニューからは置けない");
+            Assert.IsTrue(view.DropHand(true, land, 0, 0));
             Assert.AreEqual(1, view.CurrentMatch.G.P1.Field.Count);
             Assert.IsTrue(PopupMenu.Choose(view.FieldMenu(true, 0), "タップしてマナを出す"));
             Assert.AreEqual(1, view.CurrentMatch.Turn.Pool.Count);
@@ -321,22 +325,48 @@ namespace CardGen.App.Tests
         }
 
         [Test]
-        public void Cell_menu_places_a_hand_card_in_that_cell()
+        public void Cell_menu_lists_hand_cards_and_drop_places_there()
         {
             var view = new PlayView();
             view.Start(Load("mtg"));
             var menu = view.CellMenu(true, 0, 5);
             Assert.IsTrue(menu[0].IsTitle);
-            var place = menu.First(i => i.Enabled && i.Text.EndsWith("を置く"));
-            // 同じカードは1つだけ出る
-            var names = menu.Where(i => i.Enabled && i.Text.EndsWith("を置く")).Select(i => i.Text).ToList();
+            // 置ける手札は情報として出す（押して置くことはできない。同じカードは1つだけ）
+            var names = menu.Where(i => i.IsInfo && i.Swatch != null).Select(i => i.Text).ToList();
+            Assert.IsNotEmpty(names);
             CollectionAssert.AllItemsAreUnique(names);
-            place.Action();
+            Assert.IsFalse(menu.Any(i => i.Enabled && !i.IsHeader && i.Text.Contains("置く") && !i.Text.StartsWith("置く向き")));
+            var land = view.CurrentMatch.G.P1.Hand.FindIndex(c => c.Name == names[0]);
+            Assert.IsTrue(view.DropHand(true, land, 0, 5));
             var f = view.CurrentMatch.G.P1.Field;
             Assert.AreEqual(1, f.Count);
-            Assert.AreEqual(5, f[0].Cell, "右クリックしたマスに置かれる");
+            Assert.AreEqual(5, f[0].Cell, "落としたマスに置かれる");
             // 相手の側のマスには、自分のターンに置ける手札がない（インスタントでマナもない）
-            Assert.IsFalse(view.CellMenu(false, 0, 3).Any(i => i.Enabled && i.Text.EndsWith("を置く")));
+            Assert.IsTrue(view.CellMenu(false, 0, 3).Any(i => i.Text == "ここに置ける手札はありません"));
+        }
+
+        [Test]
+        public void Only_playable_cards_can_be_grabbed_and_dropped()
+        {
+            var view = new PlayView();
+            view.Start(Load("mtg"));
+            var m = view.CurrentMatch;
+            // 自分のターンに、相手の（インスタントでもマナもない）手札はつかめない。落としても何も起きない
+            var oppNot = Enumerable.Range(0, m.G.P2.Hand.Count).First(h => !view.CanGrab(false, h));
+            Assert.IsFalse(view.DropHand(false, oppNot, 0, 3));
+            Assert.AreEqual(0, view.CurrentMatch.G.P2.Field.Count);
+            // マナのない最初のターンは、土地しかつかめない
+            var hand = m.G.P1.Hand;
+            for (int h = 0; h < hand.Count; h++) Assert.AreEqual(hand[h].Mana > 0, view.CanGrab(true, h), hand[h].Name);
+            // つかめても、置けない場所（土地はスタックに置けない）に落とすと何も起きない
+            var land = hand.FindIndex(c => c.Mana > 0);
+            Assert.IsFalse(view.DropHand(true, land, 1, 0));
+            Assert.AreEqual(0, view.CurrentMatch.G.P1.Field.Count);
+            Assert.IsTrue(view.Log.Last().StartsWith("（置けません）"));
+            // 置くボタンはどこにもない
+            view.SelectHand(true, land);
+            Assert.IsFalse(UiTest.Buttons(view).Any(b => b.Contains("置く") && !b.StartsWith("表側") && !b.StartsWith("裏側")),
+                string.Join(" / ", UiTest.Buttons(view)));
         }
 
         [Test]
@@ -423,7 +453,7 @@ namespace CardGen.App.Tests
             // 山と森をタップして、エルフの幻想家を置く（置かれたとき1枚引く）
             Assert.IsTrue(PopupMenu.Choose(view.FieldMenu(true, 0), "タップしてマナを出す"));
             Assert.IsTrue(PopupMenu.Choose(view.FieldMenu(true, 1), "タップしてマナを出す"));
-            Assert.IsTrue(PopupMenu.Choose(view.HandMenu(true, 0), "で置く"), string.Join(" / ", UiTest.Buttons(view)));
+            Assert.IsTrue(view.DropHand(true, 0, 0, 2), string.Join("\n", view.Log));
             Assert.AreEqual(1, view.CurrentMatch.Turn.Pending.Count);
             // 待ちがあるうちは、ターンを終えられない
             var end = view.GeneralMenu().First(i => i.Text == "ターン終了");
@@ -445,7 +475,7 @@ namespace CardGen.App.Tests
             // ショック（赤）で相手のゴブリンの放火魔を破壊すると、相手の「〜できる」効果が誘発する
             Assert.IsTrue(PopupMenu.Choose(view.FieldMenu(true, 0), "タップしてマナを出す"));
             var shock = view.CurrentMatch.G.P1.Hand.FindIndex(c => c.Name == "ショック");
-            Assert.IsTrue(PopupMenu.Choose(view.HandMenu(true, shock), "で置く"), string.Join(" / ", UiTest.Buttons(view)));
+            Assert.IsTrue(view.DropHand(true, shock, 1, 0), string.Join("\n", view.Log));
             Pick(view.GeneralMenu(), "両者がパスする");
             Assert.IsTrue(UiTest.Press(view, "一番上を解決する"), string.Join(" / ", UiTest.Buttons(view)));
             Assert.IsTrue(UiTest.Press(view, "ゴブリンの放火魔を対象にする"), string.Join(" / ", UiTest.Buttons(view)));

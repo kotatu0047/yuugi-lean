@@ -4,7 +4,8 @@
 #   tools/unity-build.sh                     写してビルドする
 #   tools/unity-build.sh --reset             先に Windows 側のクローンの変更を捨てて git pull する
 #   tools/unity-build.sh --test              写して、エディタと画面の自動テスト（EditMode）を動かす（ビルドはしない）
-#   tools/unity-build.sh --rclick            ビルドしたアプリを動かし、画面のあちこちを右クリックしてメニューが出るか確かめる
+#   tools/unity-build.sh --rclick            ビルドしたアプリを動かし、画面のあちこちを右クリックしてメニューが出るか、
+#                                            手札をドラッグしてマスに置けるかを確かめる
 #   tools/unity-build.sh --shot 画面.png [exe の引数…]
 #                                            ビルドしたアプリを動かして画面を保存する（例：-cardgen-play 7）
 #
@@ -129,6 +130,20 @@ if [ $rclick = 1 ]; then
 右の欄|第|-cardgen-mtg -cardgen-play -cardgen-rclick 0.9,0.42
 キャンバスのノード|公理|-cardgen-mtg -cardgen-arrange -cardgen-rclick 0.12,0.3
 CASES
+  # ドラッグアンドドロップ：遊戯王風の見本で、自分の手札（ブラック・マジシャン）をモンスターカードゾーンへ
+  ok=""
+  for t in 1 2 3; do
+    taskkill.exe /IM CardGenEditor.exe /F </dev/null >/dev/null 2>&1 || true
+    PLOG="$DST/$PROJ_REL/Logs/cardgen-drag-$t.log"
+    rm -f "$TMP_PNG" "$PLOG" 2>/dev/null || true
+    (cd "$DST/$PROJ_REL/Build" && timeout 60 ./CardGenEditor.exe -screen-width 1600 -screen-height 1000 -screen-fullscreen 0 \
+       -cardgen-play -cardgen-drag 0.344,0.935,0.0875,0.65 -cardgen-screenshot "$(wslpath -w "$TMP_PNG")" \
+       -logFile "$(wslpath -w "$PLOG")") </dev/null >/dev/null 2>&1 || true
+    line=$(grep -a "CardGen: drag result" "$PLOG" 2>/dev/null | tail -1 || true)
+    if [ -n "$line" ]; then ok=$line; break; fi
+  done
+  if echo "$ok" | grep -q "placed"; then echo "  ○ ドラッグで手札を置く：${ok#CardGen: drag result }"
+  else echo "  × ドラッグで手札を置く：${ok:-起動できませんでした}"; fail=1; fi
   [ $fail = 0 ] || exit 2
 fi
 
