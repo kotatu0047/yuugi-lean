@@ -22,6 +22,7 @@ PAGES = {
     "csharp/README.md": "csharp.md",
     "unity/CardGenEditor/README.md": "unity.md",
     "4すくみ考察.md": "4すくみ考察.md",
+    "アイデア.md": "アイデア.md",
     "会話記録.md": "会話記録.md",
 }
 
