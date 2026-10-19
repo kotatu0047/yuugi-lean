@@ -247,7 +247,19 @@ namespace CardGen
                     .Select(j => (j, opp[j])).ToList();
                 if (tls.Count == 0) { hit += power; continue; }
                 dA.Add((k, tls.Sum(x => AtkOf(r, neg, (o, x.j), x.Item2))));
-                dB.AddRange(Assign(r, neg, o, power, tls));
+                if (sl.Card.Trample)
+                {
+                    // State.trampleAssign：どのブロッカーにも破壊できるだけ与え、残りを相手に
+                    var rem = power;
+                    foreach (var (j, tl) in tls)
+                    {
+                        var x = System.Math.Min(rem, System.Math.Max(0, DefOf(r, neg, (o, j), tl) - tl.Damage));
+                        dB.Add((j, x));
+                        rem -= x;
+                    }
+                    hit += rem;
+                }
+                else dB.AddRange(Assign(r, neg, o, power, tls));
             }
             int SumAt(List<(int, int)> l, int i) => l.Where(x => x.Item1 == i).Sum(x => x.Item2);
             var g1 = With(p, Get(p).Mark(i => SumAt(dA, i))).With(o, Get(o).Mark(i => SumAt(dB, i)).Damage(hit));

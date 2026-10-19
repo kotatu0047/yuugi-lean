@@ -96,7 +96,8 @@ def vecCards : List Card :=
     { c with cost := if i % 6 == 3 then 1 else 0, mana := if i % 3 == 0 then 1 + i % 2 else 0,
              manaColor := if i % 3 == 0 && i % 9 / 3 != 2 then ["赤", "緑"][i % 9 / 3]! else "",
              manaChoice := if i % 3 == 0 && i % 9 / 3 == 2 then ["赤", "緑"] else [],
-             colorCost := if i % 6 == 1 then ["赤"] else if i % 6 == 2 then ["緑"] else [] }
+             colorCost := if i % 6 == 1 then ["赤"] else if i % 6 == 2 then ["緑"] else [],
+             trample := i % 5 == 0 }
 
 /-- フィールドのカード：ゾーンは見本の 4 つと存在しない番号、マスは 0〜5。ときどきダメージを受けている -/
 def Rand.slot (zones : Nat) : Rand Slot := do

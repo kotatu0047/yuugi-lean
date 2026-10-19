@@ -276,6 +276,8 @@ namespace CardGen
         public string ManaColor = "";
         /// <summary>タップするときに選べるマナの色（2色以上の土地。空でなければ ManaColor は使わない）</summary>
         public List<string> ManaChoice = new List<string>();
+        /// <summary>トランプル（MTG 式の戦闘で、ブロックしたカードを破壊できるだけのダメージを与え、残りを相手に与える）</summary>
+        public bool Trample;
     }
 
     /// <summary>エディタが出力する中間表現の全体</summary>

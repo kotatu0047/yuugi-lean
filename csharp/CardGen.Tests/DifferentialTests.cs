@@ -343,7 +343,7 @@ public class DifferentialTests
         o["version"] = 7;
         ((JObject)o["rules"]).Remove("instants");
         ((JObject)o["rules"]).Remove("stack");
-        foreach (var c in o["cards"]) ((JObject)c).Remove("manaChoice");
+        foreach (var c in o["cards"]) { ((JObject)c).Remove("manaChoice"); ((JObject)c).Remove("trample"); }
         return o;
     }
 

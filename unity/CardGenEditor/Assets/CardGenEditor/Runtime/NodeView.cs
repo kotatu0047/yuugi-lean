@@ -151,6 +151,7 @@ namespace CardGen.App
             NodeKind.Card =>
                 $"種類：{(n.Card.Type.Length == 0 ? "（未設定）" : n.Card.Type)}" + (n.Card.Tags.Count > 0 ? $"\nタグ：{List(n.Card.Tags)}" : "") +
                 (n.Card.Attack > 0 || n.Card.Defense > 0 ? $"\n攻撃力 {n.Card.Attack}・守備力 {n.Card.Defense}" : "") +
+                (n.Card.Trample ? "・トランプル" : "") +
                 (n.Card.Mana > 0 ? $"\nタップで{(n.Card.ManaChoice.Count > 0 ? string.Join("か", n.Card.ManaChoice) : n.Card.ManaColor == "" ? "無色" : n.Card.ManaColor)}マナ {n.Card.Mana}" : "") +
                 (n.Card.Cost > 0 || n.Card.ColorCost.Count > 0 ? $"\nコスト {(n.Card.Cost > 0 ? n.Card.Cost.ToString() : "")}{(n.Card.Cost > 0 && n.Card.ColorCost.Count > 0 ? "＋" : "")}{string.Concat(n.Card.ColorCost)}" : ""),
             NodeKind.Axioms => "編集できません\n" + string.Join("\n", Axioms.Lines.Select((l, i) => $"{i + 1}. {l}")),

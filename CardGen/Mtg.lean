@@ -20,7 +20,7 @@ import CardGen.Sample
 - ライブラリーから引けなければ負け
 
 実際の MTG との違い（このプロトタイプで表せないもの）：対象を選ぶ効果（ここでは範囲に合うものすべて）、
-ターンの終わりまでの効果（巨大化など）、呪文を打ち消す効果、トランプルなどの能力、優先権の順番
+ターンの終わりまでの効果（巨大化など）、呪文を打ち消す効果、トランプル以外の能力（飛行など）、優先権の順番
 （ここではどちらのプレイヤーも、いつでもインスタントを置ける）、守備力が 0 以下になったときの破壊。
 
 同じ内容の JSON が `CardGen/mtg.json` にある。
@@ -80,6 +80,10 @@ def bear : Card :=
 def giant : Card :=
   { name := "丘巨人", type := creature, tags := ["赤", "巨人"], effects := [], attack := 3, defense := 3,
     cost := 3, colorCost := ["赤"] }
+/-- トランプルを持つ -/
+def rhino : Card :=
+  { name := "大角のサイ", type := creature, tags := ["緑"], effects := [], attack := 4, defense := 4,
+    cost := 2, colorCost := ["緑", "緑"], trample := true }
 def knight : Card :=
   { name := "白騎士", type := creature, tags := ["白", "騎士"], effects := [], attack := 2, defense := 2,
     colorCost := ["白", "白"] }
@@ -109,8 +113,8 @@ def silence : Card :=
 def game : Game where
   version := currentVersion
   rules := rules
-  cards := [mountain, forest, plains, island, karplusan, goblin, bear, giant, knight, bolt, pyroclasm, wrath, unsummon,
-            divination, salve, anthem, silence]
+  cards := [mountain, forest, plains, island, karplusan, goblin, bear, giant, rhino, knight, bolt, pyroclasm, wrath,
+            unsummon, divination, salve, anthem, silence]
 
 /-! ## 検査 -/
 
@@ -219,6 +223,14 @@ def board (mine opp : List Slot) : State := fun p =>
 -- まとめて攻撃：ゴブリンの先兵と熊で攻撃し、熊だけをブロックすると、相手はゴブリンの先兵の 1 点を受ける
 #guard match (board [slot 0 goblin, slot 1 bear] [slot 0 bear]).step? rules (.combat true [0, 1] [(0, 1)] []) with
   | some g => (g false).life == 19 && (g true).field == [slot 0 goblin] && (g false).field.isEmpty
+  | none => false
+-- トランプル：大角のサイ（4/4）がゴブリンの先兵（1/1）にブロックされると、ゴブリンの先兵に 1 点、相手に残りの 3 点。
+-- トランプルがなければ、4 点ともゴブリンの先兵に与える
+#guard match (board [slot 0 rhino] [slot 0 goblin]).step? rules (.combat true [0] [(0, 0)] []) with
+  | some g => (g false).life == 17 && (g false).field.isEmpty && (g true).field == [slot 0 rhino 1]
+  | none => false
+#guard match (board [slot 0 { rhino with trample := false }] [slot 0 goblin]).step? rules (.combat true [0] [(0, 0)] []) with
+  | some g => (g false).life == 20
   | none => false
 -- 栄光の頌歌（自分のクリーチャーの攻撃力・守備力 +1）：ゴブリンの先兵は 2/2 になり、熊（2/2）と相打ちになる。
 -- 頌歌が無効なら 1/1 のまま

@@ -67,6 +67,7 @@ namespace CardGen
         public int Mana;
         public string ManaColor = "";
         public List<string> ManaChoice = new List<string>();
+        public bool Trample;
     }
 
     public sealed class Node
@@ -294,7 +295,7 @@ namespace CardGen
                 var card = new Card { Name = c.Card.Name, Type = c.Card.Type, Tags = c.Card.Tags.ToList(),
                                       Attack = c.Card.Attack, Defense = c.Card.Defense, Cost = c.Card.Cost, Mana = c.Card.Mana,
                                       ColorCost = c.Card.ColorCost.ToList(), ManaColor = c.Card.ManaColor,
-                                      ManaChoice = c.Card.ManaChoice.ToList() };
+                                      ManaChoice = c.Card.ManaChoice.ToList(), Trample = c.Card.Trample };
                 Selector SelectorOf(Node n, string what)
                 {
                     var s = Children(n).FirstOrDefault();
@@ -418,7 +419,7 @@ namespace CardGen
                 var cn = Add(NodeKind.Card, colCard, y);
                 cn.Card = new CardData { Name = c.Name, Type = c.Type, Tags = c.Tags.ToList(), Attack = c.Attack, Defense = c.Defense,
                                      Cost = c.Cost, Mana = c.Mana, ColorCost = c.ColorCost.ToList(), ManaColor = c.ManaColor,
-                                     ManaChoice = c.ManaChoice.ToList() };
+                                     ManaChoice = c.ManaChoice.ToList(), Trample = c.Trample };
                 float ey = y;
                 foreach (var e in c.Effects)
                 {

@@ -463,6 +463,7 @@ namespace CardGen.App
                     TagPicker("タグ", n.Card.Tags, v => n.Card.Tags = v);
                     Int("攻撃力", n.Card.Attack, v => n.Card.Attack = v);
                     Int("守備力", n.Card.Defense, v => n.Card.Defense = v);
+                    Toggle("トランプル（MTG 式の戦闘で、余ったダメージを相手に）", n.Card.Trample, v => n.Card.Trample = v);
                     Int("コスト（どの色でも払える分）", n.Card.Cost, v => n.Card.Cost = Math.Max(0, v));
                     if (sets.ManaColors.Count > 0)
                     {

@@ -568,6 +568,7 @@ namespace CardGen.App
                 var def = state.DefOf(game.Rules, NegList(neg), (p, i), sl);
                 stats = $"攻 {atk}" + (atk != sl.Card.Attack ? $"（元 {sl.Card.Attack}）" : "") +
                         $"・守 {def}" + (def != sl.Card.Defense ? $"（元 {sl.Card.Defense}）" : "");
+                if (sl.Card.Trample) stats += "・トランプル";
                 if (sl.Damage > 0) stats += $"\nダメージ {sl.Damage}（残り {Math.Max(0, def - sl.Damage)}）";
             }
             var f = state.Get(p).Field;

@@ -21,7 +21,8 @@ import CardGen.IR
 - MTG 式の戦闘（`Rules.blocking`、`State.combat`）：攻撃するカード（何枚でもよい）と、それぞれをブロックするカード
   （1枚の攻撃に何枚でもよい）を受け取る。ブロックされなかった攻撃は、攻撃力のダメージを相手に与える。
   ブロックされた攻撃は、攻撃力のダメージをブロックしたカードに順に割り振り（前のカードに破壊できるだけ与えてから次へ。
-  最後のカードには残りすべて）、ブロックしたカードは攻撃力のダメージを攻撃したカードに与える
+  最後のカードには残りすべて。トランプルを持つカードは、どのカードにも破壊できるだけ与え、残りを相手に与える）、
+  ブロックしたカードは攻撃力のダメージを攻撃したカードに与える
 - カードが受けたダメージは、カードに残る（`Slot.damage`）。ダメージを受けたあと、守備力以上のダメージを受けている
   戦闘できるカードを破壊する（`State.sweep`）。ダメージを消す動き（`mend`）はいつでもできる（ターンのある対戦では
   ターンの終わりに行う）
@@ -274,6 +275,16 @@ def State.assign (r : Rules) (g : State) (neg : List Pos) (o : PlayerId) : Nat �
     let x := min rem (g.defOf r neg (o, j) tl - tl.damage)
     (j, x) :: State.assign r g neg o (rem - x) rest
 
+/-- トランプル：ブロックしたカード `tls` に、攻撃力 `rem` のうち破壊できるだけのダメージを順に割り振り、
+（割り振り, 相手に与える残り）を返す -/
+def State.trampleAssign (r : Rules) (g : State) (neg : List Pos) (o : PlayerId) :
+    Nat → List (Nat × Slot) → List (Nat × Nat) × Nat
+  | rem, [] => ([], rem)
+  | rem, (j, tl) :: rest =>
+    let x := min rem (g.defOf r neg (o, j) tl - tl.damage)
+    let (l, left) := State.trampleAssign r g neg o (rem - x) rest
+    ((j, x) :: l, left)
+
 /-- 攻撃するカード1枚（`p` のフィールドの `k` 番目、ブロックしたのは相手のフィールドの `bs` 番目のカード）の
 ダメージ：（攻撃側のカードへのダメージ、守る側のカードへのダメージ、相手へのダメージ） -/
 def State.fight1 (r : Rules) (g : State) (neg : List Pos) (p : PlayerId) (k : Nat) (bs : List Nat) :
@@ -283,8 +294,12 @@ def State.fight1 (r : Rules) (g : State) (neg : List Pos) (p : PlayerId) (k : Na
   | some sl =>
     let a := g.atkOf r neg (p, k) sl
     let tls := bs.filterMap fun j => ((g (!p)).field[j]?).map (j, ·)
+    let back := (tls.map fun (j, tl) => g.atkOf r neg (!p, j) tl).sum
     if tls.isEmpty then ([], [], a)
-    else ([(k, (tls.map fun (j, tl) => g.atkOf r neg (!p, j) tl).sum)], g.assign r neg (!p) a tls, 0)
+    else if sl.card.trample then
+      let (l, left) := g.trampleAssign r neg (!p) a tls
+      ([(k, back)], l, left)
+    else ([(k, back)], g.assign r neg (!p) a tls, 0)
 
 /-- 位置ごとのダメージの一覧から、`i` 番目のカードへのダメージの合計 -/
 def sumAt (l : List (Nat × Nat)) (i : Nat) : Nat := ((l.filter (·.1 == i)).map (·.2)).sum

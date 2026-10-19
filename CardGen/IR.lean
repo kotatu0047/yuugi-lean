@@ -25,7 +25,7 @@ JSON との相互変換は Lean の自動導出による（`Option` 以外のフ
 召喚酔い（`summoningSickness`）、MTG 式の戦闘（`blocking`）を加えた。版 6 で、色のマナ（ルールの `manaColors`、
 カードの `colorCost`・`manaColor`）を加えた。版 7 で、タグの集合（`tagSets`）を加えた。版 8 で、
 インスタント（ルールの `instants`）とスタック（`stack`）、カードへのダメージ（動きの `strike`）、守備力の変化
-（効果の `toughen`）、2色以上から選べるマナ（カードの `manaChoice`）を加えた。
+（効果の `toughen`）、2色以上から選べるマナ（カードの `manaChoice`）、トランプル（カードの `trample`）を加えた。
 
 マスの並びは、縦と横の2本の序列で表す。盤面全体（2人分）は `gridSize`×`gridSize`（49×49。
 前提の「最大 50×50」に収まり、中心のマスがあるように奇数にした）のマス目で、マスは（列, 行）で表し、
@@ -218,6 +218,8 @@ structure Card where
   manaColor : String := ""
   /-- タップするときに選べるマナの色（2色以上の土地。空でなければ `manaColor` は使わない） -/
   manaChoice : List String := []
+  /-- トランプル（MTG 式の戦闘で、ブロックしたカードを破壊できるだけのダメージを与え、残りを相手に与える） -/
+  trample : Bool := false
 deriving Repr, DecidableEq, FromJson, ToJson
 
 instance : Inhabited Card := ⟨{ name := "", type := "", tags := [], effects := [] }⟩

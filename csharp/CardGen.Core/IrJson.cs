@@ -113,6 +113,7 @@ namespace CardGen
                 Mana = Int(o, "mana"),
                 ManaColor = Str(o, "manaColor"),
                 ManaChoice = Strs(o, "manaChoice"),
+                Trample = Bool(o, "trample"),
             };
         }
 
@@ -183,7 +184,7 @@ namespace CardGen
         /// 版 2 → 3 はターンのルールを既定の値で加え、版 3 → 4 はゾーンのマスの位置を空（マス目の上にない）、
         /// 範囲の指定のマスの関係を「条件なし」にする。版 4 → 5 はマナ・タップ・置ける枚数の上限・召喚酔いを
         /// 使わない値（コスト 0、マナ 0、上限なし、攻撃でタップしない、召喚酔いなし）で加える。版 5 → 6 は色のマナを使わない値、
-        /// 版 6 → 7 はタグの集合を空、版 7 → 8 はインスタントなし・スタックなし・選べるマナの色なしにする。
+        /// 版 6 → 7 はタグの集合を空、版 7 → 8 はインスタントなし・スタックなし・選べるマナの色なし・トランプルなしにする。
         /// 上げたときは true。版が分からない・新しすぎるときは何もしない
         /// </summary>
         public static bool Upgrade(JObject o)
@@ -220,6 +221,7 @@ namespace CardGen
                     if (c["colorCost"] == null) c["colorCost"] = new JArray();
                     if (c["manaColor"] == null) c["manaColor"] = "";
                     if (c["manaChoice"] == null) c["manaChoice"] = new JArray();
+                    if (c["trample"] == null) c["trample"] = false;
                 }
             o["version"] = Game.CurrentVersion;
             return true;
@@ -270,6 +272,7 @@ namespace CardGen
             ["mana"] = c.Mana,
             ["manaColor"] = c.ManaColor,
             ["manaChoice"] = new JArray(c.ManaChoice),
+            ["trample"] = c.Trample,
         };
 
         static JObject ToJson(Zone z) => new JObject
