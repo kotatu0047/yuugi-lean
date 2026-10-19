@@ -53,7 +53,6 @@ namespace CardGen
                 case Negate n:
                     foreach (var m in Selector(r, $"{where}の無効", n.Target)) yield return m;
                     foreach (var m in NoTarget($"{where}の無効", n.Target)) yield return m;
-                    if (n.Target.Near != Near.Any) yield return $"{where}：無効の範囲には、マスの関係（隣・同じ縦列）はまだ使えません";
                     break;
                 case Boost b:
                     foreach (var m in Selector(r, $"{where}の攻撃力の変化", b.Target)) yield return m;

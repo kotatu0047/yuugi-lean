@@ -312,7 +312,8 @@ def boardsFor (r : Rules) (group : List Card) : List (List Inst) :=
     let side (mine : Bool) : List Card := (group.zip l).flatMap fun (c, a, b) =>
       List.replicate (if mine then a else b) c
     if fitsZones r (side true) && fitsZones r (side false) then
-      some ((side true).map (⟨·, true, true⟩) ++ (side false).map (⟨·, false, true⟩))
+      -- 位置は考えない（マスの関係を使う無効は当たらないものとして調べる。報告にその旨を書く）
+      some ((side true).map (⟨·, true, true, none⟩) ++ (side false).map (⟨·, false, true, none⟩))
     else none
 
 /-- 総当たりする、まとまりのカードの最大の枚数 -/

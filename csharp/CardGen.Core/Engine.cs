@@ -170,7 +170,12 @@ namespace CardGen
         public Card Card;
         public bool Controller;
         public bool FaceUp;
-        public Inst(Card card, bool controller, bool faceUp) { Card = card; Controller = controller; FaceUp = faceUp; }
+        /// <summary>盤面のマス目の位置（相手の側は点対称の位置）。マス目の上にないゾーンや、位置を考えない総当たりでは null</summary>
+        public Cell? Cell;
+        public Inst(Card card, bool controller, bool faceUp, Cell? cell = null)
+        {
+            Card = card; Controller = controller; FaceUp = faceUp; Cell = cell;
+        }
     }
 
     /// <summary>判定の手続きの分類（Verdict）</summary>
@@ -185,7 +190,10 @@ namespace CardGen
             var a = insts[y];
             var b = insts[x];
             if (!a.FaceUp) return false;
-            var v = new View(b.Card.Type, b.Card.Tags, b.Controller == a.Controller, b.FaceUp, y == x);
+            // マスの関係は、無効にする側のカードのマスから見る（Cell.adjacentOpt・Cell.sameColumnOpt）
+            var adj = a.Cell.HasValue && b.Cell.HasValue && a.Cell.Value.Adjacent(b.Cell.Value);
+            var col = a.Cell.HasValue && b.Cell.HasValue && a.Cell.Value.Col == b.Cell.Value.Col;
+            var v = new View(b.Card.Type, b.Card.Tags, b.Controller == a.Controller, b.FaceUp, y == x, adj, col);
             return a.Card.Effects.OfType<Negate>().Any(n => n.Target.Matches(v));
         }
 

@@ -111,7 +111,12 @@ def negOut (r : Rules) (cards : List Card) : NegOut :=
       edges, [], some "CardGen.negation_settles"⟩
   | .cyclic gs =>
     let groups := gs.map fun names =>
-      groupOut (exploreGroup r (names.filterMap fun nm => cards.find? (·.name == nm)))
+      let cs := names.filterMap fun nm => cards.find? (·.name == nm)
+      let o := groupOut (exploreGroup r cs)
+      -- 総当たりはマスの位置を考えないので、マスの関係を使う無効は当たらないものとして調べている
+      if cs.any (fun c => c.effects.any fun | .negate s => s.near != .any | _ => false) then
+        { o with message := o.message ++ "（マスの関係（隣・同じ縦列）を使う無効は、総当たりでは位置を考えず、当たらないものとして調べています）" }
+      else o
     let worst := groups.foldl (fun w g => if statusSeverity g.status > statusSeverity w then g.status else w) "choice"
     ⟨worst, "無効にしうる関係に循環があります。循環のまとまりごとに、小さな盤面を総当たりで調べました",
       edges, groups, none⟩

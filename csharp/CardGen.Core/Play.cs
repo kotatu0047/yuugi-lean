@@ -68,7 +68,7 @@ namespace CardGen
             {
                 var f = Get(p).Field;
                 for (int i = 0; i < f.Count; i++)
-                    if (r.OnFieldZone(f[i].Zone)) l.Add((p, i, new Inst(f[i].Card, p, f[i].FaceUp)));
+                    if (r.OnFieldZone(f[i].Zone)) l.Add((p, i, new Inst(f[i].Card, p, f[i].FaceUp, r.CellOf(p, f[i].Zone, f[i].Cell))));
             }
             return l;
         }

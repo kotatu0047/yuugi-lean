@@ -84,7 +84,13 @@ def pstateJson (s : PState) : Json :=
   json% {deck: $(s.deck.map (·.name)), hand: $(s.hand.map (·.name)), grave: $(s.grave.map (·.name)),
          field: $(s.field.map slotJson), life: $(s.life)}
 
-def instJson (i : Inst) : Json := json% {card: $(i.card.name), controller: $(i.controller), faceUp: $(i.faceUp)}
+/-- 無効の関係のテストの盤面のマス：マス目の上にない（none）か、5×3 のマス目のどこか（隣・同じ縦列が起きやすいように狭くする） -/
+def Rand.instCell : Rand (Option Cell) := do
+  if (← Rand.next 3) == 0 then return none
+  return some ⟨22 + (← Rand.next 5), 24 + (← Rand.next 3)⟩
+
+def instJson (i : Inst) : Json := json% {card: $(i.card.name), controller: $(i.controller), faceUp: $(i.faceUp),
+  cell: $(match i.cell with | some c => json% [$(c.col), $(c.row)] | none => Json.null)}
 
 def verdictName : Verdict → String
   | .ok => "ok" | .someLoop => "someLoop" | .multiStable => "multiStable"
@@ -115,12 +121,19 @@ def vecMulti : List Card :=
    mk "壊して戻す" [.destroy (Sample.sel ["魔法", "罠"] .opp), .bounce (tgt ["モンスター"] .opp), .draw 2],
    mk "打ち消して引く" [.counter (tgt ["魔法", "罠"] .both), .draw 1, .pump (Sample.sel ["モンスター"] .self) 300 300]]
 
+/-- マスの関係を使う無効（隣のマス・同じ縦列の、表側表示のカード） -/
+def vecNearNegate : List Card :=
+  [{ name := "隣の封印", type := "罠", tags := [],
+     effects := [.negate { Sample.sel ["モンスター", "魔法", "罠"] .both (faceUpOnly := true) with near := .adjacent }] },
+   { name := "縦の封印", type := "罠", tags := [],
+     effects := [.negate { Sample.sel ["モンスター", "魔法", "罠"] .both (faceUpOnly := true) with near := .sameColumn }] }]
+
 /-- テストに使うカード：見本のカードと、循環のない例・自分を無効にする例・カードへのダメージ・守備力の変化。
 ターンのある対戦のマナを試すため、半分ほどにコスト（どの色でも1・赤・緑）を、3枚に1枚ほどにタップで出る1マナを付ける
 （その3枚に1枚は、赤か緑を選んで出す） -/
 def vecCards : List Card :=
   (Sample.game.cards ++ [Sample.spellBreaker, Sample.selfNegator, vecStrike, vecToughen, vecPump, vecCounter] ++
-    vecMulti).mapIdx fun i c =>
+    vecMulti ++ vecNearNegate).mapIdx fun i c =>
     { c with cost := if i % 6 == 3 then 1 else 0, mana := if i % 3 == 0 then 1 + i % 2 else 0,
              manaColor := if i % 3 == 0 && i % 9 / 3 != 2 then ["赤", "緑"][i % 9 / 3]! else "",
              manaChoice := if i % 3 == 0 && i % 9 / 3 == 2 then ["赤", "緑"] else [],
@@ -563,13 +576,13 @@ def vectors (_ : Unit := ()) : Json := Id.run do
     let boards ← Rand.list 150 do
       let n := (← Rand.next 6) + 1
       let insts ← Rand.list n do
-        return (⟨← Rand.pick vecCards, ← Rand.bool, ← Rand.bool⟩ : Inst)
+        return (⟨← Rand.pick vecCards, ← Rand.bool, ← Rand.bool, ← Rand.instCell⟩ : Inst)
       let rel := (List.range n).map fun y => (List.range n).map fun x => instRel insts y x
       return json% {insts: $(insts.map instJson), rel: $(rel), verdict: $(verdictName (analyzeBoard insts))}
     let timed ← Rand.list 200 do
       let n := (← Rand.next 5) + 1
       let insts ← Rand.list n do
-        return (⟨← Rand.pick vecCards, ← Rand.bool, ← Rand.bool⟩ : Inst)
+        return (⟨← Rand.pick vecCards, ← Rand.bool, ← Rand.bool, ← Rand.instCell⟩ : Inst)
       let s : TState := ⟨← Rand.list n Rand.bool, ← Rand.pick (perms (List.range n))⟩
       let tp ← Rand.bool
       let tjson (t : TState) : Json := json% {on: $(t.on), order: $(t.order)}

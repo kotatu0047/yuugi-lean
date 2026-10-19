@@ -20,7 +20,6 @@ import CardGen.Negation
 | 攻撃力・守備力の変化が0です | `modTerm_boost_zero`・`modTerm_toughen_zero`（加える量は0） |
 | 攻撃力・守備力を変える範囲に、戦闘できる種類のカードがありません | `modTerm_boost_nonfighter` など（戦闘できるカードには0） |
 | 永続効果の範囲では、対象を選べません | `modTerm_boost_target` など・`Selector.matches_negView_target`（何にも当たらない） |
-| 無効の範囲には、マスの関係はまだ使えません | `Selector.matches_negView_near`（何にも当たらない） |
 | 発動する効果に動きがありません | `State.resolve_nil`（無効にされて解決したのと同じ） |
 | カードの種類「…」はルールにありません | `Reachable.type_known`（ゾーンの検査が通れば、そのカードはどの盤面でもフィールドに出ない） |
 | ゾーンのマスの数が0です／置けるカードの種類が空です | `Reachable.zone_used`（そのゾーンにはどの盤面でもカードがない） |
@@ -265,14 +264,6 @@ theorem modTerm_toughen_nonfighter (r : Rules) {s : Selector} (hs : s.types.any 
 theorem Selector.matches_negView_target {s : Selector} (hs : s.target = true) (b a : Inst) (isSelf : Bool) :
     s.matches (b.viewFrom a isSelf) = false := by
   simp [Selector.matches, hs, Inst.viewFrom]
-
-/-- **無効の範囲でマスの関係（隣・同じ縦列）を使っても、無効の関係では何にも当たらない**（まだ使えないため） -/
-theorem Selector.matches_negView_near {s : Selector} (hn : s.near ≠ .any) (b a : Inst) (isSelf : Bool) :
-    s.matches (b.viewFrom a isSelf) = false := by
-  cases h : s.near with
-  | any => exact absurd h hn
-  | adjacent => simp [Selector.matches, h, Near.matches, Inst.viewFrom]
-  | sameColumn => simp [Selector.matches, h, Near.matches, Inst.viewFrom]
 
 /-! ## カード・ゾーン・ルール -/
 

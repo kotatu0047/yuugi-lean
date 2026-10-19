@@ -99,7 +99,7 @@ public class DifferentialTests
     {
         foreach (var c in V["boards"])
         {
-            var insts = c["insts"].Select(x => new Inst(Cards[(string)x["card"]], (bool)x["controller"], (bool)x["faceUp"])).ToList();
+            var insts = c["insts"].Select(x => ParseInst(x)).ToList();
             var rel = (JArray)c["rel"];
             for (int y = 0; y < insts.Count; y++)
                 for (int x = 0; x < insts.Count; x++)
@@ -121,11 +121,14 @@ public class DifferentialTests
         static JObject Json(TState t) => new JObject { ["on"] = new JArray(t.On), ["order"] = new JArray(t.Order) };
         foreach (var c in V["timed"])
         {
-            var insts = c["insts"].Select(x => new Inst(Cards[(string)x["card"]], (bool)x["controller"], (bool)x["faceUp"])).ToList();
+            var insts = c["insts"].Select(x => ParseInst(x)).ToList();
             var next = new TSys(insts).Succ((bool)c["turn"], Parse(c["state"]));
             Assert.True(JToken.DeepEquals(c["expected"], new JArray(next.Select(Json))), $"不一致：{c}");
         }
     }
+
+    static Inst ParseInst(JToken x) => new Inst(Cards[(string)x["card"]], (bool)x["controller"], (bool)x["faceUp"],
+        x["cell"] == null || x["cell"].Type == JTokenType.Null ? (Cell?)null : new Cell((int)x["cell"][0], (int)x["cell"][1]));
 
     static Choice ParseChoice(JToken c) => (string)c["kind"] switch
     {

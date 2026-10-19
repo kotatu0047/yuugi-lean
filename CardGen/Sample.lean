@@ -260,11 +260,11 @@ namespace CardGen.Sample
 
 -- 4すくみの盤面（スキルドレイン・お触れ・ショッカーが自分、Bloo－D が相手）：
 -- 結果は1通りだが、選び方によって判定が回り続ける（yuugi-lean の quad_someEnd と同じ結論）
-#guard analyzeBoard [⟨skillDrain, true, true⟩, ⟨royalDecree, true, true⟩, ⟨jinzo, true, true⟩,
-  ⟨blooD, false, true⟩] == .someLoop
+#guard analyzeBoard [⟨skillDrain, true, true, none⟩, ⟨royalDecree, true, true, none⟩, ⟨jinzo, true, true, none⟩,
+  ⟨blooD, false, true, none⟩] == .someLoop
 
 -- お触れどうし：互いに無効にし合い、結果が順番で変わる
-#guard analyzeBoard [⟨royalDecree, true, true⟩, ⟨royalDecree, false, true⟩] == .multiStable
+#guard analyzeBoard [⟨royalDecree, true, true, none⟩, ⟨royalDecree, false, true, none⟩] == .multiStable
 
 /-- 自分も含めてすべてのモンスターの効果を無効にするモンスター -/
 def selfNegator : Card :=
@@ -272,7 +272,7 @@ def selfNegator : Card :=
     effects := [.negate (sel [monster] .both (faceUpOnly := true))] }
 
 -- 自分自身を無効にする：どの状態も安定しない
-#guard analyzeBoard [⟨selfNegator, true, true⟩] == .noStable
+#guard analyzeBoard [⟨selfNegator, true, true, none⟩] == .noStable
 
 -- 検査ツールは、自分自身を無効にするカードを反例として報告する
 #guard (negOut game.rules [selfNegator]).status == "counterexample"
@@ -281,7 +281,17 @@ def selfNegator : Card :=
 
 /-- 4すくみ：スキルドレイン・お触れ・ショッカーが自分、Bloo－D が相手 -/
 def quadBoard : List Inst :=
-  [⟨skillDrain, true, true⟩, ⟨royalDecree, true, true⟩, ⟨jinzo, true, true⟩, ⟨blooD, false, true⟩]
+  [⟨skillDrain, true, true, none⟩, ⟨royalDecree, true, true, none⟩, ⟨jinzo, true, true, none⟩, ⟨blooD, false, true, none⟩]
+
+/-- マスの関係を使う無効：隣のマスの、表側表示のモンスターの効果を無効にする罠 -/
+def nearSeal : Card :=
+  { name := "隣の封印", type := trap, tags := [],
+    effects := [.negate { sel [monster] .both (faceUpOnly := true) with near := .adjacent }] }
+
+-- 無効にする側のマスから見て、隣のマスのカードだけを無効にする（マス目の上にないカードには当たらない）
+#guard instRel [⟨nearSeal, true, true, some ⟨22, 26⟩⟩, ⟨jinzo, true, true, some ⟨22, 25⟩⟩] 0 1
+#guard !instRel [⟨nearSeal, true, true, some ⟨22, 26⟩⟩, ⟨jinzo, true, true, some ⟨24, 25⟩⟩] 0 1
+#guard !instRel [⟨nearSeal, true, true, none⟩, ⟨jinzo, true, true, some ⟨22, 25⟩⟩] 0 1
 
 -- Bloo－D 側（相手）のターンなら、どの状態から、どう選んでも止まり、結果は1通り
 -- （yuugi-lean の quad_allEnd_any と同じ結論）。証明書の検査も通る
@@ -294,14 +304,14 @@ def quadBoard : List Inst :=
 
 -- 自分のスキルドレイン・ショッカーと、相手のお触れ・Bloo－D：自分のターンでは止まらない状態がある
 -- （yuugi-lean の loopSrcs と同じ盤面）
-#guard ((TSys.ofInsts [⟨skillDrain, true, true⟩, ⟨jinzo, true, true⟩, ⟨royalDecree, false, true⟩,
-  ⟨blooD, false, true⟩]).analyze true).verdict == .cannotHalt
+#guard ((TSys.ofInsts [⟨skillDrain, true, true, none⟩, ⟨jinzo, true, true, none⟩, ⟨royalDecree, false, true, none⟩,
+  ⟨blooD, false, true, none⟩]).analyze true).verdict == .cannotHalt
 
 -- お触れどうし：先に適用された方が勝つので、結果は適用された順番だけで決まる
-#guard ((TSys.ofInsts [⟨royalDecree, true, true⟩, ⟨royalDecree, false, true⟩]).analyze true).verdict == .byHistory
+#guard ((TSys.ofInsts [⟨royalDecree, true, true, none⟩, ⟨royalDecree, false, true, none⟩]).analyze true).verdict == .byHistory
 
 -- 自分自身を無効にするカード：止まる状態がない
-#guard ((TSys.ofInsts [⟨selfNegator, true, true⟩]).analyze true).verdict == .noStable
+#guard ((TSys.ofInsts [⟨selfNegator, true, true, none⟩]).analyze true).verdict == .noStable
 
 -- 4すくみの4枚のまとまりは、上の止まらない盤面が見つかるので「反例あり」
 #guard (negOut game.rules game.cards).status == "counterexample"

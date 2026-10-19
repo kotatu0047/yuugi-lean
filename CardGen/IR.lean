@@ -337,8 +337,7 @@ def Selector.noTarget (where_ : String) (s : Selector) : List String :=
 def Effect.check (r : Rules) (where_ : String) : Effect → List String
   | .activated as => (if as.isEmpty then [s!"{where_}：発動する効果に動きがありません"] else []) ++
       as.flatMap (·.check r where_)
-  | .negate s => s.check r s!"{where_}の無効" ++ s.noTarget s!"{where_}の無効" ++
-      (if s.near != .any then [s!"{where_}：無効の範囲には、マスの関係（隣・同じ縦列）はまだ使えません"] else [])
+  | .negate s => s.check r s!"{where_}の無効" ++ s.noTarget s!"{where_}の無効"
   | .boost s n => s.check r s!"{where_}の攻撃力の変化" ++ s.noTarget s!"{where_}の攻撃力の変化" ++
       (if n = 0 then [s!"{where_}：攻撃力の変化が0です"] else []) ++
       (if s.types.any r.fighters.contains then [] else

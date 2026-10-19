@@ -255,6 +255,8 @@ structure Inst where
   card : Card
   controller : PlayerId
   faceUp : Bool
+  /-- 盤面のマス目の位置（相手の側は点対称の位置）。マス目の上にないゾーンや、位置を考えない総当たりでは `none` -/
+  cell : Option Cell := none
 deriving Repr
 
 def Effect.negSel : Effect → Option Selector
@@ -264,7 +266,7 @@ def Effect.negSel : Effect → Option Selector
 /-- `a` から見た `b` -/
 def Inst.viewFrom (b a : Inst) (isSelf : Bool) : View :=
   { type := b.card.type, tags := b.card.tags, mine := b.controller == a.controller,
-    faceUp := b.faceUp, isSelf }
+    faceUp := b.faceUp, isSelf, adjacent := Cell.adjacentOpt a.cell b.cell, sameColumn := Cell.sameColumnOpt a.cell b.cell }
 
 /-- 盤面の `y` 番目のカードが `x` 番目のカードの効果を無効にする（`y` が表側表示で、無効の範囲に合う） -/
 def instRel (insts : List Inst) (y x : Nat) : Bool :=
