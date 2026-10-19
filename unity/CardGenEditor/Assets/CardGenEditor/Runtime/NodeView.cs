@@ -21,6 +21,10 @@ namespace CardGen.App
 
         bool selected, problem;
         readonly VisualElement brackets;
+        // 外側の光彩（選んでいればアンバーで明滅、問題があれば赤）
+        readonly VisualElement glow;
+        float pulse = 1;
+        const float GlowSize = 12;
 
         public NodeView(Node node)
         {
@@ -32,6 +36,12 @@ namespace CardGen.App
             if (Node.IsFixed(node.Kind)) style.width = 320;
             Theme.Round(style, 2);
             // 四隅のブラケット：選んでいればアンバー、問題があれば赤、ふだんは種類の色
+            glow = new VisualElement { name = "glow", pickingMode = PickingMode.Ignore };
+            glow.style.position = Position.Absolute;
+            glow.style.left = glow.style.top = -GlowSize;
+            glow.style.right = glow.style.bottom = -GlowSize;
+            glow.generateVisualContent += DrawGlow;
+            Add(glow);
             Paint();
 
             var header = new VisualElement { name = "header" };
@@ -77,7 +87,8 @@ namespace CardGen.App
             OutPort = MakePort(left: false);
             if (Node.HasInput(node.Kind)) Add(InPort);
             if (Node.HasOutput(node.Kind)) Add(OutPort);
-            brackets = Theme.BracketsOverlay(() => selected ? Theme.Amber : problem ? Theme.Red : Theme.Alpha(kc, 0.9f), 10, 2f);
+            brackets = Theme.BracketsOverlay(() => selected ? Theme.Alpha(Theme.Amber, 0.45f + 0.55f * pulse)
+                : problem ? Theme.Red : Theme.Alpha(kc, 0.9f), 10, 2f);
             Add(brackets);
 
             Refresh();
@@ -105,14 +116,49 @@ namespace CardGen.App
             return p;
         }
 
+        /// <summary>選んでいるノードの明滅を進める（t：秒。1.6 秒で1周）</summary>
+        public void Pulse(float t)
+        {
+            pulse = 0.5f + 0.5f * Mathf.Sin(t * Mathf.PI * 2 / 1.6f);
+            glow.MarkDirtyRepaint();
+            brackets.MarkDirtyRepaint();
+        }
+
+        /// <summary>ノードの外側に、だんだん薄くなる線を重ねて光彩にする（ノードの内側には描かない）</summary>
+        void DrawGlow(MeshGenerationContext ctx)
+        {
+            if (!selected && !problem) return;
+            var c = selected ? Theme.Amber : Theme.Red;
+            float strength = selected ? 0.12f + 0.2f * pulse : 0.14f;
+            var w = glow.layout.width;
+            var h = glow.layout.height;
+            if (float.IsNaN(w) || float.IsNaN(h)) return;
+            var p = ctx.painter2D;
+            p.lineWidth = 1.5f;
+            for (int i = 1; i <= (int)GlowSize; i++)
+            {
+                float f = 1f - (i - 1) / GlowSize;
+                p.strokeColor = Theme.Alpha(c, strength * f * f);
+                float x0 = GlowSize - i, y0 = GlowSize - i, x1 = w - GlowSize + i, y1 = h - GlowSize + i;
+                p.BeginPath();
+                p.MoveTo(new Vector2(x0, y0));
+                p.LineTo(new Vector2(x1, y0));
+                p.LineTo(new Vector2(x1, y1));
+                p.LineTo(new Vector2(x0, y1));
+                p.ClosePath();
+                p.Stroke();
+            }
+        }
+
         void Paint()
         {
             style.backgroundColor = problem ? Theme.Alpha(Theme.Red, 0.14f) : Theme.Panel;
             Theme.Border(style, 1, selected ? Theme.Amber : problem ? Theme.Alpha(Theme.Red, 0.8f) : Theme.Line);
             brackets?.MarkDirtyRepaint();
+            glow?.MarkDirtyRepaint();
         }
 
-        public void SetSelected(bool on) { selected = on; Paint(); }
+        public void SetSelected(bool on) { selected = on; pulse = 1; Paint(); }
 
         public void SetProblem(bool on) { problem = on; Paint(); }
 

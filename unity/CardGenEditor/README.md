@@ -33,6 +33,9 @@ Windows 側のクローンの場所は `CARDGEN_WIN_REPO`、Unity.exe は `CARDG
 ## 使い方
 
 見た目は SF 映画の画面のような HUD 風（ほぼ黒の紺の地、シアンの細い線、四隅のブラケット、方眼のキャンバス、光るつなぎ線、うっすらとした走査線）。
+選んでいるノードはアンバーの光彩と四隅がゆっくり明滅し、つなぎ線の上を親から子へ光の点が流れる。
+Lean で検査している間は、流れ続けるプログレスバーと経過時間、ログ（送った中間表現の大きさ・コマンド・受け取った報告・★の件数）を出し、
+終わったあとも結果の下に「検査のログ」として残す（ログは実際に起きたことだけで、進み具合の見せかけの数字は出さない）。
 配色と飾りは `Runtime/Theme.cs`、ボタン・入力欄・スクロールバーは `Resources/CardGenTheme.tss` にまとめてある。
 
 | 操作 | やり方 |
@@ -152,4 +155,5 @@ CardGenEditor.exe -cardgen-select 6 -cardgen-check -cardgen-results-end -cardgen
 `-cardgen-scenario combat`（または `stack`・`target`）を `-cardgen-mtg -cardgen-play 0` と一緒に付けると、MTG 風の見本で、
 まとめての攻撃とブロックの割り当ての場面（またはスタックで応答した場面）を作る。
 `-cardgen-menu node`（または `play`・`card`）で、発動のノード（テストプレイの空き場所・自分の最初の手札）の右クリックのメニューを出す。
+`-cardgen-check-live` で検査を始めて終わるのを待たない（検査中の表示の確認用）。
 `-cardgen-claim` を付けると、命題の欄の値でジョブを作る（実際にジョブが増えるので注意）。

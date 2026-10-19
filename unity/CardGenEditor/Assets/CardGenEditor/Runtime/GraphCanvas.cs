@@ -19,6 +19,9 @@ namespace CardGen.App
 
         readonly VisualElement content;
         readonly VisualElement edgeLayer;
+        // つなぎ線の上を流れる光の点（毎フレーム描き直すので、線とは別の層にする）
+        readonly VisualElement flowLayer;
+        float clock;
         readonly Dictionary<int, NodeView> views = new Dictionary<int, NodeView>();
         Vector2 offset = new Vector2(20, 20);
         float zoom = 0.85f;
@@ -64,6 +67,17 @@ namespace CardGen.App
             edgeLayer.style.height = 4000;
             edgeLayer.generateVisualContent += DrawEdges;
             content.Add(edgeLayer);
+
+            flowLayer = new VisualElement { name = "flow", pickingMode = PickingMode.Ignore };
+            flowLayer.style.position = Position.Absolute;
+            flowLayer.style.left = 0;
+            flowLayer.style.top = 0;
+            flowLayer.style.width = 4000;
+            flowLayer.style.height = 4000;
+            flowLayer.generateVisualContent += DrawFlow;
+            content.Add(flowLayer);
+            // 動き：選んでいるノードの明滅と、流れる点（画面に出ているときだけ）
+            schedule.Execute(Tick).Every(33);
 
             popup = new VisualElement { name = "candidates" };
             popup.style.position = Position.Absolute;
@@ -346,6 +360,65 @@ namespace CardGen.App
 
         static Vector2 OutPos(Node n) => new Vector2(n.X + NodeView.Width, n.Y + NodeView.HeaderHeight / 2);
         static Vector2 InPos(Node n) => new Vector2(n.X, n.Y + NodeView.HeaderHeight / 2);
+
+        /// <summary>つなぎ線の曲線の制御点（a から b へ、水平に出て水平に入る）</summary>
+        static (Vector2, Vector2) Controls(Vector2 a, Vector2 b)
+        {
+            float dx = Mathf.Max(40, Mathf.Abs(b.x - a.x) * 0.5f);
+            return (a + new Vector2(dx, 0), b - new Vector2(dx, 0));
+        }
+
+        static Vector2 Bezier(Vector2 a, Vector2 c1, Vector2 c2, Vector2 b, float t)
+        {
+            float u = 1 - t;
+            return u * u * u * a + 3 * u * u * t * c1 + 3 * u * t * t * c2 + t * t * t * b;
+        }
+
+        void Tick()
+        {
+            if (panel == null || resolvedStyle.display == DisplayStyle.None || layout.width <= 0) return;
+            clock = Time.realtimeSinceStartup;
+            flowLayer.MarkDirtyRepaint();
+            if (selected != null && views.TryGetValue(selected.Id, out var v)) v.Pulse(clock);
+        }
+
+        /// <summary>
+        /// 流れる光の点：つなぎ線ごとに2つ、親から子へ流れる（尾を引く）。線ごとに少しずらす
+        /// </summary>
+        void DrawFlow(MeshGenerationContext ctx)
+        {
+            var p = ctx.painter2D;
+            foreach (var e in Doc.Edges)
+            {
+                var a = Doc.Find(e.From);
+                var b = Doc.Find(e.To);
+                if (a == null || b == null) continue;
+                Vector2 pa = OutPos(a), pb = InPos(b);
+                var (c1, c2) = Controls(pa, pb);
+                var col = Color.Lerp(NodeView.KindColor(a.Kind), Color.white, 0.35f);
+                float len = Mathf.Max(60, Vector2.Distance(pa, pb));
+                float speed = 90f / len;   // 1秒に 90 ほど進む
+                float shift = (e.From * 0.37f + e.To * 0.61f) % 1f;
+                for (int k = 0; k < 2; k++)
+                {
+                    float t0 = Mathf.Repeat(clock * speed + shift + k * 0.5f, 1f);
+                    for (int j = 4; j >= 0; j--)
+                    {
+                        float t = t0 - j * 0.018f;
+                        if (t < 0) continue;
+                        var q = Bezier(pa, c1, c2, pb, t);
+                        float fade = 1f - j / 5f;
+                        if (j == 0)
+                        {
+                            p.fillColor = Theme.Alpha(col, 0.22f);
+                            p.BeginPath(); p.Arc(q, 5f, 0, 360); p.Fill();
+                        }
+                        p.fillColor = Theme.Alpha(col, 0.9f * fade);
+                        p.BeginPath(); p.Arc(q, j == 0 ? 2.2f : 1.6f * fade + 0.4f, 0, 360); p.Fill();
+                    }
+                }
+            }
+        }
 
         void DrawCurve(Painter2D p, Vector2 a, Vector2 b, Color c)
         {

@@ -31,6 +31,12 @@ namespace CardGen.App
         Report lastReport;
         bool reportStale;
         bool checking;
+        // Lean の検査のログ（実際に起きたことだけ：送った大きさ・コマンド・待った時間・受け取った結果）
+        readonly System.Collections.Generic.List<(float t, string tag, string text, Color color)> checkLog =
+            new System.Collections.Generic.List<(float, string, string, Color)>();
+        float checkStart;
+        VisualElement checkSegment;
+        Label checkWait;
 
         const string PathKey = "cardgen.path";
         const string CommandKey = "cardgen.command";
@@ -386,9 +392,108 @@ namespace CardGen.App
             foreach (var e in errors) results.Add(Text("・" + e, 12, StatusColor("counterexample")));
 
             Section(results, "Lean による検査" + (reportStale ? "（編集後は未実行）" : ""), "lean // verify");
-            if (checking) { results.Add(Text("検査しています…")); return; }
-            if (lastReport == null) { results.Add(Text("「Lean で検査」を押すと、ルールから導いた性質（★）と無効の関係を検査します。", 12, Theme.Muted)); return; }
+            if (checking) { results.Add(CheckProgress()); results.Add(CheckLogView()); return; }
+            if (lastReport == null)
+            {
+                results.Add(Text("「Lean で検査」を押すと、ルールから導いた性質（★）と無効の関係を検査します。", 12, Theme.Muted));
+                if (checkLog.Count > 0)
+                {
+                    Section(results, "検査のログ", "lean // log");
+                    results.Add(CheckLogView());
+                }
+                return;
+            }
             RenderReport(lastReport);
+            if (checkLog.Count > 0)
+            {
+                Section(results, "検査のログ", "lean // log");
+                results.Add(CheckLogView());
+            }
+        }
+
+        // ---- 検査中の表示：流れるプログレスバーとログ ----
+
+        void Log(string tag, string text, Color? color = null) =>
+            checkLog.Add((Time.realtimeSinceStartup - checkStart, tag, text, color ?? Theme.Text));
+
+        /// <summary>終わるまでの時間は分からないので、左から右へ流れ続ける帯（不確定のプログレスバー）</summary>
+        VisualElement CheckProgress()
+        {
+            var box = new VisualElement();
+            box.style.marginTop = 4;
+            var head = Row();
+            head.Add(Theme.Dot(Theme.Amber));
+            var scan = Theme.Tag("scanning // lean 4 kernel", Theme.Amber, 9);
+            scan.style.marginLeft = 6;
+            scan.style.flexGrow = 1;
+            head.Add(scan);
+            checkWait = Theme.Tag("t+00.0s", Theme.Amber, 9);
+            head.Add(checkWait);
+            box.Add(head);
+            var track = new VisualElement();
+            track.style.height = 6;
+            track.style.marginTop = 5;
+            track.style.overflow = Overflow.Hidden;
+            track.style.backgroundColor = Theme.Alpha(Theme.Cyan, 0.06f);
+            Theme.Border(track.style, 1, Theme.Line);
+            // 目盛り
+            track.generateVisualContent += ctx =>
+            {
+                var p = ctx.painter2D;
+                p.strokeColor = Theme.Alpha(Theme.Cyan, 0.18f);
+                p.lineWidth = 1;
+                var w = track.layout.width;
+                for (float x = 0; x < w; x += 8) { p.BeginPath(); p.MoveTo(new Vector2(x, 0)); p.LineTo(new Vector2(x, 2)); p.Stroke(); }
+            };
+            checkSegment = new VisualElement();
+            checkSegment.style.position = Position.Absolute;
+            checkSegment.style.top = 0;
+            checkSegment.style.bottom = 0;
+            checkSegment.style.width = Length.Percent(28);
+            checkSegment.style.backgroundColor = Theme.Alpha(Theme.Cyan, 0.75f);
+            track.Add(checkSegment);
+            box.Add(track);
+            return box;
+        }
+
+        void AnimateCheck()
+        {
+            if (!checking || checkSegment == null) return;
+            var t = Time.realtimeSinceStartup - checkStart;
+            checkSegment.style.left = Length.Percent(Mathf.Repeat(t * 0.55f, 1.3f) * 100 - 30);
+            if (checkWait != null) checkWait.text = $"T+{t:00.0}S";
+        }
+
+        /// <summary>ログの欄：時刻・英字の種類・内容。新しい行ほど明るい</summary>
+        VisualElement CheckLogView()
+        {
+            var box = new VisualElement();
+            box.style.marginTop = 6;
+            box.style.paddingLeft = 8;
+            box.style.paddingRight = 8;
+            box.style.paddingTop = 6;
+            box.style.paddingBottom = 6;
+            Theme.Frame(box, Theme.Line, new Color(0, 0, 0, 0.35f), Theme.Alpha(Theme.Cyan, 0.5f));
+            for (int i = 0; i < checkLog.Count; i++)
+            {
+                var (t, tag, text, color) = checkLog[i];
+                var row = Row();
+                row.style.alignItems = Align.FlexStart;
+                row.style.marginBottom = 2;
+                var time = Theme.Tag($"{t:00.00}", Theme.Dim, 9);
+                time.style.width = 40;
+                time.style.flexShrink = 0;
+                row.Add(time);
+                var k = Theme.Tag(tag, color == Theme.Text ? Theme.Cyan : color, 9);
+                k.style.width = 46;
+                k.style.flexShrink = 0;
+                row.Add(k);
+                var l = Text(text, 11, i == checkLog.Count - 1 ? Theme.Bright : Theme.Muted);
+                l.style.flexShrink = 1;
+                row.Add(l);
+                box.Add(row);
+            }
+            return box;
         }
 
         System.Collections.Generic.IEnumerable<int> ProblemNodes(System.Collections.Generic.List<string> errors)
@@ -458,20 +563,43 @@ namespace CardGen.App
             if (structure.Count > 0) { status.text = "つなぎ方の問題を直してから検査してください"; return; }
             checking = true;
             reportStale = false;
+            checkLog.Clear();
+            checkStart = Time.realtimeSinceStartup;
+            var input = IrJson.ToJson(game).ToString(Formatting.None);
+            Log("send", $"中間表現 {System.Text.Encoding.UTF8.GetByteCount(input):N0} バイト（カード {game.Cards.Count} 枚・ゾーン {game.Rules.Zones.Count} 個）");
+            Log("exec", commandField.value);
+            Log("wait", "Lean の検査ツールの応答を待っています（★の証明の照合と、無効の関係の検査）");
             Render();
+            var anim = results.schedule.Execute(AnimateCheck).Every(33);
             PlayerPrefs.SetString(CommandKey, commandField.value);
             try
             {
-                var output = await CheckerClient.Run(commandField.value, IrJson.ToJson(game).ToString(Formatting.None));
+                var output = await CheckerClient.Run(commandField.value, input);
+                Log("recv", $"報告 {System.Text.Encoding.UTF8.GetByteCount(output):N0} バイト");
                 lastReport = Report.Parse(output);
+                if (!lastReport.Ok) Log("error", $"形式の問題 {lastReport.Errors.Count} 件", Theme.Red);
+                else
+                {
+                    var proved = lastReport.Claims.Count(c => c.Status == "proved");
+                    var cex = lastReport.Claims.Count(c => c.Status == "counterexample");
+                    Log("claims", $"★ {lastReport.Claims.Count} 件（証明済み {proved}" + (cex > 0 ? $"・反例 {cex}" : "") + "）",
+                        cex > 0 ? Theme.Red : Theme.Green);
+                    if (lastReport.Negation != null)
+                        Log("negate", $"無効の関係：{Report.StatusLabel(lastReport.Negation.Status)}", StatusColor(lastReport.Negation.Status));
+                }
+                Log("done", "検査が終わりました", Theme.Green);
                 status.text = "Lean による検査が終わりました";
             }
             catch (Exception e)
             {
                 lastReport = null;
+                Log("error", e.Message, Theme.Red);
                 status.text = $"検査ツールを動かせません：{e.Message}";
             }
+            anim.Pause();
             checking = false;
+            checkSegment = null;
+            checkWait = null;
             Render();
         }
 
@@ -482,6 +610,7 @@ namespace CardGen.App
         //   -cardgen-select <ノードの番号>   そのノードを選ぶ（Sets・Axioms などの種類の名前なら、その種類の最初のノード）
         //   -cardgen-focus <ノードの番号>    そのノードが見えるようにキャンバスを動かす
         //   -cardgen-check                    Lean で検査する
+        //   -cardgen-check-live               Lean で検査を始め、終わるのを待たない（検査中の表示の確認用）
         //   -cardgen-results-end              検査の結果を一番下まで送る
         //   -cardgen-play <手数>              テストプレイを始め、置ける手札を交互に置く
         //   -cardgen-scenario combat|stack    テストプレイで、戦闘（ブロックの割り当て）かスタックの場面を作る（MTG 風の見本）
@@ -530,6 +659,8 @@ namespace CardGen.App
                 var n = canvas.Doc.Nodes.FirstOrDefault(x => x.Kind == ckind);
                 if (n != null) { canvas.Focus(n); yield return null; canvas.ShowCandidatesFor(n); }
             }
+            // 検査を始めて、終わるのを待たない（検査中の表示の確認用）
+            if (args.Contains("-cardgen-check-live")) _ = RunLeanCheck();
             if (args.Contains("-cardgen-check"))
             {
                 var task = RunLeanCheck();
