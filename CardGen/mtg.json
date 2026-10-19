@@ -489,4 +489,47 @@
    "defense": 0,
    "cost": 1,
    "colorCost": ["白"],
+   "attack": 0},
+  {"type": "インスタント",
+   "trample": false,
+   "tags": ["青", "赤"],
+   "reach": false,
+   "name": "電解",
+   "manaColor": "",
+   "manaChoice": [],
+   "mana": 0,
+   "flying": false,
+   "effects":
+   [{"activated":
+     {"actions":
+      [{"strike":
+        {"target":
+         {"types": ["クリーチャー"],
+          "target": true,
+          "tags": [],
+          "side": "both",
+          "near": "any",
+          "faceUpOnly": false,
+          "excludeSelf": false},
+         "amount": 2}},
+       {"draw": {"count": 1}}]}}],
+   "defense": 0,
+   "cost": 1,
+   "colorCost": ["青", "赤"],
+   "attack": 0},
+  {"type": "インスタント",
+   "trample": false,
+   "tags": ["赤", "白"],
+   "reach": false,
+   "name": "稲妻のらせん",
+   "manaColor": "",
+   "manaChoice": [],
+   "mana": 0,
+   "flying": false,
+   "effects":
+   [{"activated":
+     {"actions": [{"damage": {"amount": 3}}, {"heal": {"amount": 3}}]}}],
+   "defense": 0,
+   "cost": 0,
+   "colorCost": ["赤", "白"],
    "attack": 0}]}

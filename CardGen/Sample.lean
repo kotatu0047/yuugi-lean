@@ -123,11 +123,16 @@ def escort : Card :=
     effects := [.boost { sel [monster] .self (faceUpOnly := true) (excludeSelf := true) with near := .adjacent } 400],
     attack := 1200, defense := 1200 }
 
+/-- 1つの効果に複数の動き：相手のモンスター1体を対象に選んで破壊し、カードを1枚引く魔法 -/
+def destroyDraw : Card :=
+  { name := "破壊と補給", type := spell, tags := [],
+    effects := [.activated [.destroy { sel [monster] .opp with target := true }, .draw 1]] }
+
 def game : Game where
   version := currentVersion
   rules := rules
   cards := [thunderbolt, featherDuster, skillDrain, royalDecree, jinzo, blooD, returnSpell, drawSpell,
-    blackMagician, darkCommander, darkBlessing, fireball, potion, columnStrike, escort]
+    blackMagician, darkCommander, darkBlessing, fireball, potion, columnStrike, escort, destroyDraw]
 
 /-! ## 検査 -/
 
@@ -499,5 +504,28 @@ def gridState : State := fun p =>
 #guard (gridState.step? rules (.place true 0 0 1 true)).isSome
 #guard (gridState.step? rules (.place true 0 0 5 true)).isNone
 #guard gridState.freeCell rules true 0 == 1
+
+/-! ## 1つの効果に複数の動き -/
+
+/-- 自分：破壊と補給（魔法罠の 0 番目）、デッキにブラック・マジシャン。相手：サイコ・ショッカーと Bloo－D -/
+def multiState : State := fun p =>
+  if p then { deck := [blackMagician], hand := [], grave := [], life := 8000,
+              field := [⟨1, 0, destroyDraw, true, 0, 0, 0⟩] }
+  else { deck := [], hand := [], grave := [], life := 8000,
+         field := [⟨0, 0, jinzo, true, 0, 0, 0⟩, ⟨0, 1, blooD, true, 0, 0, 0⟩] }
+
+-- 動きは前から順に行う：選んだ Bloo－D だけを破壊し、1枚引く
+#guard match multiState.step? rules (.resolve true 0 0 true [] (some (false, 1))) with
+  | some g => (g false).field.map (·.card.name) == [jinzo.name] && (g false).grave == [blooD] &&
+      (g true).hand == [blackMagician] && (g true).deck.isEmpty && (g true).grave == [destroyDraw]
+  | none => false
+-- 対象を選ばなければ、対象を選ぶ動き（破壊）だけが何も起きず、引く動きは行う
+#guard match multiState.step? rules (.resolve true 0 0 true []) with
+  | some g => (g false).field.length == 2 && (g true).hand == [blackMagician]
+  | none => false
+-- 効果が無効なら、どちらの動きも行わない（カードは墓地へ送られる）
+#guard match multiState.step? rules (.resolve true 0 0 false [] (some (false, 1))) with
+  | some g => (g false).field.length == 2 && (g true).hand.isEmpty && (g true).grave == [destroyDraw]
+  | none => false
 
 end CardGen.Sample

@@ -101,11 +101,23 @@ def vecCounter : Card :=
 def vecToughen : Card :=
   { name := "守りの加護", type := "魔法", tags := [], effects := [.toughen (Sample.sel ["モンスター"] .self) 500] }
 
+/-- 1つの効果に複数の動きを持つ魔法（解決の順番と、対象あり・なしの混ざり方を試す） -/
+def vecMulti : List Card :=
+  let tgt (types : List TypeName) (side : Side) : Selector := { Sample.sel types side with target := true }
+  let mk (name : String) (as : List Action) : Card := { name, type := "魔法", tags := [], effects := [.activated as] }
+  [mk "耐えて受ける" [.pump (tgt ["モンスター"] .both) 0 1000, .strike (tgt ["モンスター"] .both) 1500],
+   mk "受けて耐える" [.strike (tgt ["モンスター"] .both) 1500, .pump (tgt ["モンスター"] .both) 0 1000],
+   mk "狙って引く" [.strike (tgt ["モンスター"] .both) 1000, .draw 1, .damage 300],
+   mk "戻して焼く" [.bounce (tgt ["モンスター", "魔法", "罠"] .both), .strike (Sample.sel ["モンスター"] .opp) 500, .heal 200],
+   mk "壊して戻す" [.destroy (Sample.sel ["魔法", "罠"] .opp), .bounce (tgt ["モンスター"] .opp), .draw 2],
+   mk "打ち消して引く" [.counter (tgt ["魔法", "罠"] .both), .draw 1, .pump (Sample.sel ["モンスター"] .self) 300 300]]
+
 /-- テストに使うカード：見本のカードと、循環のない例・自分を無効にする例・カードへのダメージ・守備力の変化。
 ターンのある対戦のマナを試すため、半分ほどにコスト（どの色でも1・赤・緑）を、3枚に1枚ほどにタップで出る1マナを付ける
 （その3枚に1枚は、赤か緑を選んで出す） -/
 def vecCards : List Card :=
-  (Sample.game.cards ++ [Sample.spellBreaker, Sample.selfNegator, vecStrike, vecToughen, vecPump, vecCounter]).mapIdx fun i c =>
+  (Sample.game.cards ++ [Sample.spellBreaker, Sample.selfNegator, vecStrike, vecToughen, vecPump, vecCounter] ++
+    vecMulti).mapIdx fun i c =>
     { c with cost := if i % 6 == 3 then 1 else 0, mana := if i % 3 == 0 then 1 + i % 2 else 0,
              manaColor := if i % 3 == 0 && i % 9 / 3 != 2 then ["赤", "緑"][i % 9 / 3]! else "",
              manaChoice := if i % 3 == 0 && i % 9 / 3 == 2 then ["赤", "緑"] else [],
@@ -496,6 +508,24 @@ def vectors (_ : Unit := ()) : Json := Id.run do
       return json% {state: $(stateJson g), neg: $(negJson neg), player: $(p), attackers: $(atk),
                     blocks: $(blocks.map fun (j, a) => json% [$(j), $(a)]),
                     expected: $(stateJson (g.combat Sample.rules neg p atk blocks))}
+    -- 1つの効果に複数の動き：複数の動きを持つ魔法を、たいていは対象を選んで解決する
+    let multiCards := vecCards.filter fun c => match c.effects with
+      | [.activated as] => 1 < as.length
+      | _ => false
+    let multi ← Rand.list 200 do
+      let slot := Rand.slot 4
+      let f1 ← Rand.list (← Rand.next 5) slot
+      let f2 ← Rand.list (← Rand.next 5) slot
+      let p ← Rand.bool
+      let spell : Slot := ⟨1, ← Rand.next 5, ← Rand.pick multiCards, true, 0, 0, 0⟩
+      let k ← Rand.next (((if p then f1 else f2).length) + 1)
+      let mine := (if p then f1 else f2)
+      let field q := if q == p then mine.take k ++ [spell] ++ mine.drop k else if q then f1 else f2
+      let deck ← Rand.list (← Rand.next 3) (Rand.pick vecCards)
+      let g : State := fun q => ⟨deck, [], [], field q, 3000⟩
+      let tgt ← if (← Rand.next 5) == 0 then pure none else Rand.tgt g
+      let ch : Choice := .resolve p k 0 ((← Rand.next 6) != 0) (← Rand.negs g) tgt
+      return json% {state: $(stateJson g), choice: $(choiceJson ch), result: $((g.step? Sample.rules ch).map stateJson)}
     let check := checkCases.map fun g => json% {game: $(toJson g), errors: $(g.check)}
     let play ← Rand.list 80 do
       let d1 ← Rand.list playRules.deckSize (Rand.pick vecCards)
@@ -555,7 +585,7 @@ def vectors (_ : Unit := ()) : Json := Id.run do
     return json% {version: 1, rules: $(toJson Sample.rules), cards: $(toJson vecCards),
                   mtgRules: $(toJson Mtg.rules), mtgCards: $(toJson Mtg.game.cards), mtgPlay: $(mtgPlay),
                   selector: $(selector), check: $(check), destroy: $(destroy), boards: $(boards), timed: $(timed), attack: $(attack),
-                  combat: $(combat),
+                  combat: $(combat), multi: $(multi),
                   playRules: $(toJson playRules), play: $(play), turnPlay: $(turnPlay)}
     : Rand Json).run 20261018
   return j

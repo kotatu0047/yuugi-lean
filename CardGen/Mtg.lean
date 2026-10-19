@@ -130,6 +130,14 @@ def divination : Card :=
   { name := "予言", type := sorcery, tags := ["青"], effects := [.activated [.draw 2]], cost := 1, colorCost := ["青"] }
 def salve : Card :=
   { name := "治癒の軟膏", type := instant, tags := ["白"], effects := [.activated [.heal 4]], colorCost := ["白"] }
+/-- 1つの効果に複数の動き（対象あり＋対象なし）：対象のクリーチャーに 2 点を与え、カードを1枚引く -/
+def electrolyze : Card :=
+  { name := "電解", type := instant, tags := ["青", "赤"],
+    effects := [.activated [.strike (target [creature] .both) 2, .draw 1]], cost := 1, colorCost := ["青", "赤"] }
+/-- 1つの効果に複数の動き（どちらも対象なし）：相手に 3 点を与え、3 点回復する -/
+def helix : Card :=
+  { name := "稲妻のらせん", type := instant, tags := ["赤", "白"],
+    effects := [.activated [.damage 3, .heal 3]], colorCost := ["赤", "白"] }
 def anthem : Card :=
   { name := "栄光の頌歌", type := enchantment, tags := ["白"],
     effects := [.boost (sel [creature] .self) 1, .toughen (sel [creature] .self) 1], cost := 2, colorCost := ["白"] }
@@ -141,7 +149,7 @@ def game : Game where
   version := currentVersion
   rules := rules
   cards := [mountain, forest, plains, island, karplusan, goblin, bear, giant, rhino, knight, drake, spider, bolt, shock,
-            growth, counterspell, pyroclasm, wrath, unsummon, divination, salve, anthem, silence]
+            growth, counterspell, pyroclasm, wrath, unsummon, divination, salve, anthem, silence, electrolyze, helix]
 
 /-! ## 検査 -/
 
@@ -315,6 +323,45 @@ def flyer : Match := ⟨board [slot 0 drake] [slot 0 bear, slot 1 spider], { tp 
   | none => false
 #guard match (board [slot 0 goblin] []).step? rules (.settle []) with
   | some g => (g true).field.length == 1
+  | none => false
+
+/-! ## 1つの効果に複数の動き -/
+
+/-- `p` のフィールドの 1 番目に `c`、デッキに山を置いた盤面 -/
+def withSpell (c : Card) (mine opp : List Slot) : State := fun p =>
+  { board (mine ++ [⟨1, 0, c, true, 0, 0, 0⟩]) opp p with deck := if p then [mountain] else [] }
+
+-- 電解：選んだゴブリンの先兵だけに 2 点を与えて破壊し、1枚引く
+#guard match (withSpell electrolyze [] [slot 0 goblin, slot 1 goblin]).step? rules
+    (.resolve true 0 0 true [] (some (false, 1))) with
+  | some g => (g false).field == [slot 0 goblin] && (g true).hand == [mountain] && (g true).grave == [electrolyze]
+  | none => false
+-- 対象を選ばなければ、ダメージの動きだけが何も起きず、引く動きは行う
+#guard match (withSpell electrolyze [] [slot 0 goblin]).step? rules (.resolve true 0 0 true []) with
+  | some g => (g false).field == [slot 0 goblin] && (g true).hand == [mountain]
+  | none => false
+-- 稲妻のらせん：相手に 3 点、自分は 3 点回復
+#guard match (withSpell helix [] []).step? rules (.resolve true 0 0 true []) with
+  | some g => (g false).life == 17 && (g true).life == 23
+  | none => false
+
+/-- 同じ対象に2つの動き：守備力 +3 してから 3 点 -/
+def braceThenHit : Card :=
+  { shock with name := "耐えて受ける", effects := [.activated [.pump (target [creature] .both) 0 3, .strike (target [creature] .both) 3]] }
+/-- 同じ対象に2つの動き：3 点を与えてから守備力 +3 -/
+def hitThenBrace : Card :=
+  { shock with name := "受けて耐える", effects := [.activated [.strike (target [creature] .both) 3, .pump (target [creature] .both) 0 3]] }
+
+-- 順番が結果を決める：守備力を上げてから 3 点なら灰色熊（2/2→2/5）は残り、3 点が先なら破壊される
+#guard match (withSpell braceThenHit [] [slot 0 bear]).step? rules (.resolve true 0 0 true [] (some (false, 0))) with
+  | some g => (g false).field == [{ slot 0 bear 3 with defBonus := 3 }]
+  | none => false
+#guard match (withSpell hitThenBrace [] [slot 0 bear]).step? rules (.resolve true 0 0 true [] (some (false, 0))) with
+  | some g => (g false).field.isEmpty && (g false).grave == [bear]
+  | none => false
+-- 対象が先の動きで破壊されたら、あとの動きは何もしない（同じ名前のほかのカードにも及ばない）
+#guard match (withSpell hitThenBrace [] [slot 0 bear, slot 1 bear]).step? rules (.resolve true 0 0 true [] (some (false, 0))) with
+  | some g => (g false).field == [slot 1 bear]
   | none => false
 
 /-! ## インスタントとスタック -/

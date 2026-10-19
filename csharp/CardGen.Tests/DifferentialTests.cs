@@ -178,6 +178,24 @@ public class DifferentialTests
     static JArray MatchJson(MatchState g) => new JArray(StateJson(g.P1), StateJson(g.P2));
 
     [Fact]
+    public void Multi_action_effects_resolve_like_Lean()
+    {
+        int applied = 0;
+        foreach (var c in V["multi"])
+        {
+            var st = (JArray)c["state"];
+            var g = new MatchState { P1 = ParseState(st[0]), P2 = ParseState(st[1]) };
+            var next = g.Step(R, ParseChoice(c["choice"]));
+            if (c["result"].Type == JTokenType.Null) { Assert.True(next == null, $"Lean ではできない動きが C# ではできました：{c}"); continue; }
+            Assert.True(next != null, $"Lean ではできる動きが C# ではできません：{c}");
+            Assert.True(JToken.DeepEquals(c["result"], MatchJson(next)), $"不一致：{c}\n実際：{MatchJson(next)}");
+            if ((bool)c["choice"]["apply"]) applied++;
+        }
+        Assert.Equal(200, V["multi"].Count());
+        Assert.True(applied > 100);
+    }
+
+    [Fact]
     public void Play_like_Lean()
     {
         var rules = IrJson.ParseRules(V["playRules"]);
@@ -375,7 +393,19 @@ public class DifferentialTests
         Assert.True(JToken.DeepEquals(src, IrJson.ToJson(g)));
     }
 
-    /// <summary>版 9 で加えたもの（範囲の対象・飛行・到達）を除く（遊戯王の見本はどれも使っていない）</summary>
+    /// <summary>
+    /// 古い版のテストに使う見本：遊戯王風の見本から、対象を選ぶカード（版 9 の機能。古い版では書けない）を除いたもの
+    /// </summary>
+    static JObject OldSample()
+    {
+        var o = (JObject)JToken.Parse(File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "sample.json")));
+        foreach (var c in ((JArray)o["cards"]).Where(c => ((JObject)c).Descendants().OfType<JProperty>()
+                     .Any(p => p.Name == "target" && p.Value.Type == JTokenType.Boolean && (bool)p.Value)).ToList())
+            c.Remove();
+        return o;
+    }
+
+    /// <summary>版 9 で加えたもの（範囲の対象・飛行・到達）を除く（OldSample はどれも使っていない）</summary>
     static JObject WithoutTargets(JObject o)
     {
         o["version"] = 8;
@@ -388,7 +418,7 @@ public class DifferentialTests
     [Fact]
     public void Version_8_is_upgraded()
     {
-        var src = (JObject)JToken.Parse(File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "sample.json")));
+        var src = OldSample();
         var o = WithoutTargets((JObject)src.DeepClone());
         Assert.Throws<FormatException>(() => IrJson.ParseGame(o.DeepClone()));
         Assert.True(IrJson.Upgrade(o));
@@ -410,7 +440,7 @@ public class DifferentialTests
     [Fact]
     public void Version_7_is_upgraded()
     {
-        var src = (JObject)JToken.Parse(File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "sample.json")));
+        var src = OldSample();
         var o = WithoutInstants((JObject)src.DeepClone());
         Assert.Throws<FormatException>(() => IrJson.ParseGame(o.DeepClone()));
         Assert.True(IrJson.Upgrade(o));
@@ -430,7 +460,7 @@ public class DifferentialTests
     [Fact]
     public void Version_6_is_upgraded()
     {
-        var src = (JObject)JToken.Parse(File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "sample.json")));
+        var src = OldSample();
         src["rules"]["tagSets"] = new JArray();
         var o = WithoutTagSets((JObject)src.DeepClone());
         Assert.Throws<FormatException>(() => IrJson.ParseGame(o.DeepClone()));
@@ -451,7 +481,7 @@ public class DifferentialTests
     [Fact]
     public void Version_5_is_upgraded()
     {
-        var src = (JObject)JToken.Parse(File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "sample.json")));
+        var src = OldSample();
         src["rules"]["tagSets"] = new JArray();
         var o = WithoutColors((JObject)src.DeepClone());
         Assert.Throws<FormatException>(() => IrJson.ParseGame(o.DeepClone()));
@@ -482,7 +512,7 @@ public class DifferentialTests
     [Fact]
     public void Version_4_is_upgraded()
     {
-        var src = (JObject)JToken.Parse(File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "sample.json")));
+        var src = OldSample();
         src["rules"]["tagSets"] = new JArray();
         var o = WithoutMana((JObject)src.DeepClone());
         Assert.Throws<FormatException>(() => IrJson.ParseGame(o.DeepClone()));
@@ -493,7 +523,7 @@ public class DifferentialTests
 
     static (JObject old, Game expected) WithoutGrid()
     {
-        var o = (JObject)JToken.Parse(File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "sample.json")));
+        var o = OldSample();
         var expected = IrJson.ParseGame(o.DeepClone());
         foreach (var z in expected.Rules.Zones) z.Cells.Clear();
         expected.Rules.TagSets.Clear();

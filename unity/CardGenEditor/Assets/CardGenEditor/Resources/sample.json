@@ -378,4 +378,30 @@
    "defense": 1200,
    "cost": 0,
    "colorCost": [],
-   "attack": 1200}]}
+   "attack": 1200},
+  {"type": "魔法",
+   "trample": false,
+   "tags": [],
+   "reach": false,
+   "name": "破壊と補給",
+   "manaColor": "",
+   "manaChoice": [],
+   "mana": 0,
+   "flying": false,
+   "effects":
+   [{"activated":
+     {"actions":
+      [{"destroy":
+        {"target":
+         {"types": ["モンスター"],
+          "target": true,
+          "tags": [],
+          "side": "opp",
+          "near": "any",
+          "faceUpOnly": false,
+          "excludeSelf": false}}},
+       {"draw": {"count": 1}}]}}],
+   "defense": 0,
+   "cost": 0,
+   "colorCost": [],
+   "attack": 0}]}
