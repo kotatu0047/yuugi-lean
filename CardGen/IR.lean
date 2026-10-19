@@ -143,6 +143,8 @@ structure Rules where
   /-- スタック：「フィールド上」でないゾーンに置いた、発動する効果を持つカード（呪文）は、後に置いたものから解決する。
   スタックが空でなければ、インスタント以外は置けず、攻撃・ブロック・ターン終了もできない -/
   stack : Bool := false
+  /-- 手札の上限。ターンプレイヤーは、手札がこの枚数を超えていればターンを終えられず、超えた分を選んで墓地へ捨てる。0 なら上限なし -/
+  handLimit : Nat := 0
 deriving Repr, DecidableEq, FromJson, ToJson
 
 /-- 効果の持ち主から見た陣営 -/
@@ -249,7 +251,7 @@ structure Game where
 deriving Repr, DecidableEq, FromJson, ToJson
 
 /-- 現在の形式の版 -/
-def currentVersion : Nat := 9
+def currentVersion : Nat := 10
 
 /-! ## 範囲の指定の意味
 

@@ -22,7 +22,7 @@ cd csharp/CardGen.Tests && dotnet test
 | `MatchState.AtkOf` / `MatchState.DefOf` | `State.atkOf` / `State.defOf`（`CardGen/Model.lean`） |
 | `MatchState.Combat`（MTG 式の戦闘。ダメージの割り振りと、守備力以上のダメージを受けたカードの破壊） | `State.combat`・`State.sweep` |
 | `Match.Start` / `Match.Step`（ターンのある対戦） | `Match.start` / `Match.step?`（`CardGen/Turn.lean`） |
-| `IrJson.Upgrade`（版 2〜8 のファイルを版 9 に上げる） | エディタ用（Lean は今の版だけを読む） |
+| `IrJson.Upgrade`（版 2〜9 のファイルを版 10 に上げる） | エディタ用（Lean は今の版だけを読む） |
 | `MatchState.Start` / `MatchState.Step` | `start` / `State.step?`（`CardGen/Play.lean`。`step?_sound` で証明に使う動きの関係と結びついている） |
 | `Judge`（対戦中の無効の判定。カードごとの有効・無効と適用の順番を覚え、盤面が変わるたびに `TSys.Succ` で進める） | テストプレイ用。`JudgeTests` で Bloo－D・スキルドレイン・お触れの場面を確かめる |
 | `DeckBuilder`（テストプレイの山札。土地を色のコストに合わせて選び、むらなく散らす） | エディタ用 |

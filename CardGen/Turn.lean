@@ -138,6 +138,8 @@ inductive TChoice
   | endTurn
   /-- 状態の確認（どちらのプレイヤーでも、いつでも。優先権は変わらない） -/
   | settle (neg : List Pos)
+  /-- 手札が上限（`Rules.handLimit`）を超えているターンプレイヤーが、手札の `hand` 番目を墓地へ捨てる -/
+  | discard (hand : Nat)
   /-- 優先権を持つプレイヤーがパスする（優先権が相手に移る） -/
   | pass
 deriving Repr, DecidableEq
@@ -200,6 +202,10 @@ theorem autoPay_ok {c : Card} {pool pay : List String} (h : autoPay c pool = som
 
 /-- 攻撃の途中でも、スタックが空でなくてもないか -/
 def TurnInfo.quiet (t : TurnInfo) : Bool := t.attackers.isEmpty && t.stack.isEmpty
+
+/-- `p` の手札が上限以下か（上限がなければいつでも） -/
+def Rules.handOK (r : Rules) (g : State) (p : PlayerId) : Bool :=
+  r.handLimit == 0 || decide ((g p).hand.length ≤ r.handLimit)
 
 /-- いつでも置ける種類（インスタント）のカードか -/
 def Rules.instant (r : Rules) (c : Card) : Bool := r.instants.contains c.type
@@ -339,6 +345,10 @@ def Match.step0? (r : Rules) (m : Match) (ch : TChoice) : Option Match :=
       (m.g.step? r (.resolve p k e apply neg tgt)).map fun g => ⟨g, (m.turn.pop r).prune g⟩
     else none
   | .settle neg => some ⟨m.g.sweep r neg, m.turn.prune (m.g.sweep r neg)⟩
+  | .discard h =>
+    if m.turn.quiet && !r.handOK m.g tp then
+      (m.g.step? r (.discard tp h)).map fun g => ⟨g, m.turn.prune g⟩
+    else none
   | .pass => none
   | .attack k t neg =>
     match (m.g tp).field[k]? with
@@ -376,7 +386,7 @@ def Match.step0? (r : Rules) (m : Match) (ch : TChoice) : Option Match :=
       | some out =>
         if m.turn.oppTapOK r (m.g (!tp)).field sl then some ⟨m.g, (m.turn.afterOppTap sl out).prune m.g⟩ else none
   | .endTurn =>
-    if m.turn.quiet then
+    if m.turn.quiet && r.handOK m.g tp then
       let g1 := m.g.mend
       let g := g1.drawUpTo r (!tp) r.drawPerTurn
       some ⟨g, { m.turn.next with
@@ -470,7 +480,9 @@ inductive Match.Moved (r : Rules) (m : Match) : TChoice → Match → Prop
       Match.Moved r m (.tap k color) ⟨m.g, (m.turn.afterTap sl out).prune m.g⟩
   | oppTap {k color sl out} : (m.g (!m.turn.tp)).field[k]? = some sl → manaOut sl.card color = some out →
       Match.Moved r m (.oppTap k color) ⟨m.g, (m.turn.afterOppTap sl out).prune m.g⟩
-  | endTurn {d} : Match.Moved r m .endTurn
+  | discard {h g} : m.g.step? r (.discard m.turn.tp h) = some g →
+      Match.Moved r m (.discard h) ⟨g, m.turn.prune g⟩
+  | endTurn {d} : r.handOK m.g m.turn.tp = true → Match.Moved r m .endTurn
       ⟨m.g.mend.drawUpTo r (!m.turn.tp) r.drawPerTurn,
        { m.turn.next with decked := d }.prune (m.g.mend.drawUpTo r (!m.turn.tp) r.drawPerTurn)⟩
 
@@ -510,6 +522,12 @@ theorem Match.step0?_moved {r : Rules} {m m' : Match} {ch : TChoice} (hs : m.ste
     simp only [Option.some.injEq] at hs
     subst hs; exact .settle
   | pass => simp at hs
+  | discard h =>
+    simp only at hs
+    split at hs
+    · obtain ⟨g, hg, rfl⟩ := Option.map_eq_some_iff.1 hs
+      exact .discard hg
+    · cases hs
   | attack k t neg =>
     simp only at hs
     split at hs
@@ -556,7 +574,10 @@ theorem Match.step0?_moved {r : Rules} {m m' : Match} {ch : TChoice} (hs : m.ste
   | endTurn =>
     simp only at hs
     split at hs
-    · cases hs; exact .endTurn
+    · rename_i hq
+      cases hs
+      simp only [Bool.and_eq_true] at hq
+      exact .endTurn hq.2
     · cases hs
 
 @[simp] theorem TurnInfo.withPrio_tp (t : TurnInfo) (p n) : (t.withPrio p n).tp = t.tp := rfl

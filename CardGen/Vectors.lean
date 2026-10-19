@@ -304,6 +304,7 @@ def choiceJson : Choice → Json
       blocks: $(blocks.map fun (j, a) => json% [$(j), $(a)]), neg: $(negJson neg)}
   | .mend => json% {kind: "mend"}
   | .settle neg => json% {kind: "settle", neg: $(negJson neg)}
+  | .discard p h => json% {kind: "discard", player: $(p), hand: $(h)}
 
 /-- フィールドのカードの位置からいくつか選ぶ（ないカードの位置も混ぜる） -/
 def Rand.negs (g : State) : Rand (List Pos) := do
@@ -314,7 +315,7 @@ def Rand.negs (g : State) : Rand (List Pos) := do
 def Rand.choice (g : State) : Rand Choice := do
   let p ← Rand.bool
   match ← Rand.next 6 with
-  | 0 => return .draw p
+  | 0 => if (← Rand.next 4) == 0 then return .discard p (← Rand.next ((g p).hand.length + 1)) else return .draw p
   | 5 =>
     if (← Rand.next 6) == 0 then
       let negs ← Rand.negs g
@@ -373,6 +374,7 @@ def tchoiceJson : TChoice → Json
       neg: $(negJson neg)}
   | .pass => json% {kind: "pass"}
   | .endTurn => json% {kind: "endTurn"}
+  | .discard h => json% {kind: "discard", hand: $(h)}
 
 /-- ターンのある対戦のテストのゾーン：見本のゾーンに、「フィールド上」でない魔法・罠のゾーン（スタック）を加えたもの -/
 def turnZones : List Zone :=
@@ -415,6 +417,8 @@ def Rand.tchoice (r : Rules) (m : Match) : Rand TChoice := do
   let tp := m.turn.tp
   let o := (m.g (!tp)).field
   let fighters := (List.range o.length).filter fun j => (o[j]?.map r.fights).getD false
+  -- 手札の上限：ときどき捨てる（上限を超えていなければできない）
+  if (← Rand.next 12) == 0 then return .discard (← Rand.next ((m.g tp).hand.length + 1))
   -- 優先権：ときどきパスする。スタックがあるか攻撃の途中で、両者がまだパスしていなければ、パスを多くする
   if (← Rand.next 10) == 0 then return .pass
   if m.turn.passes < 2 && !m.turn.quiet && (← Rand.next 3) != 0 then return .pass
@@ -519,7 +523,8 @@ def candidates (r : Rules) (m : Match) : List TChoice :=
   places (!tp) m.turn.oppPool (fun h z c up pay => .cast h z c up pay) ++
   taps tp (fun k c => .tap k c) ++ taps (!tp) (fun k c => .oppTap k c) ++
   (List.range (m.g tp).field.length).map (fun k => .attack k none []) ++
-  blocks.map (fun b => .block b []) ++ resolves ++ [.pass, .endTurn]
+  blocks.map (fun b => .block b []) ++ resolves ++ (List.range (m.g tp).hand.length).map (fun h => .discard h) ++
+  [.pass, .endTurn]
 
 /-- 動きを選ぶ：たいていはできる動きから（パスとターン終了は少なめに）、ときどき `Rand.tchoice` の動き（できないことが多い） -/
 def Rand.validChoice (r : Rules) (m : Match) : Rand TChoice := do
@@ -633,6 +638,7 @@ def vectors (_ : Unit := ()) : Json := Id.run do
         placeLimits := ← Rand.pick [[], [⟨["罠"], 1⟩], [⟨["魔法", "罠"], 2⟩, ⟨["モンスター"], 1⟩]],
         attackTaps := ← Rand.bool, summoningSickness := ← Rand.bool, blocking := ← Rand.bool,
         instants := ← Rand.pick [[], ["罠"], ["魔法", "罠"]], stack := ← Rand.bool, zones := turnZones,
+        handLimit := ← Rand.pick [0, 0, 3, 5],
         life := ← Rand.pick [8000, 0], deckSize := 20 }
       let d1 ← Rand.list r.deckSize (Rand.pick vecCards)
       let d2 ← Rand.list r.deckSize (Rand.pick vecCards)

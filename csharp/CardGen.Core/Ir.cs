@@ -109,6 +109,8 @@ namespace CardGen
         public List<string> Instants = new List<string>();
         /// <summary>スタック：「フィールド上」でないゾーンに置いた、発動する効果を持つカードは、後に置いたものから解決する</summary>
         public bool Stack;
+        /// <summary>手札の上限。ターンプレイヤーは、手札がこの枚数を超えていればターンを終えられず、超えた分を選んで墓地へ捨てる。0 なら上限なし</summary>
+        public int HandLimit;
 
         /// <summary>Rules.unknownTags：タグの集合があるのに、どの集合にもないタグ（重複を除く）</summary>
         public List<string> UnknownTags(List<string> tags) =>
@@ -307,7 +309,7 @@ namespace CardGen
     /// <summary>エディタが出力する中間表現の全体</summary>
     public sealed class Game
     {
-        public const int CurrentVersion = 9;
+        public const int CurrentVersion = 10;
         public int Version = CurrentVersion;
         public Rules Rules = new Rules();
         public List<Card> Cards = new List<Card>();

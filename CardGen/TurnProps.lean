@@ -45,6 +45,7 @@ theorem TReachable.reachable (h : TReachable r decks first m) : Reachable r deck
     | cast _ _ hg => exact ih.step (step?_sound hg)
     | resolve hg => exact ih.step (step?_sound hg)
     | settle => exact ih.step (.settle _ _)
+    | discard hg => exact ih.step (step?_sound hg)
     | attack _ hg => exact ih.step (step?_sound hg)
     | declare _ => exact ih
     | block hg => exact ih.step (step?_sound hg)
@@ -104,6 +105,7 @@ theorem TReachable.summons_le (h : TReachable r decks first m) (hl : r.summonsPe
     | cast _ _ _ => simpa [TurnInfo.afterCast] using ih
     | resolve _ => simpa using ih
     | settle => simpa using ih
+    | discard _ => simpa using ih
     | attack _ _ => simpa [TurnInfo.afterAttack] using ih
     | declare _ => simpa [TurnInfo.afterAttack] using ih
     | block _ => simpa [TurnInfo.afterBlock] using ih
@@ -134,6 +136,7 @@ theorem TReachable.placed_le (h : TReachable r decks first m) {l : PlaceLimit} (
     | cast _ _ _ => simpa [TurnInfo.afterCast] using ih
     | resolve _ => simpa using ih
     | settle => simpa using ih
+    | discard _ => simpa using ih
     | attack _ _ => simpa [TurnInfo.afterAttack] using ih
     | declare _ => simpa [TurnInfo.afterAttack] using ih
     | block _ => simpa [TurnInfo.afterBlock] using ih
@@ -223,6 +226,7 @@ theorem TReachable.mana_balance (h : TReachable r decks first m) :
       omega
     | resolve _ => simpa using ih
     | settle => simpa using ih
+    | discard _ => simpa using ih
     | attack _ _ => simpa [TurnInfo.afterAttack] using ih
     | declare _ => simpa [TurnInfo.afterAttack] using ih
     | block _ => simpa [TurnInfo.afterBlock] using ih
@@ -345,6 +349,27 @@ theorem Match.endTurn_clean {m' : Match} (hs : m.step? r .endTurn = some m') :
   obtain ⟨x, -, rfl⟩ := hsl
   rfl
 
+/-- **ターンを終えられたなら、ターンプレイヤーの手札は上限以下**（手札の上限があるとき。超えていれば先に捨てる） -/
+theorem Match.endTurn_hand {m' : Match} (hs : m.step? r .endTurn = some m') (hl : r.handLimit ≠ 0) :
+    (m.g m.turn.tp).hand.length ≤ r.handLimit := by
+  obtain ⟨m0, _, _, ⟨h, -⟩ | hmv, rfl⟩ := Match.step?_moved hs
+  · cases h
+  cases hmv with
+  | endTurn hh => simpa [Rules.handOK, hl] using hh
+
+/-- **捨てられるのは、手札が上限を超えているときだけ**（上限がないか、上限以下なら捨てられない） -/
+theorem Match.discard_over {m' : Match} {h : Nat} (hs : m.step? r (.discard h) = some m') :
+    r.handLimit ≠ 0 ∧ r.handLimit < (m.g m.turn.tp).hand.length := by
+  unfold Match.step? Match.step1? Match.step0? at hs
+  by_cases ho : m.over r = true
+  · simp [ho] at hs
+  · simp only [ho] at hs
+    by_cases hc : (m.turn.quiet && !r.handOK m.g m.turn.tp) = true
+    · simp only [Bool.and_eq_true, Bool.not_eq_true', Rules.handOK, Bool.or_eq_false_iff, beq_eq_false_iff_ne,
+        decide_eq_false_iff_not, Nat.not_le] at hc
+      exact hc.2
+    · simp [hc] at hs
+
 /-! ## マナの色 -/
 
 /-- マナ `c` は、カードの一覧 `cards` のどれかのマナを出すカードが出せる色（`""` は無色） -/
@@ -412,6 +437,7 @@ theorem TReachable.mana_from {pool : List Card}
     | endTurn => intro c hc; simp [TurnInfo.prune, TurnInfo.next] at hc
     | resolve _ => simpa using ih
     | settle => simpa using ih
+    | discard _ => simpa using ih
     | attack _ _ => simpa [TurnInfo.afterAttack] using ih
     | declare _ => simpa [TurnInfo.afterAttack] using ih
     | block _ => simpa [TurnInfo.afterBlock] using ih

@@ -1,4 +1,4 @@
-{"version": 9,
+{"version": 10,
  "rules":
  {"zones":
   [{"role": "plain",
@@ -50,6 +50,7 @@
   "life": 8000,
   "instants": [],
   "handSize": 5,
+  "handLimit": 6,
   "firstTurnDraw": false,
   "firstTurnAttack": false,
   "fighters": ["モンスター"],

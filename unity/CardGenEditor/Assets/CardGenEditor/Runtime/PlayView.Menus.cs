@@ -11,7 +11,8 @@ namespace CardGen.App
     public sealed partial class PlayView
     {
         /// <summary>ターンを終えられるか（攻撃の途中でもスタックがあるのでもなく、ターンプレイヤーが優先権を持つ）</summary>
-        bool CanEndTurn => match.Turn.Quiet && !match.Over(game.Rules) && match.Turn.Prio == turn && match.Turn.Passes < 2;
+        bool CanEndTurn => match.Turn.Quiet && !match.Over(game.Rules) && match.Turn.Prio == turn && match.Turn.Passes < 2 &&
+                           Match.HandOK(game.Rules, state, turn);
 
         /// <summary>ターンを終えられない理由（終えられるなら null）</summary>
         string EndTurnBlocked()
@@ -22,6 +23,7 @@ namespace CardGen.App
             if (t.Attackers.Count > 0) return "攻撃の途中です（ブロックを選んでから）";
             if (t.Prio != turn) return $"優先権が{Who(t.Prio)}にあります（{Who(t.Prio)}がパスしてから）";
             if (t.Passes >= 2) return "両者がパスした直後です";
+            if (OverHand > 0) return $"手札が上限（{game.Rules.HandLimit} 枚）を超えています（あと {OverHand} 枚捨ててから）";
             return null;
         }
 

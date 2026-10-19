@@ -269,6 +269,15 @@ theorem cardsSub_step {r : Rules} {g g' : State} : Step r g g' → CardsSub g g'
   | .attack _ p k sl t neg _ _ _ _ => cardsSub_battle r g neg p k sl t
   | .combat _ p atk blocks neg _ => cardsSub_combat r g neg p atk blocks
   | .mend _ => cardsSub_mend g
+  | .discard _ p c hc => CardsSub.set fun x hx => by
+      simp only [PState.mem_cards, List.mem_append, List.mem_singleton] at hx
+      rw [PState.mem_cards]
+      rcases hx with h | h | (h | rfl) | h
+      · exact .inl h
+      · exact .inr (.inl (List.mem_of_mem_erase h))
+      · exact .inr (.inr (.inl h))
+      · exact .inr (.inl hc)
+      · exact .inr (.inr (.inr h))
   | .settle _ neg => cardsSub_sweep r g neg
 
 /-- 到達できる状態のどのカードも、カードの一覧 `pool` にある -/
@@ -426,6 +435,7 @@ theorem Reachable.life_le {r : Rules} {decks : PlayerId → List Card} {pool : L
     | attack p k sl t neg _ _ _ _ => exact lifeLe_battle r ih neg p k sl t
     | combat p atk blocks neg _ => exact lifeLe_combat r ih neg p atk blocks
     | mend => exact ih.map fun _ _ => rfl
+    | discard p c _ => exact lifeLe_set ih (Nat.le_refl _)
     | settle neg => exact lifeLe_sweep r ih neg
     | resolve p k sl as apply neg tgt hk hact =>
       have hcard : sl.card ∈ pool := (hg'.fromPool hpool).field (List.mem_of_getElem? hk)

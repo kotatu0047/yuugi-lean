@@ -30,6 +30,8 @@ inductive Choice
   | mend
   /-- 状態の確認（守備力以上のダメージを受けている戦闘できるカードを破壊する） -/
   | settle (neg : List Pos)
+  /-- `p` が手札の `hand` 番目のカードを墓地へ捨てる -/
+  | discard (p : PlayerId) (hand : Nat)
 deriving Repr, DecidableEq
 
 /-- 攻撃の対象として選べるか（`none` は直接攻撃：相手に戦闘できるカードがないとき） -/
@@ -70,6 +72,9 @@ def State.step0? (r : Rules) (g : State) : Choice → Option State
   | .combat p atk blocks neg => if g.combatOK r p atk blocks then some (g.combat r neg p atk blocks) else none
   | .mend => some g.mend
   | .settle neg => some (g.sweep r neg)
+  | .discard p h => do
+    let c ← (g p).hand[h]?
+    return g.set p { g p with hand := (g p).hand.erase c, grave := (g p).grave ++ [c] }
 
 /-- 盤面を、2人分の計算済みの値から作り直す（値は `g` と同じ）。実行時に、前の盤面を参照する関数が積み重なって
 読むたびに計算し直すことがないようにする -/
@@ -161,6 +166,13 @@ theorem step0?_sound {r : Rules} {g g' : State} {ch : Choice} (h : g.step0? r ch
   | settle neg =>
     simp only [State.step0?, Option.some.injEq] at h
     subst h; exact .settle g neg
+  | discard p hi =>
+    simp only [State.step0?, Option.bind_eq_bind] at h
+    cases hc : (g p).hand[hi]? with
+    | none => simp [hc] at h
+    | some c =>
+      simp only [hc, Option.bind_some, Option.pure_def, Option.some.injEq] at h
+      subst h; exact .discard g p c (List.mem_of_getElem? hc)
 
 /-- **`step?` で進めた状態は、`Step` で進めた状態** -/
 theorem step?_sound {r : Rules} {g g' : State} {ch : Choice} (h : g.step? r ch = some g') : Step r g g' := by

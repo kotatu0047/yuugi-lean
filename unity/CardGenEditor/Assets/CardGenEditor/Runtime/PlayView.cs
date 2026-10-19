@@ -117,6 +117,23 @@ namespace CardGen.App
 
         void ClearSelection() { selHand = -1; selField = -1; customPay = null; }
 
+        /// <summary>ターンプレイヤーの手札が上限を超えている枚数（上限がないか、超えていなければ 0）</summary>
+        int OverHand => game.Rules.HandLimit == 0 ? 0 : Math.Max(0, state.Get(turn).Hand.Count - game.Rules.HandLimit);
+
+        /// <summary>手札の上限まで、後ろのカードから捨てる（デモ用）</summary>
+        void DiscardDown()
+        {
+            while (OverHand > 0)
+            {
+                var h = state.Get(turn).Hand.Count - 1;
+                var name = state.Get(turn).Hand[h].Name;
+                var next = match.Step(game.Rules, TChoice.Discard(h));
+                if (next == null) break;
+                log.Add($"{Who(turn)}：{name} を捨てる（手札の上限 {game.Rules.HandLimit} 枚）");
+                match = next;
+            }
+        }
+
         /// <summary>ターンを終えて、相手のターンにする。新しいターンプレイヤーはルールの枚数を引く</summary>
         void EndTurn()
         {
@@ -125,8 +142,7 @@ namespace CardGen.App
             var next = match.Step(game.Rules, TChoice.EndTurn());
             if (next == null)
             {
-                log.Add(match.Over(game.Rules) ? "（できません）対戦は終わっています"
-                    : "（できません）ターン終了：攻撃の途中か、スタックにカードがあります");
+                log.Add($"（できません）ターン終了：{EndTurnBlocked() ?? "今はできません"}");
                 return;
             }
             match = next;

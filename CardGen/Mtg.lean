@@ -67,6 +67,7 @@ def rules : Rules where
   tagSets := [⟨"色", ["白", "青", "黒", "赤", "緑"]⟩, ⟨"クリーチャー・タイプ", ["騎士", "熊", "ゴブリン", "巨人"]⟩]
   instants := [instant]
   stack := true
+  handLimit := 7
 
 def mountain : Card := { name := "山", type := land, tags := [], effects := [], mana := 1, manaColor := "赤" }
 def forest : Card := { name := "森", type := land, tags := [], effects := [], mana := 1, manaColor := "緑" }
@@ -169,6 +170,8 @@ def game : Game where
 -- ★：土地は1ターンに1枚まで、払うマナはタップで出したマナを超えない
 #guard ((report (toJson game).compress).claims.map (·.text)).contains "「土地」を置けるのは、1ターンに 1 枚まで"
 #guard ((report (toJson game).compress).claims.map (·.theorem)).contains "CardGen.TReachable.spent_le"
+#guard ((report (toJson game).compress).claims.map (·.text)).contains
+  "ターンの終わりに、ターンプレイヤーの手札は 7 枚以下（超えていれば、選んで墓地へ捨ててからターンを終える）"
 #guard ["CardGen.TReachable.mana_from", "CardGen.Match.step?_prio", "CardGen.Match.step?_over", "CardGen.Match.endTurn_clean", "CardGen.TReachable.stack_fits"].all
   ((report (toJson game).compress).claims.map (·.theorem)).contains
 
@@ -425,6 +428,24 @@ def respond : List TChoice := [.tap 0, .tap 1, .place 0 1 0 true ["赤", "赤"],
   | some m => m.turn.attackers.length == 1 && m.turn.stack.length == 1 &&
       (m.step? rules (.block [(2, 0)] [])).isNone
   | none => false
+
+/-! ## 手札の上限 -/
+
+/-- 自分の手札が 8 枚（上限は 7 枚） -/
+def eight : Match := { duel with g := duel.g.set true { duel.g true with hand := List.replicate 8 mountain } }
+
+-- 手札が上限を超えていると、ターンを終えられない
+#guard (Match.run rules eight [.endTurn]).isNone
+-- 1枚捨てると 7 枚になり、ターンを終えられる
+#guard match Match.run rules eight [.discard 0] with
+  | some m => (m.g true).hand.length == 7 && (m.g true).grave == [mountain] && (m.step? rules .endTurn).isSome
+  | none => false
+-- 上限以下なら捨てられない。上限を超えていても、相手（ターンプレイヤーでない方）は捨てられない
+#guard (Match.run rules eight [.discard 0, .discard 0]).isNone
+#guard (Match.run rules duel [.discard 0]).isNone
+#guard (Match.run rules eight [.pass, .discard 0]).isNone
+-- 上限がなければ、何枚でもターンを終えられる
+#guard (Match.run { rules with handLimit := 0 } eight [.endTurn]).isSome
 
 /-! ## 対戦の終わり -/
 

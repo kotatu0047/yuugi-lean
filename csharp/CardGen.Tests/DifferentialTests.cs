@@ -137,6 +137,7 @@ public class DifferentialTests
             ParseNeg(c["neg"])),
         "mend" => Choice.Mend(),
         "settle" => Choice.Settle(ParseNeg(c["neg"])),
+        "discard" => Choice.Discard((bool)c["player"], (int)c["hand"]),
         _ => Choice.Resolve((bool)c["player"], (int)c["field"], (int)c["effect"], (bool)c["apply"], ParseNeg(c["neg"]), ParseTgt(c["tgt"])),
     };
 
@@ -246,6 +247,7 @@ public class DifferentialTests
         "tap" => TChoice.Tap((int)c["field"], (string)c["color"]),
         "oppTap" => TChoice.OppTap((int)c["field"], (string)c["color"]),
         "block" => TChoice.Block(ParseBlocks(c["blocks"]), ParseNeg(c["neg"])),
+        "discard" => TChoice.Discard((int)c["hand"]),
         _ => TChoice.EndTurn(),
     };
 
@@ -408,12 +410,34 @@ public class DifferentialTests
         foreach (var c in ((JArray)o["cards"]).Where(c => ((JObject)c).Descendants().OfType<JProperty>()
                      .Any(p => p.Name == "target" && p.Value.Type == JTokenType.Boolean && (bool)p.Value)).ToList())
             c.Remove();
+        // 手札の上限は版 10 で加えたので、古い版のテストでは上限なしにしておく
+        o["rules"]["handLimit"] = 0;
         return o;
+    }
+
+    /// <summary>版 10 で加えたもの（手札の上限）を除く</summary>
+    static JObject WithoutHandLimit(JObject o)
+    {
+        o["version"] = 9;
+        ((JObject)o["rules"]).Remove("handLimit");
+        return o;
+    }
+
+    [Fact]
+    public void Version_9_is_upgraded()
+    {
+        var src = OldSample();
+        var o = WithoutHandLimit((JObject)src.DeepClone());
+        Assert.Throws<FormatException>(() => IrJson.ParseGame(o.DeepClone()));
+        Assert.True(IrJson.Upgrade(o));
+        Assert.True(JToken.DeepEquals(src, o));
+        Assert.False(IrJson.Upgrade(o));
     }
 
     /// <summary>版 9 で加えたもの（範囲の対象・飛行・到達）を除く（OldSample はどれも使っていない）</summary>
     static JObject WithoutTargets(JObject o)
     {
+        o = WithoutHandLimit(o);
         o["version"] = 8;
         foreach (var c in o["cards"]) { ((JObject)c).Remove("flying"); ((JObject)c).Remove("reach"); }
         foreach (var p in ((JArray)o["cards"]).Descendants().OfType<JProperty>().Where(p => p.Name == "target" && p.Value.Type == JTokenType.Boolean).ToList())

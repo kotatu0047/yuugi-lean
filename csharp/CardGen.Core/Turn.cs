@@ -233,7 +233,7 @@ namespace CardGen
             !NotIn(owner == Tp ? Tapped : OppTapped, field, sl);
     }
 
-    public enum TChoiceKind { Place, Cast, Resolve, Attack, Block, Tap, OppTap, EndTurn, Settle, Pass }
+    public enum TChoiceKind { Place, Cast, Resolve, Attack, Block, Tap, OppTap, EndTurn, Settle, Pass, Discard }
 
     /// <summary>ターンのある対戦の動き（TChoice）</summary>
     public sealed class TChoice
@@ -284,6 +284,8 @@ namespace CardGen
         public static TChoice OppTap(int field, string color = "") =>
             new TChoice { Kind = TChoiceKind.OppTap, Field = field, Color = color };
         public static TChoice EndTurn() => new TChoice { Kind = TChoiceKind.EndTurn };
+        /// <summary>手札が上限を超えているターンプレイヤーが、手札の hand 番目を墓地へ捨てる</summary>
+        public static TChoice Discard(int hand) => new TChoice { Kind = TChoiceKind.Discard, Hand = hand };
     }
 
     /// <summary>ターンのある対戦の状態（Match）：盤面とターンの情報</summary>
@@ -430,9 +432,16 @@ namespace CardGen
                     var g = G.Sweep(r, ch.Neg);
                     return Next(g, Turn);
                 }
+                case TChoiceKind.Discard:
+                {
+                    if (!Turn.Quiet || HandOK(r, G, p)) return null;
+                    var g = G.Step(r, Choice.Discard(p, ch.Hand));
+                    if (g == null) return null;
+                    return Next(g, Turn);
+                }
                 default:
                 {
-                    if (!Turn.Quiet) return null;
+                    if (!Turn.Quiet || !HandOK(r, G, p)) return null;
                     var g1 = G.Mend();
                     var g = DrawUpTo(r, !p, r.DrawPerTurn, g1);
                     var t = new TurnInfo { Tp = !p, Prio = !p, Count = Turn.Count + 1, OppTapped = Turn.Tapped.ToList() };
@@ -441,6 +450,9 @@ namespace CardGen
                 }
             }
         }
+
+        /// <summary>Rules.handOK：p の手札が上限以下か（上限がなければいつでも）</summary>
+        public static bool HandOK(Rules r, MatchState g, bool p) => r.HandLimit == 0 || g.Get(p).Hand.Count <= r.HandLimit;
 
         /// <summary>このターンにこのカードを置けるか（置ける時か・召喚の上限・種類ごとの上限・マナ。置ける場所は MatchState.Step が決める）</summary>
         public bool SummonOK(Rules r, Slot sl, List<string> pay) => Turn.PlaceOK(r, sl, pay);

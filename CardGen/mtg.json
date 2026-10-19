@@ -1,4 +1,4 @@
-{"version": 9,
+{"version": 10,
  "rules":
  {"zones":
   [{"role": "plain",
@@ -60,6 +60,7 @@
   "life": 20,
   "instants": ["インスタント"],
   "handSize": 7,
+  "handLimit": 7,
   "firstTurnDraw": false,
   "firstTurnAttack": true,
   "fighters": ["クリーチャー"],

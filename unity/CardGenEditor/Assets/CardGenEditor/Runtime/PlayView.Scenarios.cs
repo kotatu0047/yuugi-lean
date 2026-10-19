@@ -14,7 +14,7 @@ namespace CardGen.App
         {
             for (int m = 0; m < moves; m++)
             {
-                if (m > 0) EndTurn();
+                if (m > 0) { DiscardDown(); EndTurn(); }
                 var p = turn;
                 // マナを使うルールなら、マナを出すカード（土地）を先に置き、タップしてから、払えるカードを置けるだけ置く
                 bool DemoPlace(Func<Card, bool> which)

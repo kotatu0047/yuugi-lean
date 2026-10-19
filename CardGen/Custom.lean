@@ -117,7 +117,9 @@ def choicesFor (r : Rules) (g : State) (p : PlayerId) : List Choice :=
     (List.range r.zones.length).flatMap fun i =>
       let j := g.freeCell r p i
       [Choice.place p h i j true, Choice.place p h i j false]
-  res ++ pl ++ [.draw p]
+  -- 手札を捨てる動き（ターンのある対戦では手札の上限を超えたときだけだが、反例探しはターンのないモデルで行う）
+  let dis := (List.range s.hand.length).map (Choice.discard p)
+  res ++ pl ++ dis ++ [.draw p]
 
 /-- 命題の数える枚数（`both` なら合計、そうでなければ `true` のプレイヤー） -/
 def CustomClaim.total (c : CustomClaim) (r : Rules) (g : State) : Nat :=

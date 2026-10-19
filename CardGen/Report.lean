@@ -173,6 +173,10 @@ def turnClaims (r : Rules) (cards : List Card) : List ClaimOut :=
       ["ルール：攻撃されたプレイヤーがブロックするカードを選ぶ（MTG 式の戦闘）",
        "ブロックしたカードの記録は、いつも相手のフィールドのカードの一部（同じカードの枚数も含めて）"],
       "proved", "CardGen.TReachable.fits"⟩] else []) ++
+  (if r.handLimit == 0 then [] else
+    [⟨s!"ターンの終わりに、ターンプレイヤーの手札は {r.handLimit} 枚以下（超えていれば、選んで墓地へ捨ててからターンを終える）",
+      [s!"ルール：手札の上限は {r.handLimit} 枚", "手札が上限を超えていると、ターンを終えられない"],
+      "proved", "CardGen.Match.endTurn_hand"⟩]) ++
   [⟨(if r.life > 0 then "ライフが 0 になるか、" else "") ++ "ターンの最初に引く枚数が足りなければ対戦は終わり、それ以上どの動きもできない",
     ["対戦が終わったかは、ライフとデッキ切れの記録で決まる"], "proved", "CardGen.Match.step?_over"⟩] ++
   (if r.blocking || cards.any (fun c => c.effects.any fun

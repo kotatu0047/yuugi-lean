@@ -374,6 +374,15 @@ theorem Inv.step {r : Rules} {g g' : State} (h : Inv r g) : Step r g g' → Inv 
   | .attack _ p k sl t neg _ _ _ _ => h.shrinks (shrinks_battle r g neg p k sl t)
   | .combat _ p atk blocks neg _ => h.shrinks (shrinks_combat r g neg p atk blocks)
   | .mend _ => h.shrinks (shrinks_mend g)
+  | .discard _ p c hc => h.shrinks fun q => by
+      by_cases hq : q = p
+      · subst hq
+        have hlen := List.length_erase_of_mem hc
+        have hpos := List.length_pos_of_mem hc
+        refine PShrinks.of_sublist ?_ (by simp) (by simp)
+        simp only [State.set_same, PState.size, List.length_append, List.length_singleton, hlen]
+        omega
+      · rw [State.set_other _ _ hq]; exact Shrinks.refl g q
   | .settle _ neg => h.shrinks (shrinks_sweep r g neg)
 
 theorem inv_start (r : Rules) (decks : PlayerId → List Card) (hd : ∀ p, (decks p).length = r.deckSize) :

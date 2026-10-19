@@ -55,6 +55,8 @@ namespace CardGen
         public bool Blocking;
         public List<string> Instants = new List<string>();
         public bool Stack;
+        /// <summary>手札の上限（0 なら上限なし）</summary>
+        public int HandLimit;
     }
 
     /// <summary>カードのノードの中身（効果はつないだノードから作る）</summary>
@@ -293,6 +295,7 @@ namespace CardGen
                 rules.Blocking = r.Rules.Blocking;
                 rules.Instants = r.Rules.Instants.ToList();
                 rules.Stack = r.Rules.Stack;
+                rules.HandLimit = r.Rules.HandLimit;
                 rules.Zones = Children(r).Select(z => z.Zone).ToList();
             }
             foreach (var z in Nodes.Where(n => n.Kind == NodeKind.Zone && Parents(n).Count == 0))
@@ -484,6 +487,7 @@ namespace CardGen
             r.Rules.Blocking = g.Rules.Blocking;
             r.Rules.Instants = g.Rules.Instants.ToList();
             r.Rules.Stack = g.Rules.Stack;
+            r.Rules.HandLimit = g.Rules.HandLimit;
             float zy = 40;
             foreach (var z in g.Rules.Zones)
             {

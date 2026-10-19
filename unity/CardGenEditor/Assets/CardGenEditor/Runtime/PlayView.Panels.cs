@@ -263,6 +263,10 @@ namespace CardGen.App
             if (game.Rules.PlaceLimits.Count > 0)
                 side.Add(Text("このターンに置いた枚数：" + string.Join("・", game.Rules.PlaceLimits.Select(l =>
                     $"{string.Join("+", l.Types)} {match.Turn.Placed.Count(l.Types.Contains)}/{l.Count}")), 11, Quiet));
+            if (game.Rules.HandLimit > 0)
+                side.Add(OverHand > 0
+                    ? Text($"{Who(turn)}の手札が上限（{game.Rules.HandLimit} 枚）を {OverHand} 枚超えています。手札を選んで捨ててから、ターンを終えてください", 12, Warn, true)
+                    : Text($"手札の上限：{game.Rules.HandLimit} 枚（ターンの終わりに超えていれば、選んで捨てる）", 11, Quiet));
             side.Add(Text("両方のプレイヤーを動かせます。動けるのは優先権を持つプレイヤーだけです（公理）。カードを置く・攻撃するのは" +
                           "ターンプレイヤーだけで（インスタントはどちらも置けます）、場のカードの発動はどちらのターンでもできます。" +
                           "相手に動いてほしいときは「パスする」で優先権を渡します。引くのはターンの最初だけです。カードを選ぶと、できる動きが出ます。", 11, Quiet));
@@ -288,6 +292,14 @@ namespace CardGen.App
                 var c = s.Hand[selHand];
                 side.Add(Text($"{Who(selPlayer)}の手札：{c.Name}（{c.Type}）", 12, Theme.Bright));
                 bool any = false;
+                // 手札の上限を超えているターンプレイヤーは、選んだ手札を捨てられる
+                if (selPlayer == turn && OverHand > 0)
+                {
+                    var hi = selHand;
+                    ActionButton($"墓地へ捨てる（手札の上限 {game.Rules.HandLimit} 枚。あと {OverHand} 枚）",
+                        () => Do(TChoice.Discard(hi), $"{Who(turn)}：{c.Name} を捨てる（手札の上限 {game.Rules.HandLimit} 枚）"));
+                    any = true;
+                }
                 if (selPlayer != turn && !TurnInfo.Instant(game.Rules, c))
                 {
                     side.Add(Text($"{Who(turn)}のターンなので、{Who(selPlayer)}は手札を置けません" +

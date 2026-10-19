@@ -392,5 +392,26 @@ namespace CardGen.App.Tests
             Assert.IsTrue(PopupMenu.Choose(view.FieldMenu(q, k), "一番上を解決する"));
             Assert.AreEqual(1, view.CurrentMatch.Turn.Stack.Count);
         }
+
+        [Test]
+        public void Hand_limit_blocks_the_end_of_turn_until_discarded()
+        {
+            // 遊戯王風の見本は手札の上限 6 枚。何も置かずにターンを終え続けると、後攻は4ターン目に 7 枚になる
+            var view = new PlayView();
+            view.Start(Load("sample"));
+            for (int i = 0; i < 3; i++) Pick(view.GeneralMenu(), "ターン終了");
+            var m = view.CurrentMatch;
+            Assert.IsFalse(m.Turn.Tp);
+            Assert.AreEqual(7, m.G.P2.Hand.Count);
+            var end = view.GeneralMenu().First(i => i.Text == "ターン終了");
+            Assert.IsFalse(end.Enabled);
+            StringAssert.Contains("手札が上限", end.Hint);
+            Assert.IsTrue(PopupMenu.Choose(view.HandMenu(false, 0), "墓地へ捨てる"));
+            Assert.AreEqual(6, view.CurrentMatch.G.P2.Hand.Count);
+            Assert.AreEqual(1, view.CurrentMatch.G.P2.Grave.Count);
+            Assert.IsFalse(view.HandMenu(false, 0).Any(i => i.Enabled && i.Text.Contains("墓地へ捨てる")), "上限以下なら捨てられない");
+            Pick(view.GeneralMenu(), "ターン終了");
+            Assert.IsTrue(view.CurrentMatch.Turn.Tp);
+        }
     }
 }

@@ -4,7 +4,7 @@ using System.Linq;
 
 namespace CardGen
 {
-    public enum ChoiceKind { Draw, Place, Resolve, Attack, Combat, Mend, Settle }
+    public enum ChoiceKind { Draw, Place, Resolve, Attack, Combat, Mend, Settle, Discard }
 
     /// <summary>プレイヤーが選ぶ動き（Choice）</summary>
     public sealed class Choice
@@ -36,6 +36,8 @@ namespace CardGen
         public static Choice Combat(bool p, List<int> attackers, List<(int, int)> blocks, List<(bool, int)> neg) =>
             new Choice { Kind = ChoiceKind.Combat, Player = p, Attackers = attackers, Blocks = blocks, Neg = neg };
         public static Choice Mend() => new Choice { Kind = ChoiceKind.Mend };
+        /// <summary>p が手札の hand 番目のカードを墓地へ捨てる</summary>
+        public static Choice Discard(bool p, int hand) => new Choice { Kind = ChoiceKind.Discard, Player = p, Hand = hand };
         public static Choice Attack(bool p, int field, int? target, List<(bool, int)> neg) =>
             new Choice { Kind = ChoiceKind.Attack, Player = p, Field = field, Target = target, Neg = neg };
     }
@@ -351,6 +353,16 @@ namespace CardGen
                     return Mend();
                 case ChoiceKind.Settle:
                     return Sweep(r, ch.Neg);
+                case ChoiceKind.Discard:
+                {
+                    if (ch.Hand < 0 || ch.Hand >= s.Hand.Count) return null;
+                    var c = s.Hand[ch.Hand];
+                    var n = Copy(s);
+                    // List.erase：同じカードのうち最初の1枚を取り除く
+                    n.Hand.RemoveAt(n.Hand.FindIndex(x => x.Name == c.Name));
+                    n.Grave.Add(c);
+                    return With(p, n);
+                }
                 default:
                 {
                     if (ch.Field < 0 || ch.Field >= s.Field.Count) return null;

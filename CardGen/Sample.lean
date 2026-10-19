@@ -44,6 +44,7 @@ def rules : Rules where
       onField := false, admits := [monster, spell, trap] }]
   life := 8000
   fighters := [monster]
+  handLimit := 6
   tagSets := [⟨"属性", ["闇属性", "光属性"]⟩, ⟨"種族", ["戦士族", "機械族", "魔法使い族"]⟩]
 
 /-- 範囲の指定を短く書く -/
@@ -404,9 +405,11 @@ def prio0 : Match :=
 -- 同じカードで2回は攻撃できない
 #guard (Match.run rules turn0 [.place 0 0 0 true, .endTurn, .endTurn, .attack 0 none []]).isSome
 #guard (Match.run rules turn0 [.place 0 0 0 true, .endTurn, .endTurn, .attack 0 none [], .attack 0 none []]).isNone
--- 次のターンにはまた攻撃できる
+-- 次のターンにはまた攻撃できる。手札の上限は 6 枚：何も置かない相手は4ターン目に 7 枚になるので、1枚捨ててからターンを終える
 #guard (Match.run rules turn0
-  [.place 0 0 0 true, .endTurn, .endTurn, .attack 0 none [], .endTurn, .endTurn, .attack 0 none []]).isSome
+  [.place 0 0 0 true, .endTurn, .endTurn, .attack 0 none [], .endTurn, .endTurn, .attack 0 none []]).isNone
+#guard (Match.run rules turn0
+  [.place 0 0 0 true, .endTurn, .endTurn, .attack 0 none [], .endTurn, .discard 0, .endTurn, .attack 0 none []]).isSome
 -- ルールで先攻の最初のターンの攻撃を許せば、1ターン目から攻撃できる
 #guard (Match.run { rules with firstTurnAttack := true }
   (Match.start { rules with firstTurnAttack := true } (fun _ => turnDeck) true) [.place 0 0 0 true, .attack 0 none []]).isSome

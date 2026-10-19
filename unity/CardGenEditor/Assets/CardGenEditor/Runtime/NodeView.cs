@@ -294,6 +294,7 @@ namespace CardGen.App
                 (n.Rules.Blocking ? "\nMTG 式の戦闘（ブロック）" : "") +
                 (n.Rules.Instants.Count > 0 ? $"\nいつでも置ける：{List(n.Rules.Instants)}" : "") +
                 (n.Rules.Stack ? "\nスタック" : "") +
+                (n.Rules.HandLimit > 0 ? $"\n手札の上限 {n.Rules.HandLimit}枚" : "") +
                 "",
             NodeKind.Zone =>
                 $"{n.Zone.Count}マス・{(n.Zone.Capacity == Capacity.One ? "1枚まで" : "何枚でも")}・" +

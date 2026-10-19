@@ -409,6 +409,9 @@ inductive Step (r : Rules) : State → State → Prop
   | combat (g : State) (p : PlayerId) (atk : List Nat) (blocks : List (Nat × Nat)) (neg : List Pos) :
       g.combatOK r p atk blocks → Step r g (g.combat r neg p atk blocks)
   | mend (g : State) : Step r g g.mend
+  /-- 手札のカードを1枚選んで墓地へ捨てる（ターンのある対戦では、手札の上限を超えたターンプレイヤーだけができる） -/
+  | discard (g : State) (p : PlayerId) (c : Card) :
+      c ∈ (g p).hand → Step r g (g.set p { g p with hand := (g p).hand.erase c, grave := (g p).grave ++ [c] })
   /-- 状態の確認：守備力以上のダメージを受けている（MTG 式の戦闘では、守備力が 0 の）戦闘できるカードを破壊する -/
   | settle (g : State) (neg : List Pos) : Step r g (g.sweep r neg)
 
