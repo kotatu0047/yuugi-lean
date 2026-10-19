@@ -26,7 +26,7 @@ namespace CardGen.App
         Vector2 offset = new Vector2(20, 20);
         float zoom = 0.85f;
         Node selected;
-        HashSet<int> problems = new HashSet<int>();
+        Dictionary<int, string> problems = new Dictionary<int, string>();
 
         // ドラッグの状態
         enum Drag { None, Pan, Move, Connect }
@@ -113,7 +113,7 @@ namespace CardGen.App
                 views[n.Id] = v;
                 content.Add(v);
                 v.SetSelected(n == selected);
-                v.SetProblem(problems.Contains(n.Id));
+                v.SetProblem(problems.TryGetValue(n.Id, out var why), why);
                 if (GraphDoc.Candidates(n.Kind).Count > 0)
                 {
                     v.OutPort.RegisterCallback<PointerEnterEvent>(_ => { overPort = true; ShowCandidates(v); });
@@ -304,10 +304,11 @@ namespace CardGen.App
             edgeLayer.MarkDirtyRepaint();
         }
 
-        public void SetProblems(IEnumerable<int> ids)
+        /// <summary>問題のあるノード（番号 → 問題の文）。ノードに警告の演出と文を出す</summary>
+        public void SetProblems(Dictionary<int, string> byNode)
         {
-            problems = new HashSet<int>(ids);
-            foreach (var kv in views) kv.Value.SetProblem(problems.Contains(kv.Key));
+            problems = new Dictionary<int, string>(byNode);
+            foreach (var kv in views) kv.Value.SetProblem(problems.TryGetValue(kv.Key, out var why), why);
         }
 
         public void Select(Node n)
@@ -379,7 +380,8 @@ namespace CardGen.App
             if (panel == null || resolvedStyle.display == DisplayStyle.None || layout.width <= 0) return;
             clock = Time.realtimeSinceStartup;
             flowLayer.MarkDirtyRepaint();
-            if (selected != null && views.TryGetValue(selected.Id, out var v)) v.Pulse(clock);
+            foreach (var id in problems.Keys) if (views.TryGetValue(id, out var pv)) pv.Pulse(clock);
+            if (selected != null && !problems.ContainsKey(selected.Id) && views.TryGetValue(selected.Id, out var v)) v.Pulse(clock);
         }
 
         /// <summary>

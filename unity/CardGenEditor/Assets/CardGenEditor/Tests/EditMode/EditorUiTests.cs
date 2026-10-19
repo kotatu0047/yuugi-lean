@@ -298,5 +298,26 @@ namespace CardGen.App.Tests
             Assert.AreEqual(1, view.CurrentMatch.Turn.Stack.Count);
             Assert.AreEqual(17, view.CurrentMatch.G.P1.Life, "稲妻の3点");
         }
+
+        [Test]
+        public void Problem_nodes_show_the_fault_and_its_reason()
+        {
+            var canvas = new GraphCanvas();
+            canvas.SetDoc(GraphDoc.FromGame(Load("sample")));
+            var card = canvas.Doc.Nodes.First(n => n.Kind == NodeKind.Card);
+            var destroy = canvas.Doc.Nodes.First(n => n.Kind == NodeKind.Destroy);
+            canvas.SetProblems(new System.Collections.Generic.Dictionary<int, string> { [card.Id] = "カード「X」：種類が集合にありません" });
+            NodeView View(Node n) => canvas.Query<NodeView>().ToList().Single(v => v.Node == n);
+            var bad = View(card);
+            Assert.AreEqual("カード「X」：種類が集合にありません", bad.FaultText);
+            Assert.AreEqual(DisplayStyle.Flex, bad.Q("fault-tape").style.display.value, "警告テープが出る");
+            // 破壊のノードは種類の色が赤でも、警告の演出は出ない
+            Assert.AreEqual("", View(destroy).FaultText);
+            Assert.AreEqual(DisplayStyle.None, View(destroy).Q("fault-tape").style.display.value);
+            // 直れば消える
+            canvas.SetProblems(new System.Collections.Generic.Dictionary<int, string>());
+            Assert.AreEqual("", View(card).FaultText);
+            Assert.AreEqual(DisplayStyle.None, View(card).Q("fault-tape").style.display.value);
+        }
     }
 }

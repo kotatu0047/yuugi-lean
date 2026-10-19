@@ -496,13 +496,17 @@ namespace CardGen.App
             return box;
         }
 
-        System.Collections.Generic.IEnumerable<int> ProblemNodes(System.Collections.Generic.List<string> errors)
+        /// <summary>問題のあるノードと、その最初の問題の文</summary>
+        System.Collections.Generic.Dictionary<int, string> ProblemNodes(System.Collections.Generic.List<string> errors)
         {
+            var d = new System.Collections.Generic.Dictionary<int, string>();
             foreach (var n in canvas.Doc.Nodes)
             {
                 var key = n.Kind == NodeKind.Card ? $"カード「{n.Card.Name}」" : n.Kind == NodeKind.Zone ? $"ゾーン「{n.Zone.Name}」" : n.Kind == NodeKind.Rules ? "ルール：" : null;
-                if (key != null && errors.Any(e => e.StartsWith(key))) yield return n.Id;
+                var e = key == null ? null : errors.FirstOrDefault(x => x.StartsWith(key));
+                if (e != null) d[n.Id] = e;
             }
+            return d;
         }
 
         void RenderReport(Report r)
@@ -605,10 +609,11 @@ namespace CardGen.App
 
         // ---- コマンドライン（動作確認用）----
         //   -cardgen-mtg                      最初に MTG 風の見本を読み込む
+        //   -cardgen-open <パス>              最初にそのファイル（中間表現の JSON）を開く
         //   -cardgen-arrange                  ノードを木の形に並べ直す（「整列」）
         //   -cardgen-candidates <種類の名前>   その種類の最初のノードの、つなぎ先の候補を出す（例：Activate）
         //   -cardgen-select <ノードの番号>   そのノードを選ぶ（Sets・Axioms などの種類の名前なら、その種類の最初のノード）
-        //   -cardgen-focus <ノードの番号>    そのノードが見えるようにキャンバスを動かす
+        //   -cardgen-focus <ノードの番号>    そのノードが見えるようにキャンバスを動かす（種類の名前なら、その種類の最初のノード）
         //   -cardgen-check                    Lean で検査する
         //   -cardgen-check-live               Lean で検査を始め、終わるのを待たない（検査中の表示の確認用）
         //   -cardgen-results-end              検査の結果を一番下まで送る
@@ -628,6 +633,8 @@ namespace CardGen.App
         IEnumerator CommandLineActions()
         {
             var args = Environment.GetCommandLineArgs();
+            var open = Arg("-cardgen-open");
+            if (open != null) { pathField.value = open; Open(); }
             var select = Arg("-cardgen-select");
             if (select != null && int.TryParse(select, out var id))
             {
@@ -640,17 +647,20 @@ namespace CardGen.App
                 var n = canvas.Doc.Nodes.FirstOrDefault(x => x.Kind == kind);
                 if (n != null) canvas.Select(n);
             }
-            var focus = Arg("-cardgen-focus");
-            if (focus != null && int.TryParse(focus, out var fid))
-            {
-                yield return null;
-                var n = canvas.Doc.Find(fid);
-                if (n != null) canvas.Focus(n);
-            }
+            // 並べ直してから、見る場所を決める
             if (args.Contains("-cardgen-arrange"))
             {
                 yield return null;
                 canvas.Arrange();
+            }
+            var focus = Arg("-cardgen-focus");
+            if (focus != null)
+            {
+                yield return null;
+                // 番号か、種類の名前（その種類の最初のノード）
+                var n = int.TryParse(focus, out var fid) ? canvas.Doc.Find(fid)
+                    : Enum.TryParse<NodeKind>(focus, true, out var fk) ? canvas.Doc.Nodes.FirstOrDefault(x => x.Kind == fk) : null;
+                if (n != null) canvas.Focus(n);
             }
             var cand = Arg("-cardgen-candidates");
             if (cand != null && Enum.TryParse<NodeKind>(cand, true, out var ckind))

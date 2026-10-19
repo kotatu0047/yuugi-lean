@@ -25,6 +25,14 @@ namespace CardGen.App
         readonly VisualElement glow;
         float pulse = 1;
         const float GlowSize = 12;
+        // 問題があるときの演出：ノードの上に浮かぶ警告テープ（流れる斜めの縞）、見出しの「FAULT」の札、下の問題の文
+        readonly Label idTag;
+        readonly VisualElement faultChip;
+        readonly VisualElement tape;
+        readonly VisualElement tapeStripes;
+        readonly VisualElement faultBox;
+        readonly Label faultText;
+        float tapePhase;
 
         public NodeView(Node node)
         {
@@ -68,9 +76,19 @@ namespace CardGen.App
             titleLabel.style.flexGrow = 1;
             header.Add(kindLabel);
             header.Add(titleLabel);
-            var id = Theme.Tag($"#{node.Id:D3}", Theme.Alpha(kc, 0.65f), 9);
-            id.style.flexShrink = 0;
-            header.Add(id);
+            idTag = Theme.Tag($"#{node.Id:D3}", Theme.Alpha(kc, 0.65f), 9);
+            idTag.style.flexShrink = 0;
+            header.Add(idTag);
+            faultChip = new VisualElement { pickingMode = PickingMode.Ignore };
+            faultChip.style.flexShrink = 0;
+            faultChip.style.display = DisplayStyle.None;
+            faultChip.style.backgroundColor = Theme.Red;
+            faultChip.style.paddingLeft = 5;
+            faultChip.style.paddingRight = 5;
+            faultChip.style.paddingTop = 1;
+            faultChip.style.paddingBottom = 1;
+            faultChip.Add(Theme.Tag("!! fault", Theme.Void, 9));
+            header.Add(faultChip);
             Add(header);
 
             body = new Label();
@@ -83,12 +101,54 @@ namespace CardGen.App
             body.style.color = Theme.Text;
             Add(body);
 
+            faultBox = new VisualElement { pickingMode = PickingMode.Ignore };
+            faultBox.style.display = DisplayStyle.None;
+            faultBox.style.flexDirection = FlexDirection.Row;
+            faultBox.style.alignItems = Align.FlexStart;
+            faultBox.style.paddingLeft = 10;
+            faultBox.style.paddingRight = 10;
+            faultBox.style.paddingTop = 5;
+            faultBox.style.paddingBottom = 6;
+            faultBox.style.backgroundColor = Theme.Alpha(Theme.Red, 0.18f);
+            faultBox.style.borderTopWidth = 1;
+            faultBox.style.borderTopColor = Theme.Red;
+            var bang = Theme.Tag("err", Theme.Red, 9);
+            bang.style.marginRight = 6;
+            bang.style.marginTop = 1;
+            bang.style.flexShrink = 0;
+            faultBox.Add(bang);
+            faultText = new Label { pickingMode = PickingMode.Ignore };
+            faultText.style.whiteSpace = WhiteSpace.Normal;
+            faultText.style.fontSize = 11;
+            faultText.style.color = Theme.Alpha(Color.Lerp(Theme.Red, Color.white, 0.35f), 1f);
+            faultText.style.flexShrink = 1;
+            faultBox.Add(faultText);
+            Add(faultBox);
+
+            // 警告テープ：ノードの上に浮かべる（見出しの位置は変えない。つなぐ丸の位置がずれないように）
+            tape = new VisualElement { name = "fault-tape", pickingMode = PickingMode.Ignore };
+            tape.style.position = Position.Absolute;
+            tape.style.left = 0;
+            tape.style.right = 0;
+            tape.style.top = -11;
+            tape.style.height = 7;
+            tape.style.overflow = Overflow.Hidden;
+            tape.style.display = DisplayStyle.None;
+            tape.style.backgroundColor = new Color(0.05f, 0.03f, 0.02f, 0.95f);
+            tapeStripes = new VisualElement { pickingMode = PickingMode.Ignore };
+            tapeStripes.style.position = Position.Absolute;
+            tapeStripes.style.left = tapeStripes.style.top = 0;
+            tapeStripes.style.right = tapeStripes.style.bottom = 0;
+            tapeStripes.generateVisualContent += DrawTape;
+            tape.Add(tapeStripes);
+            Add(tape);
+
             InPort = MakePort(left: true);
             OutPort = MakePort(left: false);
             if (Node.HasInput(node.Kind)) Add(InPort);
             if (Node.HasOutput(node.Kind)) Add(OutPort);
-            brackets = Theme.BracketsOverlay(() => selected ? Theme.Alpha(Theme.Amber, 0.45f + 0.55f * pulse)
-                : problem ? Theme.Red : Theme.Alpha(kc, 0.9f), 10, 2f);
+            brackets = Theme.BracketsOverlay(() => problem ? Theme.Alpha(Theme.Red, 0.5f + 0.5f * pulse)
+                : selected ? Theme.Alpha(Theme.Amber, 0.45f + 0.55f * pulse) : Theme.Alpha(kc, 0.9f), 10, 2f);
             Add(brackets);
 
             Refresh();
@@ -116,20 +176,50 @@ namespace CardGen.App
             return p;
         }
 
-        /// <summary>選んでいるノードの明滅を進める（t：秒。1.6 秒で1周）</summary>
+        /// <summary>
+        /// 明滅を進める（t：秒）。選んでいるノードは 1.6 秒で1周。問題のあるノードは 0.7 秒で1周と速く強く、警告テープの縞が流れる
+        /// </summary>
         public void Pulse(float t)
         {
-            pulse = 0.5f + 0.5f * Mathf.Sin(t * Mathf.PI * 2 / 1.6f);
+            pulse = 0.5f + 0.5f * Mathf.Sin(t * Mathf.PI * 2 / (problem ? 0.7f : 1.6f));
             glow.MarkDirtyRepaint();
             brackets.MarkDirtyRepaint();
+            if (problem)
+            {
+                tapePhase = Mathf.Repeat(t * 22f, 14f);
+                tapeStripes.MarkDirtyRepaint();
+                faultChip.style.opacity = 0.55f + 0.45f * pulse;
+            }
+        }
+
+        /// <summary>警告テープの斜めの縞（アンバーと黒。右へ流れる）</summary>
+        void DrawTape(MeshGenerationContext ctx)
+        {
+            var w = tapeStripes.layout.width;
+            var h = tapeStripes.layout.height;
+            if (float.IsNaN(w) || float.IsNaN(h)) return;
+            var p = ctx.painter2D;
+            p.fillColor = Theme.Amber;
+            const float step = 14f, band = 7f;
+            for (float x = -step * 2 + tapePhase; x < w + step; x += step)
+            {
+                p.BeginPath();
+                p.MoveTo(new Vector2(x, h));
+                p.LineTo(new Vector2(x + h, 0));
+                p.LineTo(new Vector2(x + h + band, 0));
+                p.LineTo(new Vector2(x + band, h));
+                p.ClosePath();
+                p.Fill();
+            }
         }
 
         /// <summary>ノードの外側に、だんだん薄くなる線を重ねて光彩にする（ノードの内側には描かない）</summary>
         void DrawGlow(MeshGenerationContext ctx)
         {
             if (!selected && !problem) return;
-            var c = selected ? Theme.Amber : Theme.Red;
-            float strength = selected ? 0.12f + 0.2f * pulse : 0.14f;
+            // 問題のあるノードは赤で、選んでいるときより強く明滅する
+            var c = problem ? Theme.Red : Theme.Amber;
+            float strength = problem ? 0.16f + 0.34f * pulse : 0.12f + 0.2f * pulse;
             var w = glow.layout.width;
             var h = glow.layout.height;
             if (float.IsNaN(w) || float.IsNaN(h)) return;
@@ -152,15 +242,30 @@ namespace CardGen.App
 
         void Paint()
         {
-            style.backgroundColor = problem ? Theme.Alpha(Theme.Red, 0.14f) : Theme.Panel;
-            Theme.Border(style, 1, selected ? Theme.Amber : problem ? Theme.Alpha(Theme.Red, 0.8f) : Theme.Line);
+            style.backgroundColor = problem ? Color.Lerp(Theme.Panel, Theme.Red, 0.12f) : Theme.Panel;
+            Theme.Border(style, problem ? 2 : 1, problem ? Theme.Red : selected ? Theme.Amber : Theme.Line);
             brackets?.MarkDirtyRepaint();
             glow?.MarkDirtyRepaint();
         }
 
         public void SetSelected(bool on) { selected = on; pulse = 1; Paint(); }
 
-        public void SetProblem(bool on) { problem = on; Paint(); }
+        /// <summary>問題があるか（why：問題の文。ノードの下に出す）</summary>
+        public void SetProblem(bool on, string why = null)
+        {
+            problem = on;
+            pulse = 1;
+            var show = on ? DisplayStyle.Flex : DisplayStyle.None;
+            tape.style.display = show;
+            faultChip.style.display = show;
+            faultBox.style.display = on && !string.IsNullOrEmpty(why) ? DisplayStyle.Flex : DisplayStyle.None;
+            faultText.text = why ?? "";
+            idTag.style.display = on ? DisplayStyle.None : DisplayStyle.Flex;
+            Paint();
+        }
+
+        /// <summary>問題の文（出していなければ空。自動テスト用）</summary>
+        public string FaultText => problem ? faultText.text : "";
 
         /// <summary>位置と表示を中身に合わせる</summary>
         public void Refresh()
