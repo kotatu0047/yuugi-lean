@@ -118,9 +118,10 @@ def negOut (r : Rules) (cards : List Card) : NegOut :=
 
 def Effect.isBoost : Effect → Bool
   | .boost .. => true
+  | .toughen .. => true
   | _ => false
 
-/-- 攻撃力が1通りに決まるか（攻撃力の変化と無効の関係の衝突）。攻撃力の変化を持つカードがなければ `none` -/
+/-- 攻撃力・守備力が1通りに決まるか（攻撃力・守備力の変化と無効の関係の衝突）。変化を持つカードがなければ `none` -/
 def attackClaim (cards : List Card) : Option ClaimOut :=
   if !cards.any (·.effects.any Effect.isBoost) then none else
   match checkNegation cards with
@@ -133,18 +134,18 @@ def attackClaim (cards : List Card) : Option ClaimOut :=
       (cards[j]?.any (·.effects.any Effect.isBoost)) && onCycle.any fun i => (reach.getD i []).contains j
     let names := hit.filterMap fun j => cards[j]?.map (·.name)
     if names.isEmpty then
-      some ⟨"攻撃力の変化を持つカードは、無効の循環の影響を受けません",
+      some ⟨"攻撃力・守備力の変化を持つカードは、無効の循環の影響を受けません",
         ["無効にしうる関係の循環から、攻撃力の変化を持つカードへは矢印がたどれない"], "unknown", ""⟩
     else
-      some ⟨s!"攻撃力の変化（{"、".intercalate names}）が効くかどうかは無効の判定の進み方で変わりうるので、" ++
-          "攻撃力が1通りに決まらない盤面があります",
+      some ⟨s!"攻撃力・守備力の変化（{"、".intercalate names}）が効くかどうかは無効の判定の進み方で変わりうるので、" ++
+          "攻撃力・守備力が1通りに決まらない盤面があります",
         ["無効にしうる関係の循環から、これらのカードは無効にされうる"], "choice", ""⟩
-  | _ => some ⟨"攻撃力は、どの盤面でも1通りに決まります",
+  | _ => some ⟨"攻撃力・守備力は、どの盤面でも1通りに決まります",
       ["無効にしうる関係に循環がないので、どのカードの効果が有効かは1通りに決まる（メタ定理1）",
-       "攻撃力の変化は足し算なので、適用する順番によらない"], "proved", "CardGen.negation_settles"⟩
+       "攻撃力・守備力の変化は足し算なので、適用する順番によらない"], "proved", "CardGen.negation_settles"⟩
 
 /-- ターンについての★（`Turn.lean`）。どれも証明済み -/
-def turnClaims (r : Rules) : List ClaimOut :=
+def turnClaims (r : Rules) (cards : List Card) : List ClaimOut :=
   let fighters := "・".intercalate r.fighters
   [⟨"ターンのある対戦でも、ここに挙げた★と盤面の制約はそのまま成り立ちます",
     ["ターンのある対戦の盤面は、どれもターンのない（いつでも何度でも動ける）モデルで到達できる盤面"],
@@ -165,10 +166,14 @@ def turnClaims (r : Rules) : List ClaimOut :=
       ["ルール：攻撃するとタップする", "タップしたカードの記録は、いつもフィールドのカードの一部（同じカードの枚数も含めて）"],
       "proved", "CardGen.TReachable.fits"⟩] else []) ++
   (if r.blocking && !r.fighters.isEmpty then
-    [⟨"ブロックは、1ターンに1枚1回まで",
+    [⟨"ブロックは、1ターンに1枚1回まで（1枚の攻撃を何枚でブロックしてもよい）",
       ["ルール：攻撃されたプレイヤーがブロックするカードを選ぶ（MTG 式の戦闘）",
        "ブロックしたカードの記録は、いつも相手のフィールドのカードの一部（同じカードの枚数も含めて）"],
-      "proved", "CardGen.TReachable.fits"⟩] else [])
+      "proved", "CardGen.TReachable.fits"⟩] else []) ++
+  (if cards.any (fun c => c.cost > 0 || !c.colorCost.isEmpty) then
+    [⟨"1ターンに払うマナは、そのターンにタップして出したマナを超えない（マナはターンの終わりに消える）",
+      ["カードを置くには、持っているマナからコストの分を払う", "持っているマナと払ったマナの合計は、そのターンにタップで出したマナに等しい"],
+      "proved", "CardGen.TReachable.spent_le"⟩] else [])
 
 def report (input : String) : Report :=
   let fail (es : List String) : Report := ⟨1, false, es, [], none⟩
@@ -183,7 +188,7 @@ def report (input : String) : Report :=
         let claims := (derived g.rules).map (fun c =>
           (⟨c.text, c.grounds, "proved", "CardGen.derived_valid"⟩ : ClaimOut)) ++
           (gameClaims g).map (fun c => (⟨c.text, c.grounds, "proved", "CardGen.gameClaims_valid"⟩ : ClaimOut)) ++
-          turnClaims g.rules ++
+          turnClaims g.rules g.cards ++
           (attackClaim g.cards).toList
         ⟨1, true, [], claims, some (negOut g.rules g.cards)⟩
       | es => fail es

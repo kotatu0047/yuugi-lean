@@ -15,14 +15,17 @@ JSON との相互変換は Lean の自動導出による（`Option` 以外のフ
   決まった枚数ドローする
 - 表側表示で存在する限り、条件に合うカードの効果を無効にする（スキルドレイン、王宮のお触れ など）
 - 発動して、相手にダメージを与える・自分のライフを回復する
-- 表側表示で存在する限り、条件に合うカードの攻撃力を上げる・下げる（無効にされていれば効かない）
+- 発動して、条件に合う戦闘できるカードすべてにダメージを与える（守備力以上のダメージを受けたカードは破壊される）
+- 表側表示で存在する限り、条件に合うカードの攻撃力・守備力を上げる・下げる（無効にされていれば効かない）
 
 版 2 で、ライフと戦闘（ルールの `life`・`fighters`、カードの `attack`・`defense`）を加えた。
 版 3 で、ターンのルールを加えた。版 4 で、マスの位置（ゾーンの `cells`）と、範囲の指定の
 マスの関係（`near`：隣・同じ縦列）を加えた。版 5 で、マナとタップ（カードの `cost`・`mana`）、
 1ターンに置ける枚数の上限（`placeLimits`）、攻撃でタップすること（`attackTaps`）、
 召喚酔い（`summoningSickness`）、MTG 式の戦闘（`blocking`）を加えた。版 6 で、色のマナ（ルールの `manaColors`、
-カードの `colorCost`・`manaColor`）を加えた。版 7 で、タグの集合（`tagSets`）を加えた。
+カードの `colorCost`・`manaColor`）を加えた。版 7 で、タグの集合（`tagSets`）を加えた。版 8 で、
+インスタント（ルールの `instants`）とスタック（`stack`）、カードへのダメージ（動きの `strike`）、守備力の変化
+（効果の `toughen`）、2色以上から選べるマナ（カードの `manaChoice`）を加えた。
 
 マスの並びは、縦と横の2本の序列で表す。盤面全体（2人分）は `gridSize`×`gridSize`（49×49。
 前提の「最大 50×50」に収まり、中心のマスがあるように奇数にした）のマス目で、マスは（列, 行）で表し、
@@ -130,6 +133,11 @@ structure Rules where
   manaColors : List String := []
   /-- タグの集合。空でなければ、カードと範囲の指定のタグはどれかの集合の値 -/
   tagSets : List TagSet := []
+  /-- いつでも置ける種類（インスタント）。相手のターンや、攻撃・スタックへの応答としても置ける -/
+  instants : List TypeName := []
+  /-- スタック：「フィールド上」でないゾーンに置いた、発動する効果を持つカード（呪文）は、後に置いたものから解決する。
+  スタックが空でなければ、インスタント以外は置けず、攻撃・ブロック・ターン終了もできない -/
+  stack : Bool := false
 deriving Repr, DecidableEq, FromJson, ToJson
 
 /-- 効果の持ち主から見た陣営 -/
@@ -173,6 +181,9 @@ inductive Action
   | damage (amount : Nat)
   /-- 発動したプレイヤーのライフを `amount` 回復する -/
   | heal (amount : Nat)
+  /-- 範囲に合う、戦闘できるカードすべてに `amount` のダメージを与える（ダメージはターンの終わりまで残り、
+  守備力以上のダメージを受けたカードは破壊される） -/
+  | strike (target : Selector) (amount : Nat)
 deriving Repr, DecidableEq, FromJson, ToJson
 
 /-- カードの効果 -/
@@ -183,6 +194,8 @@ inductive Effect
   | negate (target : Selector)
   /-- 表側表示でフィールド上に存在する限り、範囲に合うカードの攻撃力を `amount` 変える（負なら下げる） -/
   | boost (target : Selector) (amount : Int)
+  /-- 表側表示でフィールド上に存在する限り、範囲に合うカードの守備力を `amount` 変える（負なら下げる） -/
+  | toughen (target : Selector) (amount : Int)
 deriving Repr, DecidableEq, FromJson, ToJson
 
 /-- カードの定義 -/
@@ -203,6 +216,8 @@ structure Card where
   mana : Nat := 0
   /-- タップすると出るマナの色（`""` なら無色） -/
   manaColor : String := ""
+  /-- タップするときに選べるマナの色（2色以上の土地。空でなければ `manaColor` は使わない） -/
+  manaChoice : List String := []
 deriving Repr, DecidableEq, FromJson, ToJson
 
 instance : Inhabited Card := ⟨{ name := "", type := "", tags := [], effects := [] }⟩
@@ -216,7 +231,7 @@ structure Game where
 deriving Repr, DecidableEq, FromJson, ToJson
 
 /-- 現在の形式の版 -/
-def currentVersion : Nat := 7
+def currentVersion : Nat := 8
 
 /-! ## 範囲の指定の意味
 
@@ -281,6 +296,10 @@ def Action.check (r : Rules) (where_ : String) : Action → List String
   | .draw n => if n = 0 then [s!"{where_}：ドローの枚数が0です"] else []
   | .damage n => if n = 0 then [s!"{where_}：ダメージが0です"] else []
   | .heal n => if n = 0 then [s!"{where_}：回復する量が0です"] else []
+  | .strike s n => s.check r s!"{where_}のカードへのダメージ" ++
+      (if n = 0 then [s!"{where_}：カードへのダメージが0です"] else []) ++
+      (if s.types.any r.fighters.contains then [] else
+        [s!"{where_}：カードへのダメージの範囲に、戦闘できる種類のカードがありません"])
 
 def Effect.check (r : Rules) (where_ : String) : Effect → List String
   | .activated as => (if as.isEmpty then [s!"{where_}：発動する効果に動きがありません"] else []) ++
@@ -291,6 +310,10 @@ def Effect.check (r : Rules) (where_ : String) : Effect → List String
       (if n = 0 then [s!"{where_}：攻撃力の変化が0です"] else []) ++
       (if s.types.any r.fighters.contains then [] else
         [s!"{where_}：攻撃力を変える範囲に、戦闘できる種類のカードがありません"])
+  | .toughen s n => s.check r s!"{where_}の守備力の変化" ++
+      (if n = 0 then [s!"{where_}：守備力の変化が0です"] else []) ++
+      (if s.types.any r.fighters.contains then [] else
+        [s!"{where_}：守備力を変える範囲に、戦闘できる種類のカードがありません"])
 
 def Card.check (r : Rules) (c : Card) : List String :=
   (if r.cardTypes.contains c.type then [] else
@@ -302,6 +325,13 @@ def Card.check (r : Rules) (c : Card) : List String :=
     [s!"カード「{c.name}」：出るマナの色「{c.manaColor}」はルールのマナの色にありません"] else []) ++
   (if c.manaColor != "" && c.mana = 0 then
     [s!"カード「{c.name}」：マナの色があるのに、出るマナの量が0です"] else []) ++
+  (c.manaChoice.eraseDups.filter (!r.manaColors.contains ·)).map
+    (s!"カード「{c.name}」：選べるマナの色「{·}」はルールのマナの色にありません") ++
+  (dups c.manaChoice).map (s!"カード「{c.name}」：選べるマナの色「{·}」が重複しています") ++
+  (if !c.manaChoice.isEmpty && c.manaColor != "" then
+    [s!"カード「{c.name}」：マナの色と、選べるマナの色の両方があります"] else []) ++
+  (if !c.manaChoice.isEmpty && c.mana = 0 then
+    [s!"カード「{c.name}」：選べるマナの色があるのに、出るマナの量が0です"] else []) ++
   c.effects.flatMap (·.check r s!"カード「{c.name}」")
 
 def Zone.check (r : Rules) (z : Zone) : List String :=
@@ -348,6 +378,7 @@ def Rules.check (r : Rules) : List String :=
   (if r.tagSets.any (·.name.isEmpty) then ["ルール：タグの集合の名前が空です"] else []) ++
   r.tagSets.flatMap (fun t => (dups t.values).map (s!"ルール：タグの集合「{t.name}」で「{·}」が重複しています")) ++
   (if r.manaColors.contains "" then ["ルール：マナの色に空の名前があります"] else []) ++
+  (r.instants.filter (!r.cardTypes.contains ·)).map (s!"ルール：いつでも置ける種類「{·}」はカードの種類にありません") ++
   r.placeLimits.flatMap fun l =>
     (if l.types.isEmpty then ["ルール：置ける枚数の上限の、カードの種類が空です"] else []) ++
     (l.types.filter (!r.cardTypes.contains ·)).map (s!"ルール：置ける枚数の上限の種類「{·}」はカードの種類にありません") ++

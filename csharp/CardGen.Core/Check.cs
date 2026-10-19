@@ -25,6 +25,10 @@ namespace CardGen
             DrawCards d => d.Count == 0 ? new[] { $"{where}：ドローの枚数が0です" } : Enumerable.Empty<string>(),
             Damage d => d.Amount == 0 ? new[] { $"{where}：ダメージが0です" } : Enumerable.Empty<string>(),
             Heal h => h.Amount == 0 ? new[] { $"{where}：回復する量が0です" } : Enumerable.Empty<string>(),
+            Strike st => Selector(r, $"{where}のカードへのダメージ", st.Target)
+                .Concat(st.Amount == 0 ? new[] { $"{where}：カードへのダメージが0です" } : new string[0])
+                .Concat(st.Target.Types.Any(t => r.Fighters.Contains(t)) ? new string[0]
+                    : new[] { $"{where}：カードへのダメージの範囲に、戦闘できる種類のカードがありません" }),
             _ => Enumerable.Empty<string>(),
         };
 
@@ -46,6 +50,12 @@ namespace CardGen
                     if (!b.Target.Types.Any(t => r.Fighters.Contains(t)))
                         yield return $"{where}：攻撃力を変える範囲に、戦闘できる種類のカードがありません";
                     break;
+                case Toughen tg:
+                    foreach (var m in Selector(r, $"{where}の守備力の変化", tg.Target)) yield return m;
+                    if (tg.Amount == 0) yield return $"{where}：守備力の変化が0です";
+                    if (!tg.Target.Types.Any(t => r.Fighters.Contains(t)))
+                        yield return $"{where}：守備力を変える範囲に、戦闘できる種類のカードがありません";
+                    break;
             }
         }
 
@@ -58,6 +68,11 @@ namespace CardGen
             if (c.ManaColor != "" && !r.ManaColors.Contains(c.ManaColor))
                 yield return $"カード「{c.Name}」：出るマナの色「{c.ManaColor}」はルールのマナの色にありません";
             if (c.ManaColor != "" && c.Mana == 0) yield return $"カード「{c.Name}」：マナの色があるのに、出るマナの量が0です";
+            foreach (var col in c.ManaChoice.Distinct().Where(x => !r.ManaColors.Contains(x)))
+                yield return $"カード「{c.Name}」：選べるマナの色「{col}」はルールのマナの色にありません";
+            foreach (var col in Dups(c.ManaChoice)) yield return $"カード「{c.Name}」：選べるマナの色「{col}」が重複しています";
+            if (c.ManaChoice.Count > 0 && c.ManaColor != "") yield return $"カード「{c.Name}」：マナの色と、選べるマナの色の両方があります";
+            if (c.ManaChoice.Count > 0 && c.Mana == 0) yield return $"カード「{c.Name}」：選べるマナの色があるのに、出るマナの量が0です";
             foreach (var m in c.Effects.SelectMany(e => Effect(r, $"カード「{c.Name}」", e))) yield return m;
         }
 
@@ -103,6 +118,8 @@ namespace CardGen
             foreach (var t in r.TagSets)
                 foreach (var v in Dups(t.Values)) yield return $"ルール：タグの集合「{t.Name}」で「{v}」が重複しています";
             if (r.ManaColors.Contains("")) yield return "ルール：マナの色に空の名前があります";
+            foreach (var t in r.Instants.Where(t => !r.CardTypes.Contains(t)))
+                yield return $"ルール：いつでも置ける種類「{t}」はカードの種類にありません";
             foreach (var l in r.PlaceLimits)
             {
                 if (l.Types.Count == 0) yield return "ルール：置ける枚数の上限の、カードの種類が空です";

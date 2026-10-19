@@ -17,11 +17,17 @@ inductive Choice
   | draw (p : PlayerId)
   /-- `p` が手札の `hand` 番目のカードを `zone` 番目のゾーンの `cell` 番目のマスに置く（`up`：表側表示か） -/
   | place (p : PlayerId) (hand : Nat) (zone : Nat) (cell : Nat) (up : Bool)
-  /-- `p` がフィールドの `k` 番目のカードの `eff` 番目の効果を発動して解決する（`apply`：無効にされていないか） -/
-  | resolve (p : PlayerId) (k : Nat) (eff : Nat) (apply : Bool)
+  /-- `p` がフィールドの `k` 番目のカードの `eff` 番目の効果を発動して解決する（`apply`：無効にされていないか。
+  `neg`：効果が無効になっているカードの位置。守備力の計算に使う） -/
+  | resolve (p : PlayerId) (k : Nat) (eff : Nat) (apply : Bool) (neg : List Pos := [])
   /-- `p` がフィールドの `k` 番目のカードで、相手のフィールドの `target` 番目のカード（`none` なら直接）を攻撃する。
   `neg`：効果が無効になっているカードの位置（攻撃力の計算に使う） -/
   | attack (p : PlayerId) (k : Nat) (target : Option Nat) (neg : List Pos)
+  /-- MTG 式の戦闘：`p` のフィールドの `atk` 番目のカードたちで攻撃し、相手のフィールドの `j` 番目のカードが
+  `atk` の `a` 番目の攻撃をブロックする（`blocks` の `(j, a)`） -/
+  | combat (p : PlayerId) (atk : List Nat) (blocks : List (Nat × Nat)) (neg : List Pos)
+  /-- どのカードのダメージも 0 に戻す -/
+  | mend
 deriving Repr, DecidableEq
 
 /-- 攻撃の対象として選べるか（`none` は直接攻撃：相手に戦闘できるカードがないとき） -/
@@ -49,16 +55,18 @@ def State.step? (r : Rules) (g : State) : Choice → Option State
     let z ← r.zones[i]?
     guard (z.role == .plain && z.admits.contains c.type && decide (j < z.count) &&
       (z.capacity != .one || (g p).field.all (fun sl => !(sl.zone == i && sl.cell == j))))
-    return g.set p { g p with hand := (g p).hand.erase c, field := (g p).field ++ [⟨i, j, c, up⟩] }
-  | .resolve p k e apply => do
+    return g.set p { g p with hand := (g p).hand.erase c, field := (g p).field ++ [⟨i, j, c, up, 0⟩] }
+  | .resolve p k e apply neg => do
     let sl ← (g p).field[k]?
     match sl.card.effects[e]? with
-    | some (.activated as) => some (g.resolve r p k sl as apply)
+    | some (.activated as) => some (g.resolve r p k sl as apply neg)
     | _ => none
   | .attack p k t neg => do
     let sl ← (g p).field[k]?
     guard (sl.faceUp && r.fights sl && g.targetOK r p t)
     return g.battle r neg p k sl t
+  | .combat p atk blocks neg => if g.combatOK r p atk blocks then some (g.combat r neg p atk blocks) else none
+  | .mend => some g.mend
 
 /-- **`step?` で進めた状態は、`Step` で進めた状態** -/
 theorem step?_sound {r : Rules} {g g' : State} {ch : Choice} (h : g.step? r ch = some g') : Step r g g' := by
@@ -94,7 +102,7 @@ theorem step?_sound {r : Rules} {g g' : State} {ch : Choice} (h : g.step? r ch =
         · rw [Bool.not_eq_true] at hg
           simp only [hg, guard] at h
           cases h
-  | resolve p k e apply =>
+  | resolve p k e apply neg =>
     simp only [State.step?, Option.bind_eq_bind] at h
     cases hk : (g p).field[k]? with
     | none => simp [hk] at h
@@ -103,7 +111,7 @@ theorem step?_sound {r : Rules} {g g' : State} {ch : Choice} (h : g.step? r ch =
       split at h
       · rename_i as he
         cases h
-        exact .resolve g p k sl as apply hk (List.mem_of_getElem? he)
+        exact .resolve g p k sl as apply neg hk (List.mem_of_getElem? he)
       · cases h
   | attack p k t neg =>
     simp only [State.step?, Option.bind_eq_bind] at h
@@ -127,6 +135,14 @@ theorem step?_sound {r : Rules} {g g' : State} {ch : Choice} (h : g.step? r ch =
       · rw [Bool.not_eq_true] at hg
         simp only [hg, guard] at h
         cases h
+  | combat p atk blocks neg =>
+    simp only [State.step?] at h
+    split at h
+    · rename_i hok; cases h; exact .combat g p atk blocks neg hok
+    · cases h
+  | mend =>
+    simp only [State.step?, Option.some.injEq] at h
+    subst h; exact .mend g
 
 /-- `step?` で動きを続けて到達した状態も `Reachable` -/
 theorem Reachable.steps? {r : Rules} {decks : PlayerId → List Card} {g : State} (h : Reachable r decks g) :

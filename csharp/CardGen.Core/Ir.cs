@@ -105,6 +105,10 @@ namespace CardGen
         public List<string> ManaColors = new List<string>();
         /// <summary>タグの集合。空でなければ、カードと範囲の指定のタグはどれかの集合の値</summary>
         public List<TagSet> TagSets = new List<TagSet>();
+        /// <summary>いつでも置ける種類（インスタント）。相手のターンや、攻撃・スタックへの応答としても置ける</summary>
+        public List<string> Instants = new List<string>();
+        /// <summary>スタック：「フィールド上」でないゾーンに置いた、発動する効果を持つカードは、後に置いたものから解決する</summary>
+        public bool Stack;
 
         /// <summary>Rules.unknownTags：タグの集合があるのに、どの集合にもないタグ（重複を除く）</summary>
         public List<string> UnknownTags(List<string> tags) =>
@@ -212,6 +216,14 @@ namespace CardGen
         public Heal(int amount) { Amount = amount; }
     }
 
+    /// <summary>範囲に合う、戦闘できるカードすべてに Amount のダメージを与える（守備力以上のダメージを受けたカードは破壊される）</summary>
+    public sealed class Strike : Action
+    {
+        public Selector Target;
+        public int Amount;
+        public Strike(Selector target, int amount) { Target = target; Amount = amount; }
+    }
+
     /// <summary>カードの効果</summary>
     public abstract class Effect { }
 
@@ -237,6 +249,14 @@ namespace CardGen
         public Boost(Selector target, int amount) { Target = target; Amount = amount; }
     }
 
+    /// <summary>表側表示でフィールド上に存在する限り、範囲に合うカードの守備力を Amount 変える（負なら下げる）</summary>
+    public sealed class Toughen : Effect
+    {
+        public Selector Target;
+        public int Amount;
+        public Toughen(Selector target, int amount) { Target = target; Amount = amount; }
+    }
+
     /// <summary>カードの定義</summary>
     public sealed class Card
     {
@@ -254,12 +274,14 @@ namespace CardGen
         public int Mana;
         /// <summary>タップすると出るマナの色（"" なら無色）</summary>
         public string ManaColor = "";
+        /// <summary>タップするときに選べるマナの色（2色以上の土地。空でなければ ManaColor は使わない）</summary>
+        public List<string> ManaChoice = new List<string>();
     }
 
     /// <summary>エディタが出力する中間表現の全体</summary>
     public sealed class Game
     {
-        public const int CurrentVersion = 7;
+        public const int CurrentVersion = 8;
         public int Version = CurrentVersion;
         public Rules Rules = new Rules();
         public List<Card> Cards = new List<Card>();

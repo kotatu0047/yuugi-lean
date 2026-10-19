@@ -1,4 +1,4 @@
-{"version": 7,
+{"version": 8,
  "rules":
  {"zones":
   [{"role": "plain",
@@ -44,9 +44,11 @@
    {"values": ["戦士族", "機械族", "魔法使い族"], "name": "種族"}],
   "summonsPerTurn": 1,
   "summoningSickness": false,
+  "stack": false,
   "placeLimits": [],
   "manaColors": [],
   "life": 8000,
+  "instants": [],
   "handSize": 5,
   "firstTurnDraw": false,
   "firstTurnAttack": false,
@@ -61,6 +63,7 @@
    "tags": [],
    "name": "サンダー・ボルト",
    "manaColor": "",
+   "manaChoice": [],
    "mana": 0,
    "effects":
    [{"activated":
@@ -81,6 +84,7 @@
    "tags": [],
    "name": "ハーピィの羽根帚",
    "manaColor": "",
+   "manaChoice": [],
    "mana": 0,
    "effects":
    [{"activated":
@@ -101,6 +105,7 @@
    "tags": [],
    "name": "スキルドレイン",
    "manaColor": "",
+   "manaChoice": [],
    "mana": 0,
    "effects":
    [{"negate":
@@ -119,6 +124,7 @@
    "tags": [],
    "name": "王宮のお触れ",
    "manaColor": "",
+   "manaChoice": [],
    "mana": 0,
    "effects":
    [{"negate":
@@ -137,6 +143,7 @@
    "tags": ["闇属性", "機械族"],
    "name": "人造人間－サイコ・ショッカー",
    "manaColor": "",
+   "manaChoice": [],
    "mana": 0,
    "effects":
    [{"negate":
@@ -155,6 +162,7 @@
    "tags": ["闇属性", "戦士族"],
    "name": "D－HERO Bloo－D",
    "manaColor": "",
+   "manaChoice": [],
    "mana": 0,
    "effects":
    [{"negate":
@@ -173,6 +181,7 @@
    "tags": [],
    "name": "一斉送還",
    "manaColor": "",
+   "manaChoice": [],
    "mana": 0,
    "effects":
    [{"activated":
@@ -193,6 +202,7 @@
    "tags": [],
    "name": "二枚引き",
    "manaColor": "",
+   "manaChoice": [],
    "mana": 0,
    "effects": [{"activated": {"actions": [{"draw": {"count": 2}}]}}],
    "defense": 0,
@@ -203,6 +213,7 @@
    "tags": ["闇属性", "魔法使い族"],
    "name": "ブラック・マジシャン",
    "manaColor": "",
+   "manaChoice": [],
    "mana": 0,
    "effects": [],
    "defense": 2100,
@@ -213,6 +224,7 @@
    "tags": ["闇属性", "戦士族"],
    "name": "闇の指揮官",
    "manaColor": "",
+   "manaChoice": [],
    "mana": 0,
    "effects":
    [{"boost":
@@ -232,6 +244,7 @@
    "tags": [],
    "name": "闇の加護",
    "manaColor": "",
+   "manaChoice": [],
    "mana": 0,
    "effects":
    [{"boost":
@@ -251,6 +264,7 @@
    "tags": [],
    "name": "ファイヤー・ボール",
    "manaColor": "",
+   "manaChoice": [],
    "mana": 0,
    "effects": [{"activated": {"actions": [{"damage": {"amount": 500}}]}}],
    "defense": 0,
@@ -261,6 +275,7 @@
    "tags": [],
    "name": "レッド・ポーション",
    "manaColor": "",
+   "manaChoice": [],
    "mana": 0,
    "effects": [{"activated": {"actions": [{"heal": {"amount": 500}}]}}],
    "defense": 0,
@@ -271,6 +286,7 @@
    "tags": [],
    "name": "縦一閃",
    "manaColor": "",
+   "manaChoice": [],
    "mana": 0,
    "effects":
    [{"activated":
@@ -291,6 +307,7 @@
    "tags": ["戦士族"],
    "name": "援護の兵士",
    "manaColor": "",
+   "manaChoice": [],
    "mana": 0,
    "effects":
    [{"boost":

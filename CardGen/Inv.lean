@@ -10,8 +10,8 @@ import CardGen.Model
 - 「1枚まで」のゾーンの同じマスに、2枚のカードはない（そのため、ゾーンのカードはマスの数を超えない：`Inv.cap`）
 - デッキの枚数は、開始時の枚数（デッキの枚数 − 初期手札）を超えない（デッキに戻す動きはない）
 
-効果の動き（破壊・手札に戻す・ドロー・ダメージ・回復）と戦闘は、どのカードのどんな範囲の指定でも
-カードを移すかライフを変えるだけなので、カードの効果をどう組み合わせても崩れない（企画書の「第1層」）。
+効果の動き（破壊・手札に戻す・ドロー・ダメージ・回復・カードへのダメージ）と戦闘は、どのカードのどんな範囲の指定でも
+カードを移すか、ライフやカードの受けたダメージを変えるだけなので、カードの効果をどう組み合わせても崩れない（企画書の「第1層」）。
 -/
 
 namespace CardGen
@@ -84,21 +84,36 @@ theorem Inv.cap {r : Rules} {g : State} (h : Inv r g) (p : PlayerId) (i : Nat) (
     exact hlt)
   simpa using this
 
-/-! ## カードを取り除くだけの動き -/
+/-! ## カードを取り除くか、ダメージを変えるだけの動き -/
 
-/-- どのプレイヤーも、枚数は同じでフィールドのカードとデッキは減るだけ -/
+/-- どのプレイヤーも、枚数は同じで、フィールドのカード（ダメージを除く）とデッキは減るだけ -/
 def Shrinks (g g' : State) : Prop :=
-  ∀ q, (g' q).size = (g q).size ∧ (g' q).field.Sublist (g q).field ∧ (g' q).deck.length ≤ (g q).deck.length
+  ∀ q, (g' q).size = (g q).size ∧ ((g' q).field.map Slot.base).Sublist ((g q).field.map Slot.base) ∧
+    (g' q).deck.length ≤ (g q).deck.length
 
 theorem Shrinks.refl (g : State) : Shrinks g g := fun _ => ⟨rfl, List.Sublist.refl _, Nat.le_refl _⟩
 
 theorem Shrinks.trans {a b c : State} (h1 : Shrinks a b) (h2 : Shrinks b c) : Shrinks a c :=
   fun q => ⟨(h2 q).1.trans (h1 q).1, (h2 q).2.1.trans (h1 q).2.1, Nat.le_trans (h2 q).2.2 (h1 q).2.2⟩
 
+/-- 「1枚まで」のゾーンの同じマスにあるかは、ダメージによらない -/
+theorem Rules.clash_base (r : Rules) (a b : Slot) : r.clash a.base b.base ↔ r.clash a b := Iff.rfl
+
 theorem Inv.shrinks {r : Rules} {g g' : State} (h : Inv r g) (hs : Shrinks g g') : Inv r g' where
   size p := (hs p).1.trans (h.size p)
-  zones p sl hm := h.zones p sl ((hs p).2.1.subset hm)
-  apart p := (h.apart p).sublist (hs p).2.1
+  zones p sl hm := by
+    have : sl.base ∈ (g p).field.map Slot.base := (hs p).2.1.subset (List.mem_map_of_mem hm)
+    obtain ⟨sl0, h0, he⟩ := List.mem_map.1 this
+    obtain ⟨z, hz, hr, ha, hc⟩ := h.zones p sl0 h0
+    have e1 : sl0.zone = sl.zone := by rw [← Slot.base_zone sl0, he, Slot.base_zone]
+    have e2 : sl0.cell = sl.cell := by rw [← Slot.base_cell sl0, he, Slot.base_cell]
+    have e3 : sl0.card = sl.card := by rw [← Slot.base_card sl0, he, Slot.base_card]
+    exact ⟨z, e1 ▸ hz, hr, e3 ▸ ha, e2 ▸ hc⟩
+  apart p := by
+    have h1 : ((g p).field.map Slot.base).Pairwise (fun a b => ¬r.clash a b) :=
+      List.pairwise_map.2 ((h.apart p).imp fun hab => by rwa [Rules.clash_base])
+    have h2 := List.pairwise_map.1 (h1.sublist (hs p).2.1)
+    exact h2.imp fun hab => by rwa [Rules.clash_base] at hab
   deck p := Nat.le_trans (hs p).2.2 (h.deck p)
 
 theorem PState.size_destroy (r : Rules) (sel : Selector) (q : PlayerId) (src : Src) (s : PState) :
@@ -117,14 +132,18 @@ theorem PState.size_drawN (n : Nat) (s : PState) : (s.drawN n).size = s.size := 
   simp only [PState.drawN, PState.size, List.length_append, List.length_drop, List.length_take]
   omega
 
-/-- 1人分の状態が、枚数は同じでフィールドのカードとデッキは減るだけ -/
+/-- 1人分の状態が、枚数は同じで、フィールドのカード（ダメージを除く）とデッキは減るだけ -/
 def PShrinks (s s' : PState) : Prop :=
-  s'.size = s.size ∧ s'.field.Sublist s.field ∧ s'.deck.length ≤ s.deck.length
+  s'.size = s.size ∧ (s'.field.map Slot.base).Sublist (s.field.map Slot.base) ∧ s'.deck.length ≤ s.deck.length
 
 theorem PShrinks.refl (s : PState) : PShrinks s s := ⟨rfl, List.Sublist.refl _, Nat.le_refl _⟩
 
 theorem PShrinks.trans {a b c : PState} (h1 : PShrinks a b) (h2 : PShrinks b c) : PShrinks a c :=
   ⟨h2.1.trans h1.1, h2.2.1.trans h1.2.1, Nat.le_trans h2.2.2 h1.2.2⟩
+
+/-- フィールドが元のフィールドの一部になるだけ -/
+theorem PShrinks.of_sublist {s s' : PState} (h1 : s'.size = s.size) (h2 : s'.field.Sublist s.field)
+    (h3 : s'.deck.length ≤ s.deck.length) : PShrinks s s' := ⟨h1, h2.map _, h3⟩
 
 theorem pshrinks_damage (n : Nat) (s : PState) : PShrinks s (s.damage n) := PShrinks.refl s
 
@@ -133,10 +152,34 @@ theorem pshrinks_destroyAt (k : Nat) (s : PState) : PShrinks s (s.destroyAt k) :
   split
   · rename_i sl hk
     have hlt : k < s.field.length := (List.getElem?_eq_some_iff.1 hk).1
-    refine ⟨?_, List.eraseIdx_sublist _ _, Nat.le_refl _⟩
+    refine PShrinks.of_sublist ?_ (List.eraseIdx_sublist _ _) (Nat.le_refl _)
     simp only [PState.size, List.length_append, List.length_eraseIdx, hlt, ite_true, List.length_singleton]
     omega
   · exact PShrinks.refl s
+
+theorem PState.map_base_mark (d : Nat → Nat) (s : PState) :
+    (s.mark d).field.map Slot.base = s.field.map Slot.base := by
+  apply List.ext_getElem
+  · simp [PState.mark]
+  · intro i h1 h2
+    simp [PState.mark, Slot.base]
+
+theorem pshrinks_mark (d : Nat → Nat) (s : PState) : PShrinks s (s.mark d) := by
+  refine ⟨?_, by rw [PState.map_base_mark]; exact List.Sublist.refl _, Nat.le_refl _⟩
+  simp [PState.size, PState.mark]
+
+theorem pshrinks_sweep (dead : Nat → Slot → Bool) (s : PState) : PShrinks s (s.sweep dead) := by
+  refine PShrinks.of_sublist ?_ ?_ (Nat.le_refl _)
+  · have := length_filter_not_add (fun x : Slot × Nat => dead x.2 x.1) s.field.zipIdx
+    simp only [PState.sweep, PState.size, List.length_append, List.length_map, List.length_zipIdx] at this ⊢
+    omega
+  · have := (List.filter_sublist (p := fun x : Slot × Nat => !dead x.2 x.1) (l := s.field.zipIdx)).map Prod.fst
+    rwa [List.zipIdx_map_fst] at this
+
+theorem pshrinks_mend (s : PState) : PShrinks s { s with field := s.field.map Slot.base } := by
+  refine ⟨by simp [PState.size], ?_, Nat.le_refl _⟩
+  simp only [List.map_map]
+  exact List.Sublist.refl _
 
 /-- 1人分だけ変える -/
 theorem Shrinks.set {g : State} {p : PlayerId} {s : PState} (h : PShrinks (g p) s) : Shrinks g (g.set p s) := by
@@ -145,71 +188,95 @@ theorem Shrinks.set {g : State} {p : PlayerId} {s : PState} (h : PShrinks (g p) 
   · subst hq; rw [State.set_same]; exact h
   · rw [State.set_other _ _ hq]; exact Shrinks.refl g q
 
-theorem shrinks_battle (r : Rules) (g : State) (neg : List Pos) (p : PlayerId) (k : Nat) (sl : Slot)
-    (t : Option Nat) : Shrinks g (g.battle r neg p k sl t) := by
+/-- 全員を変える -/
+theorem Shrinks.all {g g' : State} (h : ∀ q, PShrinks (g q) (g' q)) : Shrinks g g' := h
+
+theorem shrinks_sweep (r : Rules) (g : State) (neg : List Pos) : Shrinks g (g.sweep r neg) :=
+  fun q => pshrinks_sweep _ (g q)
+
+theorem shrinks_mend (g : State) : Shrinks g g.mend := fun q => pshrinks_mend (g q)
+
+theorem shrinks_duel (r : Rules) (g : State) (neg : List Pos) (p : PlayerId) (k : Nat) (sl : Slot)
+    (t : Option Nat) : Shrinks g (g.duel r neg p k sl t) := by
   cases t with
   | none => exact Shrinks.set (pshrinks_damage _ _)
   | some j =>
-    simp only [State.battle]
+    simp only [State.duel]
     split
     · exact Shrinks.refl g
     · split
-      · split <;> (try split) <;>
-          first
-          | exact Shrinks.refl g
-          | exact Shrinks.set (pshrinks_destroyAt _ _)
-          | exact (Shrinks.set (pshrinks_destroyAt _ _)).trans (Shrinks.set (pshrinks_destroyAt _ _))
       · split
+        · exact Shrinks.set ((pshrinks_destroyAt _ _).trans (pshrinks_damage _ _))
         · split
           · exact Shrinks.set ((pshrinks_destroyAt _ _).trans (pshrinks_damage _ _))
           · split
-            · exact Shrinks.set ((pshrinks_destroyAt _ _).trans (pshrinks_damage _ _))
-            · split
-              · exact Shrinks.refl g
-              · have hne : (!p) ≠ p := by cases p <;> decide
-                refine (Shrinks.set (pshrinks_destroyAt k (g p))).trans (Shrinks.set ?_)
-                rw [State.set_other _ _ hne]
-                exact pshrinks_destroyAt _ _
-        · split
-          · exact Shrinks.set (pshrinks_destroyAt _ _)
-          · split
-            · exact Shrinks.set (pshrinks_damage _ _)
             · exact Shrinks.refl g
+            · have hne : (!p) ≠ p := by cases p <;> decide
+              refine (Shrinks.set (pshrinks_destroyAt k (g p))).trans (Shrinks.set ?_)
+              rw [State.set_other _ _ hne]
+              exact pshrinks_destroyAt _ _
+      · split
+        · exact Shrinks.set (pshrinks_destroyAt _ _)
+        · split
+          · exact Shrinks.set (pshrinks_damage _ _)
+          · exact Shrinks.refl g
 
-theorem shrinks_applyAction (r : Rules) (src : Src) (g : State) (a : Action) :
-    Shrinks g (g.applyAction r src a) := by
+theorem shrinks_combat (r : Rules) (g : State) (neg : List Pos) (p : PlayerId) (atk : List Nat)
+    (blocks : List (Nat × Nat)) : Shrinks g (g.combat r neg p atk blocks) := by
+  simp only [State.combat]
+  refine Shrinks.trans ?_ (shrinks_sweep _ _ _)
+  have hne : (!p) ≠ p := by cases p <;> decide
+  refine (Shrinks.set (pshrinks_mark _ _)).trans (Shrinks.set ?_)
+  rw [State.set_other _ _ hne]
+  exact (pshrinks_mark _ _).trans (pshrinks_damage _ _)
+
+theorem shrinks_battle (r : Rules) (g : State) (neg : List Pos) (p : PlayerId) (k : Nat) (sl : Slot)
+    (t : Option Nat) : Shrinks g (g.battle r neg p k sl t) := by
+  unfold State.battle
+  split
+  · exact shrinks_combat r g neg p _ _
+  · exact shrinks_duel r g neg p k sl t
+
+theorem shrinks_strike (r : Rules) (sel : Selector) (n : Nat) (src : Src) (negS : List (PlayerId × Slot))
+    (g : State) : Shrinks g (g.strike r sel n src negS) :=
+  (Shrinks.all fun q => pshrinks_mark _ (g q)).trans (shrinks_sweep _ _ _)
+
+theorem shrinks_applyAction (r : Rules) (src : Src) (negS : List (PlayerId × Slot)) (g : State) (a : Action) :
+    Shrinks g (g.applyAction r src negS a) := by
   cases a with
-  | destroy sel => exact fun q => ⟨PState.size_destroy .., List.filter_sublist, Nat.le_refl _⟩
-  | bounce sel => exact fun q => ⟨PState.size_bounce .., List.filter_sublist, Nat.le_refl _⟩
+  | destroy sel => exact fun q => PShrinks.of_sublist (PState.size_destroy ..) List.filter_sublist (Nat.le_refl _)
+  | bounce sel => exact fun q => PShrinks.of_sublist (PState.size_bounce ..) List.filter_sublist (Nat.le_refl _)
   | draw n =>
     intro q
     by_cases hq : q = src.p
     · subst hq
       simp only [State.applyAction, State.set_same]
-      exact ⟨PState.size_drawN .., List.Sublist.refl _, by simp [PState.drawN]⟩
+      exact PShrinks.of_sublist (PState.size_drawN ..) (List.Sublist.refl _) (by simp [PState.drawN])
     · have h := State.set_other g ((g src.p).drawN n) hq
       simp only [State.applyAction]
       rw [h]
       exact Shrinks.refl g q
   | damage n => exact Shrinks.set (pshrinks_damage _ _)
   | heal n => exact Shrinks.set (PShrinks.refl _)
+  | strike sel n => exact shrinks_strike r sel n src negS g
 
-theorem shrinks_foldl (r : Rules) (src : Src) (as : List Action) (g : State) :
-    Shrinks g (as.foldl (State.applyAction r src) g) := by
+theorem shrinks_foldl (r : Rules) (src : Src) (negS : List (PlayerId × Slot)) (as : List Action) (g : State) :
+    Shrinks g (as.foldl (State.applyAction r src negS) g) := by
   induction as generalizing g with
   | nil => exact Shrinks.refl g
-  | cons a t ih => exact (shrinks_applyAction r src g a).trans (ih _)
+  | cons a t ih => exact (shrinks_applyAction r src negS g a).trans (ih _)
 
 theorem shrinks_resolve (r : Rules) (p : PlayerId) (g : State) {k : Nat} {sl : Slot} (as : List Action)
-    (apply : Bool) (hk : (g p).field[k]? = some sl) : Shrinks g (g.resolve r p k sl as apply) := by
+    (apply : Bool) (neg : List Pos) (hk : (g p).field[k]? = some sl) :
+    Shrinks g (g.resolve r p k sl as apply neg) := by
   have hlt : k < (g p).field.length := (List.getElem?_eq_some_iff.1 hk).1
   let g1 := g.set p { g p with field := (g p).field.eraseIdx k }
-  let g2 := if apply then as.foldl (State.applyAction r ⟨p, r.cellOf p sl⟩) g1 else g1
+  let g2 := if apply then as.foldl (State.applyAction r ⟨p, r.cellOf p sl⟩ (g.negSlots neg)) g1 else g1
   have h12 : Shrinks g1 g2 := by
     by_cases ha : apply
-    · simp only [g2, ha, ite_true]; exact shrinks_foldl r _ as g1
+    · simp only [g2, ha, ite_true]; exact shrinks_foldl r _ _ as g1
     · simp only [g2, ha]; exact Shrinks.refl g1
-  have hr : g.resolve r p k sl as apply = g2.set p { g2 p with grave := (g2 p).grave ++ [sl.card] } := rfl
+  have hr : g.resolve r p k sl as apply neg = g2.set p { g2 p with grave := (g2 p).grave ++ [sl.card] } := rfl
   rw [hr]
   intro q
   by_cases hq : q = p
@@ -217,8 +284,8 @@ theorem shrinks_resolve (r : Rules) (p : PlayerId) (g : State) {k : Nat} {sl : S
     have h1 : (g1 q).size + 1 = (g q).size := by
       simp only [g1, State.set_same, PState.size, List.length_eraseIdx, hlt, ite_true]
       omega
-    have hs1 : (g1 q).field.Sublist (g q).field := by
-      simp only [g1, State.set_same]; exact List.eraseIdx_sublist _ _
+    have hs1 : ((g1 q).field.map Slot.base).Sublist ((g q).field.map Slot.base) := by
+      simp only [g1, State.set_same]; exact (List.eraseIdx_sublist _ _).map _
     refine ⟨?_, ?_, ?_⟩
     · simp only [State.set_same, PState.size, List.length_append, List.length_singleton]
       have := (h12 q).1; simp only [PState.size] at this h1; omega
@@ -233,7 +300,7 @@ theorem Inv.step {r : Rules} {g g' : State} (h : Inv r g) : Step r g g' → Inv 
   | .draw _ p c d hd => h.shrinks fun q => by
       by_cases hq : q = p
       · subst hq
-        refine ⟨?_, by simp, by simp [hd]⟩
+        refine PShrinks.of_sublist ?_ (by simp) (by simp [hd])
         simp [PState.size, hd]
         omega
       · rw [State.set_other _ _ hq]; exact Shrinks.refl g q
@@ -270,8 +337,10 @@ theorem Inv.step {r : Rules} {g g' : State} (h : Inv r g) : Step r g g' → Inv 
       · by_cases hq : q = p
         · subst hq; simpa using h.deck q
         · simp only [State.set_other _ _ hq]; exact h.deck q
-  | .resolve _ p k sl as apply hk _ => h.shrinks (shrinks_resolve r p g as apply hk)
+  | .resolve _ p k sl as apply neg hk _ => h.shrinks (shrinks_resolve r p g as apply neg hk)
   | .attack _ p k sl t neg _ _ _ _ => h.shrinks (shrinks_battle r g neg p k sl t)
+  | .combat _ p atk blocks neg _ => h.shrinks (shrinks_combat r g neg p atk blocks)
+  | .mend _ => h.shrinks (shrinks_mend g)
 
 theorem inv_start (r : Rules) (decks : PlayerId → List Card) (hd : ∀ p, (decks p).length = r.deckSize) :
     Inv r (start r decks) where

@@ -12,7 +12,16 @@ namespace CardGen
         public int Cell;
         public Card Card;
         public bool FaceUp;
-        public Slot(int zone, int cell, Card card, bool faceUp) { Zone = zone; Cell = cell; Card = card; FaceUp = faceUp; }
+        /// <summary>受けているダメージ（ターンの終わりに 0 に戻る）</summary>
+        public int Damage;
+        public Slot(int zone, int cell, Card card, bool faceUp, int damage = 0)
+        { Zone = zone; Cell = cell; Card = card; FaceUp = faceUp; Damage = damage; }
+
+        /// <summary>Slot.base：ダメージを除いたもの</summary>
+        public Slot Base() => Damage == 0 ? this : new Slot(Zone, Cell, Card, FaceUp);
+
+        /// <summary>ダメージを除いて同じか（ゾーン・マス・カード・表裏）</summary>
+        public bool SameBase(Slot b) => Zone == b.Zone && Cell == b.Cell && Card.Name == b.Card.Name && FaceUp == b.FaceUp;
 
         /// <summary>Slot.view：owner のフィールドのこのカードを、効果を出したもの src から見た情報</summary>
         public View ViewFor(Rules r, bool owner, Src src)
@@ -92,6 +101,23 @@ namespace CardGen
             var n = s.With();
             n.Grave.Add(s.Field[k].Card);
             n.Field.RemoveAt(k);
+            return n;
+        }
+
+        /// <summary>PState.mark：フィールドの i 番目のカードにダメージ d(i) を加える</summary>
+        public static PState Mark(this PState s, System.Func<int, int> d)
+        {
+            var n = s.With();
+            n.Field = s.Field.Select((sl, i) => new Slot(sl.Zone, sl.Cell, sl.Card, sl.FaceUp, sl.Damage + d(i))).ToList();
+            return n;
+        }
+
+        /// <summary>PState.sweep：フィールドの i 番目のカード sl のうち、dead(i, sl) のものを破壊して墓地へ送る</summary>
+        public static PState Sweep(this PState s, System.Func<int, Slot, bool> dead)
+        {
+            var n = s.With();
+            n.Field = s.Field.Where((sl, i) => !dead(i, sl)).ToList();
+            n.Grave.AddRange(s.Field.Where((sl, i) => dead(i, sl)).Select(sl => sl.Card));
             return n;
         }
 
