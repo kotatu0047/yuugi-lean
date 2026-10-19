@@ -76,7 +76,7 @@ namespace CardGen.App
             titleLabel.style.flexGrow = 1;
             header.Add(kindLabel);
             header.Add(titleLabel);
-            idTag = Theme.Tag($"#{node.Id:D3}", Theme.Alpha(kc, 0.65f), 9);
+            idTag = Theme.Tag($"#{node.Id:D3}", Theme.Alpha(kc, 0.95f), 10);
             idTag.style.flexShrink = 0;
             header.Add(idTag);
             faultChip = new VisualElement { pickingMode = PickingMode.Ignore };

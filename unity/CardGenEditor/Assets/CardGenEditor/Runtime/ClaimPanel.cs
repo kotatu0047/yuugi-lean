@@ -50,7 +50,7 @@ namespace CardGen.App
             var hint = new Label("「（フィールド上・手札・墓地・デッキ）の、条件に合うカードは最大 n 枚」を追加できます。反例がなければ証明のジョブになり、" +
                                  "開発中は Claude が証明します（「キューを処理して」と頼む）。");
             hint.style.whiteSpace = WhiteSpace.Normal;
-            hint.style.fontSize = 11;
+            hint.style.fontSize = 12;
             hint.style.color = Quiet;
             Add(hint);
             Add(title);
@@ -141,7 +141,7 @@ namespace CardGen.App
             }
             foreach (var bad in selected.Where(x => !options.Contains(x)).ToList())
                 row.Add(Chip($"{bad}（集合にない）×", ChipBad, () => { selected.Remove(bad); SyncChoices(); }));
-            if (row.childCount == 0) row.Add(new Label(empty) { style = { color = Quiet, fontSize = 11 } });
+            if (row.childCount == 0) row.Add(new Label(empty) { style = { color = Quiet, fontSize = 12 } });
             box.Add(row);
         }
 
@@ -192,14 +192,14 @@ namespace CardGen.App
                 var output = await CheckerClient.Run(CheckerClient.WithArgs(getCommand(), "--jobs"), "");
                 jobs.Clear();
                 var list = JArray.Parse(output);
-                if (list.Count == 0) jobs.Add(new Label("ジョブはまだありません") { style = { color = Quiet, fontSize = 11 } });
+                if (list.Count == 0) jobs.Add(new Label("ジョブはまだありません") { style = { color = Quiet, fontSize = 12 } });
                 foreach (var j in list)
                 {
                     var st = (string)j["status"];
                     var label = st == "accepted" ? "証明済み" : st == "rejected" ? "差し戻し" : "証明待ち";
                     var l = new Label($"{(string)j["id"]}　[{label}]　{(string)j["title"]}");
                     l.style.whiteSpace = WhiteSpace.Normal;
-                    l.style.fontSize = 11;
+                    l.style.fontSize = 12;
                     l.style.marginTop = 2;
                     l.style.color = st == "accepted" ? Good : st == "rejected" ? Bad : Quiet;
                     jobs.Add(l);

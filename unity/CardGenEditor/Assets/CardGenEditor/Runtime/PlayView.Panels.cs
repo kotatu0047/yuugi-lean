@@ -70,7 +70,7 @@ namespace CardGen.App
             if (game.Rules.Stack && match.Turn.Stack.Count > 0)
                 side.Add(Text("スタックにカードがあります。ブロックはスタックが空になってから選べます（その前にインスタントで応答できます）", 11, Warn));
             if (game.Rules.Instants.Count > 0)
-                side.Add(Text($"ブロックを選ぶ前に、どちらのプレイヤーもインスタントを置けます（手札のインスタントを選んでください）", 11, Quiet));
+                side.Add(Text($"ブロックを選ぶ前に、どちらのプレイヤーもインスタントを置けます（手札のインスタントを選んでください）", 12, Quiet));
             var of = state.Get(o).Field;
             for (int j = 0; j < of.Count; j++)
             {
@@ -87,7 +87,7 @@ namespace CardGen.App
                 {
                     row.Add(Text(match.Turn.IsTapped(o, of, tl) ? "タップしているのでブロックできません"
                         : match.Turn.Blocked.Any(x => TurnInfo.SameSlot(x, tl)) ? "このターンにもうブロックしました"
-                        : "飛行を持つ攻撃は、飛行か到達を持つカードでしかブロックできません", 11, Quiet));
+                        : "飛行を持つ攻撃は、飛行か到達を持つカードでしかブロックできません", 12, Quiet));
                     side.Add(row);
                     continue;
                 }
@@ -126,7 +126,7 @@ namespace CardGen.App
             side.Add(Text("結果の予告：" + (notes.Count == 0 ? "何も起きない" : string.Join("、", notes)), 12, Good));
             if (match.Turn.Passes < 2)
             {
-                side.Add(Text("両者が続けてパスすると、このブロックで戦闘できます（その前にインスタントで応答できます）", 11, Quiet));
+                side.Add(Text("両者が続けてパスすると、このブロックで戦闘できます（その前にインスタントで応答できます）", 12, Quiet));
                 return;
             }
             ActionButton(blocks.Count == 0 ? "ブロックしないで戦闘する" : "このブロックで戦闘する",
@@ -151,7 +151,7 @@ namespace CardGen.App
             if (k < 0) return;
             if (match.Turn.Passes < 2)
             {
-                side.Add(Text("両者が続けてパスすると、一番上を解決します（その前に、優先権を持つプレイヤーはインスタントで応答できます）", 11, Quiet));
+                side.Add(Text("両者が続けてパスすると、一番上を解決します（その前に、優先権を持つプレイヤーはインスタントで応答できます）", 12, Quiet));
                 return;
             }
             neg.TryGetValue((tq, k), out var status);
@@ -167,7 +167,7 @@ namespace CardGen.App
                     ActionButton($"一番上を、無効にされた状態で解決する（{top.Card.Name}。何も起きない）",
                         () => Do(TChoice.Resolve(tq, k, ei, false, NegList(neg)), $"{Who(tq)}：{top.Card.Name} を解決したが無効"));
             }
-            side.Add(Text("解決する前に、どちらのプレイヤーもインスタントで応答できます（後に置いたものから解決）", 11, Quiet));
+            side.Add(Text("解決する前に、どちらのプレイヤーもインスタントで応答できます（後に置いたものから解決）", 12, Quiet));
         }
 
         /// <summary>手札を置くときに払うマナを選ぶ欄</summary>
@@ -255,23 +255,23 @@ namespace CardGen.App
             turnRow.Add(swap);
             side.Add(turnRow);
             var lim = game.Rules.SummonsPerTurn == 0 ? "制限なし" : $"{match.Turn.Summons}/{game.Rules.SummonsPerTurn}";
-            side.Add(Text($"このターンの召喚：{lim}・攻撃したカード：{match.Turn.Attacked.Count} 枚", 11, Quiet));
+            side.Add(Text($"このターンの召喚：{lim}・攻撃したカード：{match.Turn.Attacked.Count} 枚", 12, Quiet));
             if (UsesMana)
                 side.Add(Text($"{Who(turn)}のマナ：{PoolText(match.Turn.Pool)}" +
                               (game.Rules.Instants.Count > 0 ? $"・{Who(!turn)}のマナ：{PoolText(match.Turn.OppPool)}" : "") +
                               "（ターンの終わりに消えます）", 13, Good, true));
             if (UsesMana && (match.Turn.Made > 0 || match.Turn.Spent > 0))
-                side.Add(Text($"このターンにタップで出したマナ {match.Turn.Made}・払ったマナ {match.Turn.Spent}（払うマナは出したマナを超えない：Lean で証明済み）", 11, Quiet));
+                side.Add(Text($"このターンにタップで出したマナ {match.Turn.Made}・払ったマナ {match.Turn.Spent}（払うマナは出したマナを超えない：Lean で証明済み）", 12, Quiet));
             if (game.Rules.PlaceLimits.Count > 0)
                 side.Add(Text("このターンに置いた枚数：" + string.Join("・", game.Rules.PlaceLimits.Select(l =>
-                    $"{string.Join("+", l.Types)} {match.Turn.Placed.Count(l.Types.Contains)}/{l.Count}")), 11, Quiet));
+                    $"{string.Join("+", l.Types)} {match.Turn.Placed.Count(l.Types.Contains)}/{l.Count}")), 12, Quiet));
             if (game.Rules.HandLimit > 0)
                 side.Add(OverHand > 0
                     ? Text($"{Who(turn)}の手札が上限（{game.Rules.HandLimit} 枚）を {OverHand} 枚超えています。手札を選んで捨ててから、ターンを終えてください", 12, Warn, true)
-                    : Text($"手札の上限：{game.Rules.HandLimit} 枚（ターンの終わりに超えていれば、選んで捨てる）", 11, Quiet));
+                    : Text($"手札の上限：{game.Rules.HandLimit} 枚（ターンの終わりに超えていれば、選んで捨てる）", 12, Quiet));
             side.Add(Text("両方のプレイヤーを動かせます。動けるのは優先権を持つプレイヤーだけです（公理）。カードを置く・攻撃するのは" +
                           "ターンプレイヤーだけで（インスタントはどちらも置けます）、場のカードの発動はどちらのターンでもできます。" +
-                          "相手に動いてほしいときは「パスする」で優先権を渡します。引くのはターンの最初だけです。カードを選ぶと、できる動きが出ます。", 11, Quiet));
+                          "相手に動いてほしいときは「パスする」で優先権を渡します。引くのはターンの最初だけです。カードを選ぶと、できる動きが出ます。", 12, Quiet));
             PriorityPanel();
             var winner = Winner();
             if (winner != null)
@@ -312,7 +312,7 @@ namespace CardGen.App
                 else
                 {
                     if (selPlayer != turn)
-                        side.Add(Text($"いつでも置けるカード（{c.Type}）なので、{Who(turn)}のターンでも置けます（{Who(selPlayer)}のカードをタップして出したマナで払う）", 11, Quiet));
+                        side.Add(Text($"いつでも置けるカード（{c.Type}）なので、{Who(turn)}のターンでも置けます（{Who(selPlayer)}のカードをタップして出したマナで払う）", 12, Quiet));
                     PayPanel(selPlayer, c);
                     var upRow = Row();
                     upRow.style.alignItems = Align.Center;
@@ -347,7 +347,7 @@ namespace CardGen.App
                         var where = z.Capacity == Capacity.One && z.Count > 1 ? $"（空いているマス：{string.Join("・", free.Select(k => k + 1))}）" : "";
                         side.Add(Text($"置ける場所：{z.Name}{where}", 12, Good));
                     }
-                    if (any) side.Add(Text($"手札のこのカードを、盤面の緑のマスへドラッグして{(placeUp ? "表側" : "裏側")}で置きます（ほかの方法では置けません）", 11, Quiet));
+                    if (any) side.Add(Text($"手札のこのカードを、盤面の緑のマスへドラッグして{(placeUp ? "表側" : "裏側")}で置きます（ほかの方法では置けません）", 12, Quiet));
                 }
                 if (!any) side.Add(Text("置けるゾーンがありません", 12, Warn));
             }
@@ -399,11 +399,11 @@ namespace CardGen.App
                         side.Add(Text("裏側のカードはタップしてマナを出せません", 12, Quiet));
                 }
                 foreach (var n in sl.Card.Effects.OfType<Negate>())
-                    side.Add(Text($"永続効果：{NodeView.SelectorSummary(n.Target).Replace("\n", "・")}の効果を無効にする", 11, Quiet));
+                    side.Add(Text($"永続効果：{NodeView.SelectorSummary(n.Target).Replace("\n", "・")}の効果を無効にする", 12, Quiet));
                 foreach (var bo in sl.Card.Effects.OfType<Boost>())
-                    side.Add(Text($"永続効果：{NodeView.SelectorSummary(bo.Target).Replace("\n", "・")}の攻撃力を{(bo.Amount >= 0 ? "+" : "")}{bo.Amount}", 11, Quiet));
+                    side.Add(Text($"永続効果：{NodeView.SelectorSummary(bo.Target).Replace("\n", "・")}の攻撃力を{(bo.Amount >= 0 ? "+" : "")}{bo.Amount}", 12, Quiet));
                 foreach (var tg in sl.Card.Effects.OfType<Toughen>())
-                    side.Add(Text($"永続効果：{NodeView.SelectorSummary(tg.Target).Replace("\n", "・")}の守備力を{(tg.Amount >= 0 ? "+" : "")}{tg.Amount}", 11, Quiet));
+                    side.Add(Text($"永続効果：{NodeView.SelectorSummary(tg.Target).Replace("\n", "・")}の守備力を{(tg.Amount >= 0 ? "+" : "")}{tg.Amount}", 12, Quiet));
                 if (sl.Damage > 0)
                     side.Add(Text($"受けているダメージ：{sl.Damage}（ターンの終わりに消えます）", 12, Bad));
                 if (sl.FaceUp && MatchState.Fights(game.Rules, sl) && selPlayer != turn)
@@ -462,7 +462,7 @@ namespace CardGen.App
                     ActionButton(t, () => Choose(kk, t));
                 }
             }
-            side.Add(Text($"判定のターンプレイヤー：{Who(judge.Turn)}（同時に適用を始めるカードは、ターンプレイヤーのものが先）", 11, Quiet));
+            side.Add(Text($"判定のターンプレイヤー：{Who(judge.Turn)}（同時に適用を始めるカードは、ターンプレイヤーのものが先）", 12, Quiet));
 
             Section("盤面の制約");
             var v = state.Violations(game.Rules);
@@ -470,7 +470,7 @@ namespace CardGen.App
             foreach (var m in v) side.Add(Text("・" + m, 12, Bad));
 
             Section("記録");
-            foreach (var m in Enumerable.Reverse(log).Take(20)) side.Add(Text(m, 11, Quiet));
+            foreach (var m in Enumerable.Reverse(log).Take(20)) side.Add(Text(m, 12, Quiet));
         }
     }
 }

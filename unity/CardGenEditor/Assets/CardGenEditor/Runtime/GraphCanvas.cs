@@ -130,7 +130,7 @@ namespace CardGen.App
         {
             popupFor = v;
             popup.Clear();
-            popup.Add(Theme.Tag("link // candidates", Theme.Alpha(Theme.Cyan, 0.7f), 9));
+            popup.Add(Theme.Tag("link // candidates", Theme.Alpha(Theme.Cyan, 0.95f), 10));
             var head = new Label($"{v.Node.Title} につなぐ") { style = { fontSize = 12, color = Theme.Bright, marginBottom = 4, unityFontStyleAndWeight = FontStyle.Bold } };
             popup.Add(head);
             foreach (var k in GraphDoc.Candidates(v.Node.Kind))
@@ -145,7 +145,7 @@ namespace CardGen.App
                 popup.Add(b);
             }
             if (Node.TakesSelector(v.Node.Kind) && Doc.Children(v.Node).Count > 0)
-                popup.Add(new Label("（今の範囲と入れ替わります）") { style = { fontSize = 10, color = Theme.Muted } });
+                popup.Add(new Label("（今の範囲と入れ替わります）") { style = { fontSize = 11, color = Theme.Muted } });
             var port = v.OutPort.worldBound;
             var local = this.WorldToLocal(new Vector2(port.xMax + 6, port.yMin - 4));
             popup.style.left = Mathf.Min(local.x, Mathf.Max(0, layout.width - 200));

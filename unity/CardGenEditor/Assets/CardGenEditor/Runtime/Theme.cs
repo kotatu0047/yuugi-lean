@@ -22,7 +22,7 @@ namespace CardGen.App
         /// <summary>パネルの中の一段明るい背景（見出しの帯など）</summary>
         public static readonly Color PanelHi = Rgb(12, 30, 45, 0.96f);
         /// <summary>細い線</summary>
-        public static readonly Color Line = Rgb(0, 229, 255, 0.18f);
+        public static readonly Color Line = Rgb(0, 229, 255, 0.26f);
         /// <summary>目立つ線</summary>
         public static readonly Color LineHi = Rgb(0, 229, 255, 0.55f);
         /// <summary>主な強調（シアン）</summary>
@@ -34,13 +34,13 @@ namespace CardGen.App
         /// <summary>成功・有効（緑）</summary>
         public static readonly Color Green = Rgb(64, 255, 160);
         /// <summary>本文</summary>
-        public static readonly Color Text = Rgb(200, 236, 255);
+        public static readonly Color Text = Rgb(214, 240, 255);
         /// <summary>見出しの白</summary>
         public static readonly Color Bright = Rgb(235, 250, 255);
         /// <summary>補足</summary>
-        public static readonly Color Muted = Rgb(108, 142, 162);
+        public static readonly Color Muted = Rgb(156, 190, 210);
         /// <summary>さらに控えめな文字（マスの番号など）</summary>
-        public static readonly Color Dim = Rgb(62, 90, 108);
+        public static readonly Color Dim = Rgb(118, 150, 170);
 
         /// <summary>a に透明度 alpha をかけた色</summary>
         public static Color Alpha(Color c, float alpha) => new Color(c.r, c.g, c.b, alpha);
@@ -58,13 +58,13 @@ namespace CardGen.App
             NodeKind.Draw => Rgb(236, 224, 84),
             NodeKind.Negate => Rgb(64, 232, 144),
             NodeKind.Boost => Rgb(0, 224, 200),
-            NodeKind.Toughen => Rgb(96, 144, 255),
+            NodeKind.Toughen => Rgb(124, 168, 255),
             NodeKind.Strike => Rgb(255, 112, 80),
             NodeKind.Pump => Rgb(168, 244, 72),
-            NodeKind.Counter => Rgb(136, 124, 255),
+            NodeKind.Counter => Rgb(160, 150, 255),
             NodeKind.Damage => Rgb(255, 84, 176),
             NodeKind.Heal => Rgb(84, 244, 124),
-            NodeKind.Axioms => Rgb(124, 164, 184),
+            NodeKind.Axioms => Rgb(164, 200, 220),
             NodeKind.Sets => Rgb(0, 204, 172),
             _ => Rgb(186, 206, 222),
         };
@@ -96,9 +96,10 @@ namespace CardGen.App
             }
         }
 
-        /// <summary>英字の小さなラベル（例：「SYS // EDITOR」）。字間を広げ、大文字で出す</summary>
+        /// <summary>英字の小さなラベル（例：「SYS // EDITOR」）。字間を広げ、大文字で出す（読めるように 10 より小さくはしない）</summary>
         public static Label Tag(string text, Color? color = null, float size = 10)
         {
+            size = Mathf.Max(size, 10);
             var l = new Label(text.ToUpperInvariant()) { pickingMode = PickingMode.Ignore };
             l.style.fontSize = size;
             l.style.color = color ?? Muted;
@@ -137,7 +138,7 @@ namespace CardGen.App
             l.style.flexShrink = 1;
             l.style.whiteSpace = WhiteSpace.Normal;
             row.Add(l);
-            if (tag != null) row.Add(Tag(tag, Alpha(c, 0.7f), 9));
+            if (tag != null) row.Add(Tag(tag, Alpha(c, 0.95f), 10));
             return row;
         }
 

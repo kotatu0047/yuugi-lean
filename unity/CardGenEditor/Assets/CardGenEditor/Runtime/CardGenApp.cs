@@ -113,7 +113,7 @@ namespace CardGen.App
             var sep = new VisualElement();
             sep.style.width = 16;
             toolbar.Add(sep);
-            var addTag = Theme.Tag("add //", Theme.Alpha(Theme.Cyan, 0.7f), 9);
+            var addTag = Theme.Tag("add //", Theme.Alpha(Theme.Cyan, 0.95f), 10);
             addTag.style.marginRight = 6;
             toolbar.Add(addTag);
             foreach (NodeKind k in Enum.GetValues(typeof(NodeKind)))
@@ -218,7 +218,7 @@ namespace CardGen.App
             status.style.color = Theme.Text;
             status.style.flexGrow = 1;
             statusBar.Add(status);
-            statusBar.Add(Theme.Tag("lean 4 // proof-checked", Theme.Dim, 9));
+            statusBar.Add(Theme.Tag("lean 4 // proof-checked", Theme.Muted, 10));
             root.Add(statusBar);
             // 画面全体にうっすらと走査線を重ねる（クリックは下に通す）
             root.Add(Theme.Scanlines());
@@ -347,7 +347,7 @@ namespace CardGen.App
         {
             var l = new Label(s);
             l.style.whiteSpace = WhiteSpace.Normal;
-            l.style.fontSize = size;
+            l.style.fontSize = Mathf.Max(size, 11); // 読めるように 11 より小さくはしない
             if (color.HasValue) l.style.color = color.Value;
             if (bold) l.style.unityFontStyleAndWeight = FontStyle.Bold;
             return l;
@@ -546,7 +546,7 @@ namespace CardGen.App
                 var row = Row();
                 row.style.alignItems = Align.FlexStart;
                 row.style.marginBottom = 2;
-                var time = Theme.Tag($"{t:00.00}", Theme.Dim, 9);
+                var time = Theme.Tag($"{t:00.00}", Theme.Muted, 10);
                 time.style.width = 40;
                 time.style.flexShrink = 0;
                 row.Add(time);

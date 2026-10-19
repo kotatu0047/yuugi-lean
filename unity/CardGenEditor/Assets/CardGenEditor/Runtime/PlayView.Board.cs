@@ -14,7 +14,7 @@ namespace CardGen.App
         {
             var l = new Label(s);
             l.style.whiteSpace = WhiteSpace.Normal;
-            l.style.fontSize = size;
+            l.style.fontSize = Mathf.Max(size, 11); // 読めるように 11 より小さくはしない
             if (color.HasValue) l.style.color = color.Value;
             if (bold) l.style.unityFontStyleAndWeight = FontStyle.Bold;
             return l;
@@ -50,7 +50,7 @@ namespace CardGen.App
             Theme.Round(b.style, 1);
             Theme.Brackets(b, () => selected ? Theme.Amber : Theme.Alpha(color, 0.8f), selected ? 10 : 6, selected ? 2f : 1.2f);
             b.Add(Text(c.Name, 11, Theme.Bright, true));
-            b.Add(Text(c.Type + (faceUp ? "" : "・裏側"), 10, Quiet));
+            b.Add(Text(c.Type + (faceUp ? "" : "・裏側"), 12, Quiet));
             if (stats != null) b.Add(Text(stats, 10, Theme.Alpha(Theme.Amber, 0.9f)));
             if (status != null)
                 b.Add(Text(status, 10, status == "有効" || status == "置ける" ? Good : status == "無効" ? Bad : Warn, true));
@@ -123,7 +123,7 @@ namespace CardGen.App
 
             var hand = Row();
             hand.style.marginTop = 8;
-            var ht = Text("手札", 11, Quiet, true);
+            var ht = Text("手札", 12, Quiet, true);
             ht.style.width = 170;
             hand.Add(ht);
             for (int i = 0; i < s.Hand.Count; i++)
@@ -170,7 +170,7 @@ namespace CardGen.App
             }
             var chip = Chip(sl.Card, sl.FaceUp, st, selPlayer == p && selField == i,
                 () => { selPlayer = p; selField = i; selHand = -1; customPay = null; Render(); }, stats, () => FieldMenu(p, i));
-            if (tapped) chip.style.opacity = 0.6f;
+            if (tapped) chip.style.opacity = 0.75f;
             return chip;
         }
 
@@ -215,7 +215,7 @@ namespace CardGen.App
             empty.style.borderLeftColor = empty.style.borderRightColor = empty.style.borderTopColor = empty.style.borderBottomColor = Line;
             if (label != null)
             {
-                var l = Text(label, 9, Theme.Dim);
+                var l = Text(label, 11, Quiet);
                 l.style.paddingLeft = 4;
                 l.style.paddingTop = 2;
                 empty.Add(l);
@@ -273,14 +273,14 @@ namespace CardGen.App
             var grid = Theme.Tag("tactical grid", Theme.Cyan, 9);
             grid.style.marginRight = 8;
             head.Add(grid);
-            head.Add(Text($"フィールド（盤面のマス目の列 {c0}〜{c1}・行 {r0}〜{r1}。上が相手、下が自分）", 11, Quiet));
+            head.Add(Text($"フィールド（盤面のマス目の列 {c0}〜{c1}・行 {r0}〜{r1}。上が相手、下が自分）", 12, Quiet));
             box.Add(head);
             for (int r = r0; r <= r1; r++)
             {
                 if (!at.Keys.Any(c => c.Row == r))
                 {
                     // マスのない行（見本では盤面の中心の行）は細い区切りにする
-                    var sep = Text($"行 {r}（マスなし）", 9, Theme.Dim);
+                    var sep = Text($"行 {r}（マスなし）", 11, Quiet);
                     sep.style.marginTop = 2;
                     sep.style.marginBottom = 8;
                     sep.style.borderBottomWidth = 1;
@@ -291,7 +291,7 @@ namespace CardGen.App
                 var line = Row();
                 line.style.flexWrap = Wrap.NoWrap;
                 line.style.alignItems = Align.Center;
-                var rowLabel = Text($"行 {r}", 10, Quiet);
+                var rowLabel = Text($"行 {r}", 12, Quiet);
                 rowLabel.style.width = 40;
                 line.Add(rowLabel);
                 for (int c = c0; c <= c1; c++)

@@ -133,7 +133,7 @@ namespace CardGen.App
             }
             foreach (var bad in selected.Where(x => !options.Contains(x)).Distinct().ToList())
                 row.Add(Chip($"{bad}（集合にない）×", ChipBad, () => { selected.RemoveAll(x => x == bad); Changed(); Show(node); }));
-            if (row.childCount == 0) row.Add(new Label(empty) { style = { color = Theme.Muted, fontSize = 11 } });
+            if (row.childCount == 0) row.Add(new Label(empty) { style = { color = Theme.Muted, fontSize = 12 } });
             Add(row);
         }
 
@@ -225,7 +225,7 @@ namespace CardGen.App
                 del.style.marginRight = 8;
                 chips.Add(del);
             }
-            if (values.Count == 0) chips.Add(new Label("（まだありません）") { style = { color = Theme.Muted, fontSize = 11 } });
+            if (values.Count == 0) chips.Add(new Label("（まだありません）") { style = { color = Theme.Muted, fontSize = 12 } });
             box.Add(chips);
             if (renameList == values && values.Contains(renameValue))
             {
@@ -246,7 +246,7 @@ namespace CardGen.App
                 rrow.Add(to);
                 rrow.Add(UiTest.Btn("名前を変える", Apply));
                 box.Add(rrow);
-                box.Add(new Label("使っているカード・ゾーン・ルール・範囲も、まとめて新しい名前に変わります") { style = { fontSize = 10, color = Theme.Amber } });
+                box.Add(new Label("使っているカード・ゾーン・ルール・範囲も、まとめて新しい名前に変わります") { style = { fontSize = 11, color = Theme.Amber } });
             }
             var addRow = Wrap();
             addRow.style.flexWrap = UnityEngine.UIElements.Wrap.NoWrap;
@@ -266,7 +266,7 @@ namespace CardGen.App
             addRow.Add(input);
             addRow.Add(UiTest.Btn("加える", AddValue));
             box.Add(addRow);
-            box.Add(new Label(placeholder) { style = { fontSize = 10, color = Theme.Muted } });
+            box.Add(new Label(placeholder) { style = { fontSize = 11, color = Theme.Muted } });
             Add(box);
         }
 
@@ -282,7 +282,7 @@ namespace CardGen.App
         {
             var l = new Label(text);
             l.style.whiteSpace = WhiteSpace.Normal;
-            l.style.fontSize = 11;
+            l.style.fontSize = 12;
             l.style.color = Theme.Muted;
             l.style.marginBottom = 6;
             Add(l);

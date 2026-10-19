@@ -180,7 +180,7 @@ namespace CardGen.App
             if (it.Swatch is Color c) row.Add(Swatch(c, 12));
             var col = new VisualElement();
             col.style.flexShrink = 1;
-            col.Add(Theme.Tag("ctx // menu", Theme.Alpha(Theme.Cyan, 0.7f), 8));
+            col.Add(Theme.Tag("ctx // menu", Theme.Alpha(Theme.Cyan, 0.95f), 10));
             col.Add(Lbl(it.Text, 14, Theme.Bright, true));
             if (!string.IsNullOrEmpty(it.Hint)) col.Add(Lbl(it.Hint, 11, Muted));
             row.Add(col);
@@ -220,7 +220,7 @@ namespace CardGen.App
             col.style.flexShrink = 1;
             col.style.flexGrow = 1;
             col.Add(Lbl(it.Text, it.IsInfo ? 12 : 13, it.Danger ? DangerText : it.IsInfo ? Muted : Text));
-            if (!string.IsNullOrEmpty(it.Hint)) col.Add(Lbl(it.Hint, 10, it.IsInfo ? Theme.Dim : Muted));
+            if (!string.IsNullOrEmpty(it.Hint)) col.Add(Lbl(it.Hint, 11, Muted));
             row.Add(col);
             if (it.IsInfo)
             {
@@ -229,7 +229,7 @@ namespace CardGen.App
             }
             if (!it.Enabled)
             {
-                row.style.opacity = 0.45f;
+                row.style.opacity = 0.6f;
                 return row;
             }
             var action = it.Action;

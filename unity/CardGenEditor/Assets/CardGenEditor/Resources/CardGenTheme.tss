@@ -6,7 +6,7 @@
 /* ボタン：透ける暗い地に、細いシアンの線。角はほぼ四角 */
 .unity-button {
     background-color: rgba(0, 229, 255, 0.05);
-    color: rgb(200, 236, 255);
+    color: rgb(214, 240, 255);
     border-width: 1px;
     border-color: rgba(0, 229, 255, 0.32);
     border-radius: 2px;
@@ -26,8 +26,8 @@
 }
 .unity-button:disabled {
     background-color: rgba(0, 229, 255, 0.02);
-    border-color: rgba(108, 142, 162, 0.25);
-    color: rgba(108, 142, 162, 0.7);
+    border-color: rgba(156, 190, 210, 0.3);
+    color: rgba(156, 190, 210, 0.75);
 }
 
 /* 入力欄：ほぼ黒の地に細い線。選んでいるときはシアン */
@@ -35,7 +35,7 @@
 .unity-base-field__input,
 .unity-base-popup-field__input {
     background-color: rgba(0, 0, 0, 0.45);
-    color: rgb(200, 236, 255);
+    color: rgb(214, 240, 255);
     border-width: 1px;
     border-color: rgba(0, 229, 255, 0.22);
     border-radius: 2px;
@@ -45,10 +45,10 @@
     border-color: rgba(0, 229, 255, 0.9);
 }
 .unity-base-field__label {
-    color: rgb(108, 142, 162);
+    color: rgb(156, 190, 210);
 }
 .unity-text-element--inner-input-field-component {
-    color: rgb(200, 236, 255);
+    color: rgb(214, 240, 255);
 }
 .unity-toggle__checkmark {
     background-color: rgba(0, 0, 0, 0.45);
@@ -72,7 +72,7 @@
     background-color: rgba(0, 229, 255, 0.18);
 }
 .unity-base-dropdown__label {
-    color: rgb(200, 236, 255);
+    color: rgb(214, 240, 255);
 }
 
 /* スクロールバー：細く、矢印なし、溝はうっすら、つまみは半透明のシアン（マウスを乗せると明るく、つかむとアンバー） */
