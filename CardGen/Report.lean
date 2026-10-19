@@ -1,6 +1,6 @@
 import CardGen.Timed
 import CardGen.Pool
-import CardGen.Turn
+import CardGen.TurnProps
 
 /-!
 # 検査ツールの報告
@@ -144,7 +144,7 @@ def attackClaim (cards : List Card) : Option ClaimOut :=
       ["無効にしうる関係に循環がないので、どのカードの効果が有効かは1通りに決まる（メタ定理1）",
        "攻撃力・守備力の変化は足し算なので、適用する順番によらない"], "proved", "CardGen.negation_settles"⟩
 
-/-- ターンについての★（`Turn.lean`）。どれも証明済み -/
+/-- ターンについての★（`TurnProps.lean`）。どれも証明済み -/
 def turnClaims (r : Rules) (cards : List Card) : List ClaimOut :=
   let fighters := "・".intercalate r.fighters
   [⟨"優先権を持つプレイヤーだけが動けます（パスすると相手に移り、両者が続けてパスしたらスタックの一番上を解決するかブロックに進む）",
