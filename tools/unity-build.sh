@@ -99,7 +99,7 @@ if [ -n "$shot" ]; then
   echo "== 画面を保存：$shot"
   TMP_PNG="$DST/$PROJ_REL/Logs/cardgen-shot.png"
   rm -f "$TMP_PNG"
-  (cd "$DST/$PROJ_REL/Build" && timeout 180 ./CardGenEditor.exe -screen-width 1600 -screen-height 1000 -screen-fullscreen 0 \
+  (cd "$DST/$PROJ_REL/Build" && timeout ${CARDGEN_SHOT_TIMEOUT:-180} ./CardGenEditor.exe -screen-width 1600 -screen-height 1000 -screen-fullscreen 0 \
      "$@" -cardgen-screenshot "$(wslpath -w "$TMP_PNG")" -logFile "$(wslpath -w "$DST/$PROJ_REL/Logs/cardgen-player.log")") >/dev/null || true
   if [ ! -f "$TMP_PNG" ]; then echo "画面を保存できませんでした" >&2; exit 1; fi
   cp "$TMP_PNG" "$shot"

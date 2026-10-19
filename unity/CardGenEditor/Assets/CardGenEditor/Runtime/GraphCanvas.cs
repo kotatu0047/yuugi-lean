@@ -188,39 +188,47 @@ namespace CardGen.App
         /// <summary>ノード n の右クリックのメニュー：つなげるノード・表示・つなぎを外す・削除</summary>
         public List<MenuEntry> NodeMenu(Node n)
         {
-            var items = new List<MenuEntry> { MenuEntry.Header(n.Title) };
+            var items = new List<MenuEntry> { MenuEntry.Title(n.Title, n.Title == Node.KindLabel(n.Kind) ? null : Node.KindLabel(n.Kind), NodeView.KindColor(n.Kind)) };
             var cands = GraphDoc.Candidates(n.Kind);
             if (cands.Count > 0)
             {
+                items.Add(MenuEntry.Header("つなげるノード（右に加わる）"));
+                var replaces = Node.TakesSelector(n.Kind) && Doc.Children(n).Count > 0;
                 foreach (var k in cands)
                 {
                     var kind = k;
-                    items.Add(MenuEntry.Item($"つなぐ：{Node.KindLabel(kind)}", () => AddChildOf(n, kind)));
+                    items.Add(MenuEntry.Item(Node.KindLabel(kind), () => AddChildOf(n, kind),
+                        hint: replaces && kind == NodeKind.Selector ? "今の範囲と入れ替わります" : null, swatch: NodeView.KindColor(kind)));
                 }
-                if (Node.TakesSelector(n.Kind) && Doc.Children(n).Count > 0)
-                    items.Add(MenuEntry.Header("（範囲は今の範囲と入れ替わります）"));
                 items.Add(MenuEntry.Separator());
             }
+            items.Add(MenuEntry.Header("このノード"));
             items.Add(MenuEntry.Item("左上に表示する", () => Focus(n)));
-            items.Add(MenuEntry.Item("入ってくるつなぎを外す", () => Disconnect(n), Doc.Edges.Any(e => e.To == n.Id)));
-            items.Add(MenuEntry.Item(Node.IsFixed(n.Kind) ? "削除（このノードは削除できません）" : "削除",
-                () => { Select(n); RemoveSelected(); }, !Node.IsFixed(n.Kind)));
+            var connected = Doc.Edges.Any(e => e.To == n.Id);
+            items.Add(MenuEntry.Item("入ってくるつなぎを外す", () => Disconnect(n), connected, connected ? null : "どこからもつながっていません"));
+            items.Add(MenuEntry.Item("削除", () => { Select(n); RemoveSelected(); }, !Node.IsFixed(n.Kind),
+                Node.IsFixed(n.Kind) ? "公理と集合は削除できません" : "つないだ線も消えます", danger: true));
             return items;
         }
 
         /// <summary>キャンバスの空き場所（キャンバスの座標 at）の右クリックのメニュー：ノードを加える・整列・表示を戻す</summary>
         public List<MenuEntry> BackgroundMenu(Vector2 at)
         {
-            var items = new List<MenuEntry> { MenuEntry.Header("ここにノードを加える") };
+            var items = new List<MenuEntry>
+            {
+                MenuEntry.Title("キャンバス", $"ノード {Doc.Nodes.Count} 個"),
+                MenuEntry.Header("ここにノードを加える"),
+            };
             foreach (NodeKind k in Enum.GetValues(typeof(NodeKind)))
             {
                 if (k == NodeKind.Rules || Node.IsFixed(k)) continue;
                 var kind = k;
-                items.Add(MenuEntry.Item(Node.KindLabel(kind), () => AddNodeAt(kind, at)));
+                items.Add(MenuEntry.Item(Node.KindLabel(kind), () => AddNodeAt(kind, at), swatch: NodeView.KindColor(kind)));
             }
             items.Add(MenuEntry.Separator());
-            items.Add(MenuEntry.Item("整列（木の形に並べ直す）", Arrange));
-            items.Add(MenuEntry.Item("表示を元に戻す（位置と拡大率）", ResetView));
+            items.Add(MenuEntry.Header("表示"));
+            items.Add(MenuEntry.Item("整列", Arrange, hint: "木の形に並べ直す（つないだ先は右の列）"));
+            items.Add(MenuEntry.Item("表示を元に戻す", ResetView, hint: "位置と拡大率"));
             return items;
         }
 

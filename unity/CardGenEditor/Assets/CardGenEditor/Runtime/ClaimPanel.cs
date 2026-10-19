@@ -81,11 +81,12 @@ namespace CardGen.App
         /// <summary>右クリックのメニュー：反例を探す・ジョブの状態を更新・タグの選択を外す</summary>
         public List<MenuEntry> Menu() => new List<MenuEntry>
         {
-            MenuEntry.Header("追加した命題"),
-            MenuEntry.Item("反例を探してジョブにする", () => _ = Submit()),
-            MenuEntry.Item("ジョブの状態を更新", () => _ = Refresh()),
+            MenuEntry.Title("命題とジョブ", title.value),
+            MenuEntry.Item("反例を探してジョブにする", () => _ = Submit(), !busy, busy ? "実行しています…" : "反例がなければ証明のジョブになります"),
+            MenuEntry.Item("ジョブの状態を更新", () => _ = Refresh(), !busy),
             MenuEntry.Separator(),
-            MenuEntry.Item("タグの選択をすべて外す（タグの条件なし）", () => { tags.Clear(); SyncChoices(); }, tags.Count > 0),
+            MenuEntry.Item("タグの選択をすべて外す", () => { tags.Clear(); SyncChoices(); }, tags.Count > 0,
+                tags.Count > 0 ? "タグの条件なしになります" : "タグを選んでいません"),
         };
 
         static readonly Color ChipOn = new Color(0.28f, 0.45f, 0.62f);

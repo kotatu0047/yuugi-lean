@@ -131,7 +131,11 @@ namespace CardGen.App
             inspScroll.Add(inspector);
             side.Add(inspScroll);
             PopupMenu.Attach(inspScroll, _ => canvas.SelectedNode != null ? canvas.NodeMenu(canvas.SelectedNode)
-                : new System.Collections.Generic.List<MenuEntry> { MenuEntry.Item("ノードを選んでいません（キャンバスでノードをクリック）", null, false) });
+                : new System.Collections.Generic.List<MenuEntry>
+                  {
+                      MenuEntry.Title("ノードの編集"),
+                      MenuEntry.Item("ノードを選んでいません", null, false, "キャンバスでノードをクリックしてください"),
+                  });
 
             var checkRow = Row();
             checkRow.style.paddingLeft = 12;
@@ -199,11 +203,12 @@ namespace CardGen.App
         /// <summary>検査の結果の欄の右クリックのメニュー</summary>
         System.Collections.Generic.List<MenuEntry> ResultsMenu() => new System.Collections.Generic.List<MenuEntry>
         {
-            MenuEntry.Header("検査"),
-            MenuEntry.Item("Lean で検査", () => _ = RunLeanCheck(), !checking),
+            MenuEntry.Title("検査の結果", lastReport == null ? "まだ Lean で検査していません" : reportStale ? "編集したあとは未実行" : null),
+            MenuEntry.Item("Lean で検査", () => _ = RunLeanCheck(), !checking, checking ? "検査しています…" : "★と無効の関係を検査します"),
             MenuEntry.Item("結果をコピーする", () => GUIUtility.systemCopyBuffer =
-                string.Join("\n", results.Query<Label>().ToList().Select(l => l.text))),
+                string.Join("\n", results.Query<Label>().ToList().Select(l => l.text)), hint: "クリップボードへ"),
             MenuEntry.Separator(),
+            MenuEntry.Header("移動"),
             MenuEntry.Item("一番上へ", () => resultsScroll.scrollOffset = Vector2.zero),
             MenuEntry.Item("一番下へ", () => resultsScroll.scrollOffset = new Vector2(0, 100000)),
         };

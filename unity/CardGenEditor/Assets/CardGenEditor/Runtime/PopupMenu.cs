@@ -5,18 +5,29 @@ using UnityEngine.UIElements;
 
 namespace CardGen.App
 {
-    /// <summary>メニューの1項目（見出し・区切り・押せる項目）</summary>
+    /// <summary>メニューの1項目（タイトル・小見出し・区切り・押せる項目）</summary>
     public sealed class MenuEntry
     {
         public string Text;
+        /// <summary>項目の下に小さく出す補足（押せないときは、その理由）</summary>
+        public string Hint;
         public System.Action Action;
         public bool Enabled = true;
         public bool IsHeader;
+        /// <summary>メニューの一番上の帯（何のメニューか）</summary>
+        public bool IsTitle;
         public bool IsSeparator;
+        /// <summary>取り消しにくい操作（削除など）。赤で出す</summary>
+        public bool Danger;
+        /// <summary>左に出す色の印（ノードの種類の色など）</summary>
+        public Color? Swatch;
 
-        public static MenuEntry Item(string text, System.Action action, bool enabled = true) =>
-            new MenuEntry { Text = text, Action = action, Enabled = enabled && action != null };
+        public static MenuEntry Item(string text, System.Action action, bool enabled = true, string hint = null,
+                                     Color? swatch = null, bool danger = false) =>
+            new MenuEntry { Text = text, Action = action, Enabled = enabled && action != null, Hint = hint, Swatch = swatch, Danger = danger };
         public static MenuEntry Header(string text) => new MenuEntry { Text = text, IsHeader = true };
+        public static MenuEntry Title(string text, string hint = null, Color? swatch = null) =>
+            new MenuEntry { Text = text, Hint = hint, Swatch = swatch, IsHeader = true, IsTitle = true };
         public static MenuEntry Separator() => new MenuEntry { IsSeparator = true };
     }
 
@@ -26,15 +37,22 @@ namespace CardGen.App
     /// </summary>
     public sealed class PopupMenu : VisualElement
     {
-        static readonly Color Back = new Color(0.17f, 0.17f, 0.2f, 0.98f);
-        static readonly Color Edge = new Color(0.36f, 0.36f, 0.42f);
-        static readonly Color Muted = new Color(0.65f, 0.65f, 0.72f);
-        static readonly Color Hover = new Color(0.3f, 0.32f, 0.42f);
+        static readonly Color Back = new Color(0.15f, 0.15f, 0.18f, 0.99f);
+        static readonly Color TitleBack = new Color(0.22f, 0.22f, 0.27f);
+        static readonly Color Edge = new Color(0.4f, 0.4f, 0.47f);
+        static readonly Color Line = new Color(0.28f, 0.28f, 0.33f);
+        static readonly Color Text = new Color(0.94f, 0.94f, 0.96f);
+        static readonly Color Muted = new Color(0.62f, 0.62f, 0.7f);
+        static readonly Color Hover = new Color(0.27f, 0.29f, 0.38f);
+        static readonly Color Accent = new Color(1f, 0.82f, 0.3f);
+        static readonly Color DangerText = new Color(1f, 0.55f, 0.5f);
+        const float Width = 300;
 
         /// <summary>今出ているメニュー（なければ null。自動テストと動作確認用）</summary>
         public static PopupMenu Current { get; private set; }
 
-        readonly VisualElement box;
+        readonly VisualElement frame;
+        readonly VisualElement shadow;
 
         /// <summary>
         /// target を右クリックしたら、build で作った項目のメニューを出す。build は右クリックした位置（パネルの座標）を受け取る。
@@ -66,6 +84,9 @@ namespace CardGen.App
             return m;
         }
 
+        static void Round(IStyle s, float r) =>
+            s.borderTopLeftRadius = s.borderTopRightRadius = s.borderBottomLeftRadius = s.borderBottomRightRadius = r;
+
         PopupMenu(List<MenuEntry> items)
         {
             style.position = Position.Absolute;
@@ -79,18 +100,74 @@ namespace CardGen.App
             });
             RegisterCallback<KeyDownEvent>(evt => { if (evt.keyCode == KeyCode.Escape) Close(); });
 
-            box = new ScrollView(ScrollViewMode.Vertical);
-            box.style.position = Position.Absolute;
-            box.style.minWidth = 200;
-            box.style.maxWidth = 460;
-            box.style.backgroundColor = Back;
-            box.style.paddingTop = box.style.paddingBottom = 4;
-            box.style.borderLeftWidth = box.style.borderRightWidth = box.style.borderTopWidth = box.style.borderBottomWidth = 1;
-            box.style.borderLeftColor = box.style.borderRightColor = box.style.borderTopColor = box.style.borderBottomColor = Edge;
-            box.style.borderTopLeftRadius = box.style.borderTopRightRadius =
-                box.style.borderBottomLeftRadius = box.style.borderBottomRightRadius = 6;
-            foreach (var it in items) box.Add(Row(it));
-            Add(box);
+            // 影（少しずらした半透明の黒）
+            shadow = new VisualElement { pickingMode = PickingMode.Ignore };
+            shadow.style.position = Position.Absolute;
+            shadow.style.backgroundColor = new Color(0, 0, 0, 0.45f);
+            Round(shadow.style, 9);
+            Add(shadow);
+
+            frame = new VisualElement();
+            frame.style.position = Position.Absolute;
+            frame.style.width = Width;
+            frame.style.backgroundColor = Back;
+            frame.style.borderLeftWidth = frame.style.borderRightWidth = frame.style.borderTopWidth = frame.style.borderBottomWidth = 1;
+            frame.style.borderLeftColor = frame.style.borderRightColor = frame.style.borderTopColor = frame.style.borderBottomColor = Edge;
+            frame.style.overflow = Overflow.Hidden;
+            Round(frame.style, 8);
+            var title = items.Find(i => i.IsTitle);
+            if (title != null) frame.Add(TitleRow(title));
+            var list = new ScrollView(ScrollViewMode.Vertical);
+            list.style.paddingTop = 4;
+            list.style.paddingBottom = 6;
+            list.style.flexShrink = 1;
+            foreach (var it in items) if (!it.IsTitle) list.Add(Row(it));
+            frame.Add(list);
+            Add(frame);
+        }
+
+        static VisualElement Swatch(Color c, float size)
+        {
+            var s = new VisualElement { pickingMode = PickingMode.Ignore };
+            s.style.width = s.style.height = size;
+            s.style.flexShrink = 0;
+            s.style.marginRight = 8;
+            s.style.backgroundColor = c;
+            Round(s.style, 3);
+            return s;
+        }
+
+        static Label Lbl(string text, float size, Color color, bool bold = false)
+        {
+            var l = new Label(text) { pickingMode = PickingMode.Ignore };
+            l.style.fontSize = size;
+            l.style.color = color;
+            l.style.whiteSpace = WhiteSpace.Normal;
+            l.style.marginLeft = l.style.marginRight = l.style.marginTop = l.style.marginBottom = 0;
+            l.style.paddingLeft = l.style.paddingRight = l.style.paddingTop = l.style.paddingBottom = 0;
+            if (bold) l.style.unityFontStyleAndWeight = FontStyle.Bold;
+            return l;
+        }
+
+        static VisualElement TitleRow(MenuEntry it)
+        {
+            var row = new VisualElement();
+            row.style.flexDirection = FlexDirection.Row;
+            row.style.alignItems = Align.Center;
+            row.style.backgroundColor = TitleBack;
+            row.style.paddingLeft = 12;
+            row.style.paddingRight = 12;
+            row.style.paddingTop = 8;
+            row.style.paddingBottom = 8;
+            row.style.borderBottomWidth = 1;
+            row.style.borderBottomColor = Line;
+            if (it.Swatch is Color c) row.Add(Swatch(c, 12));
+            var col = new VisualElement();
+            col.style.flexShrink = 1;
+            col.Add(Lbl(it.Text, 14, Text, true));
+            if (!string.IsNullOrEmpty(it.Hint)) col.Add(Lbl(it.Hint, 11, Muted));
+            row.Add(col);
+            return row;
         }
 
         VisualElement Row(MenuEntry it)
@@ -99,51 +176,75 @@ namespace CardGen.App
             {
                 var line = new VisualElement();
                 line.style.height = 1;
-                line.style.marginTop = line.style.marginBottom = 4;
-                line.style.backgroundColor = Edge;
+                line.style.marginTop = line.style.marginBottom = 5;
+                line.style.marginLeft = line.style.marginRight = 10;
+                line.style.backgroundColor = Line;
                 return line;
             }
             if (it.IsHeader)
             {
-                var h = new Label(it.Text);
-                h.style.fontSize = 10;
-                h.style.color = Muted;
-                h.style.paddingLeft = 10;
-                h.style.paddingTop = 2;
-                h.style.unityFontStyleAndWeight = FontStyle.Bold;
+                var h = Lbl(it.Text, 11, Accent, true);
+                h.style.paddingLeft = 12;
+                h.style.paddingTop = 6;
+                h.style.paddingBottom = 2;
                 return h;
             }
+            var row = new VisualElement();
+            row.style.flexDirection = FlexDirection.Row;
+            row.style.alignItems = Align.Center;
+            row.style.paddingLeft = 9;
+            row.style.paddingRight = 12;
+            row.style.paddingTop = 5;
+            row.style.paddingBottom = 5;
+            row.style.borderLeftWidth = 3;
+            row.style.borderLeftColor = Color.clear;
+            if (it.Swatch is Color c) row.Add(Swatch(c, 10));
+            var col = new VisualElement { pickingMode = PickingMode.Ignore };
+            col.style.flexShrink = 1;
+            col.style.flexGrow = 1;
+            col.Add(Lbl(it.Text, 13, it.Danger ? DangerText : Text));
+            if (!string.IsNullOrEmpty(it.Hint)) col.Add(Lbl(it.Hint, 10, Muted));
+            row.Add(col);
+            if (!it.Enabled)
+            {
+                row.style.opacity = 0.45f;
+                return row;
+            }
             var action = it.Action;
-            var b = UiTest.Btn(it.Text, () => { Close(); action?.Invoke(); });
-            b.SetEnabled(it.Enabled);
-            b.style.unityTextAlign = TextAnchor.MiddleLeft;
-            b.style.whiteSpace = WhiteSpace.Normal;
-            b.style.marginLeft = b.style.marginRight = b.style.marginTop = b.style.marginBottom = 0;
-            b.style.paddingLeft = 10;
-            b.style.paddingRight = 14;
-            b.style.paddingTop = b.style.paddingBottom = 3;
-            b.style.borderLeftWidth = b.style.borderRightWidth = b.style.borderTopWidth = b.style.borderBottomWidth = 0;
-            b.style.borderTopLeftRadius = b.style.borderTopRightRadius = b.style.borderBottomLeftRadius = b.style.borderBottomRightRadius = 0;
-            b.style.backgroundColor = Color.clear;
-            b.RegisterCallback<PointerEnterEvent>(_ => { if (b.enabledSelf) b.style.backgroundColor = Hover; });
-            b.RegisterCallback<PointerLeaveEvent>(_ => b.style.backgroundColor = Color.clear);
-            return b;
+            row.AddManipulator(new Clickable(() => { Close(); action?.Invoke(); }));
+            row.RegisterCallback<PointerEnterEvent>(_ =>
+            {
+                row.style.backgroundColor = Hover;
+                row.style.borderLeftColor = it.Danger ? DangerText : Accent;
+            });
+            row.RegisterCallback<PointerLeaveEvent>(_ =>
+            {
+                row.style.backgroundColor = Color.clear;
+                row.style.borderLeftColor = Color.clear;
+            });
+            return row;
         }
 
         /// <summary>カーソルの位置に置き、画面からはみ出すなら内側に寄せる</summary>
         void Place(Vector2 pos, VisualElement root)
         {
-            box.style.left = pos.x;
-            box.style.top = pos.y;
-            box.style.maxHeight = new Length(80, LengthUnit.Percent);
-            box.RegisterCallback<GeometryChangedEvent>(_ =>
+            frame.style.left = pos.x;
+            frame.style.top = pos.y;
+            frame.style.maxHeight = new Length(85, LengthUnit.Percent);
+            frame.RegisterCallback<GeometryChangedEvent>(_ =>
             {
                 var w = root.layout.width;
                 var h = root.layout.height;
                 if (float.IsNaN(w) || float.IsNaN(h)) return;
-                var r = box.layout;
-                box.style.left = Mathf.Max(0, Mathf.Min(pos.x, w - r.width - 4));
-                box.style.top = Mathf.Max(0, Mathf.Min(pos.y, h - r.height - 4));
+                var r = frame.layout;
+                var x = Mathf.Max(0, Mathf.Min(pos.x, w - r.width - 8));
+                var y = Mathf.Max(0, Mathf.Min(pos.y, h - r.height - 8));
+                frame.style.left = x;
+                frame.style.top = y;
+                shadow.style.left = x + 4;
+                shadow.style.top = y + 5;
+                shadow.style.width = r.width;
+                shadow.style.height = r.height;
             });
         }
 
@@ -153,7 +254,7 @@ namespace CardGen.App
             if (Current == this) Current = null;
         }
 
-        /// <summary>項目の文字（区切りを除く。見出しも含む。自動テスト用）</summary>
+        /// <summary>項目の文字（区切りを除く。タイトルと小見出しも含む。自動テスト用）</summary>
         public static List<string> Texts(List<MenuEntry> items) =>
             items.FindAll(i => !i.IsSeparator).ConvertAll(i => i.Text);
 
