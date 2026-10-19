@@ -14,8 +14,10 @@ import CardGen.Pool
 - 「ターン終了」で相手のターンになり、新しいターンプレイヤーが `Rules.drawPerTurn` 枚引く
   （デッキが足りなければある分だけ）。先攻の最初のターンは `Rules.firstTurnDraw` のときだけ引く
 - 自由に引く動きはない（引くのはターンの最初と、効果によるときだけ）
-- マナ：ターンプレイヤーは、表側表示の「フィールド上」の、マナを出すカード（`Card.mana`）をタップしてマナを得る。
-  カードを置くには、そのコスト（`Card.cost`）だけマナを支払う。マナはターンの終わりに消える
+- マナ：ターンプレイヤーは、表側表示の「フィールド上」の、マナを出すカード（`Card.mana`）をタップして、
+  その色（`Card.manaColor`。`""` は無色）のマナを得る。カードを置くには、どのマナで払うか（`pay`）を選ぶ。
+  払うマナは持っているマナの一部で、色の決まったコスト（`Card.colorCost`）を含み、全部でコストの合計
+  （`Card.cost` ＋ 色の決まったコストの数）だけ。マナはターンの終わりに消える
 - タップしたカードは、持ち主の次のターンの始めに起きる（アンタップ）。`Rules.attackTaps` なら攻撃でもタップし、
   タップしているカードは攻撃できない
 - 種類ごとに、1ターンに置ける枚数の上限（`Rules.placeLimits`。例：土地は1ターンに1枚）
@@ -71,8 +73,9 @@ structure TurnInfo where
   placed : List TypeName := []
   /-- このターンに置いたカード（ターンプレイヤーのフィールドにあるものだけ。召喚酔いに使う） -/
   entered : List Slot := []
-  /-- ターンプレイヤーのマナ（タップで増え、カードを置くと減る。ターンの終わりに消える） -/
-  pool : Nat := 0
+  /-- ターンプレイヤーのマナ（色の名前を、1マナにつき1つ並べたもの。`""` は無色）。タップで増え、カードを置くと減る。
+  ターンの終わりに消える -/
+  pool : List String := []
   /-- タップしている、ターンプレイヤーのカード -/
   tapped : List Slot := []
   /-- タップしている、相手のカード（相手の次のターンの始めに起きる） -/
@@ -90,8 +93,8 @@ structure Match where
 
 /-- ターンのある対戦の動き -/
 inductive TChoice
-  /-- ターンプレイヤーが手札の `hand` 番目のカードを `zone` 番目のゾーンの `cell` 番目のマスに置く -/
-  | place (hand : Nat) (zone : Nat) (cell : Nat) (up : Bool)
+  /-- ターンプレイヤーが手札の `hand` 番目のカードを `zone` 番目のゾーンの `cell` 番目のマスに置く。`pay`：払うマナ -/
+  | place (hand : Nat) (zone : Nat) (cell : Nat) (up : Bool) (pay : List String := [])
   /-- `p` がフィールドの `k` 番目のカードの `eff` 番目の効果を発動して解決する（どちらのターンでもよい） -/
   | resolve (p : PlayerId) (k : Nat) (eff : Nat) (apply : Bool)
   /-- ターンプレイヤーがフィールドの `k` 番目のカードで攻撃する（MTG 式の戦闘では攻撃の宣言だけで、`target` は `none`） -/
@@ -128,17 +131,38 @@ def TurnInfo.prune (t : TurnInfo) (g : State) : TurnInfo :=
 /-- 記録 `l` にない（同じカードのうち、記録にない1枚がフィールドにある） -/
 def notIn (l field : List Slot) (sl : Slot) : Bool := decide (l.count sl < field.count sl)
 
-/-- このターンに、カード `c` を置けるか（召喚の上限・種類ごとの上限・マナ） -/
-def TurnInfo.placeOK (r : Rules) (t : TurnInfo) (sl : Slot) : Bool :=
+/-- `l` の各要素の個数が、`m` の個数以下（多重集合として含まれる） -/
+def bagLeB (l m : List String) : Bool := l.all fun a => decide (l.count a ≤ m.count a)
+
+/-- マナ `pay` でカード `c` のコストを払えるか：持っているマナ `pool` の一部で、色の決まったコストを含み、全部でコストの合計 -/
+def payOK (c : Card) (pool pay : List String) : Bool :=
+  bagLeB pay pool && bagLeB c.colorCost pay && pay.length == c.cost + c.colorCost.length
+
+/-- 払い方を1つ選ぶ（テストプレイの既定の払い方）：色の決まったコストはその色で払い、残りは無色のマナから先に、
+次に持っている順に払う。払えなければ `none`。どの払い方も `payOK` を満たす（`autoPay_ok`） -/
+def autoPay (c : Card) (pool : List String) : Option (List String) :=
+  let rest := c.colorCost.foldl List.erase pool
+  let generic := rest.filter (· == "") ++ rest.filter (· != "")
+  let pay := c.colorCost ++ generic.take c.cost
+  if payOK c pool pay then some pay else none
+
+theorem autoPay_ok {c : Card} {pool pay : List String} (h : autoPay c pool = some pay) : payOK c pool pay = true := by
+  simp only [autoPay] at h
+  split at h
+  · cases h; assumption
+  · cases h
+
+/-- このターンに、カード `sl` を、マナ `pay` で払って置けるか（召喚の上限・種類ごとの上限・マナ） -/
+def TurnInfo.placeOK (r : Rules) (t : TurnInfo) (sl : Slot) (pay : List String) : Bool :=
   (!r.fights sl || r.summonsPerTurn == 0 || decide (t.summons < r.summonsPerTurn)) &&
   r.placeLimits.all (fun l => !l.types.contains sl.card.type ||
     decide ((t.placed.filter l.types.contains).length < l.count)) &&
-  decide (sl.card.cost ≤ t.pool)
+  payOK sl.card t.pool pay
 
-/-- カード `sl` を置いたあとのターンの情報 -/
-def TurnInfo.afterPlace (r : Rules) (t : TurnInfo) (sl : Slot) : TurnInfo :=
+/-- カード `sl` を、マナ `pay` で払って置いたあとのターンの情報 -/
+def TurnInfo.afterPlace (r : Rules) (t : TurnInfo) (sl : Slot) (pay : List String) : TurnInfo :=
   { t with summons := t.summons + (if r.fights sl then 1 else 0), placed := t.placed ++ [sl.card.type],
-           entered := sl :: t.entered, pool := t.pool - sl.card.cost }
+           entered := sl :: t.entered, pool := pay.foldl List.erase t.pool }
 
 /-- 召喚酔いで動けないか（置いたターンの、戦闘できるカード） -/
 def TurnInfo.sick (r : Rules) (t : TurnInfo) (field : List Slot) (sl : Slot) : Bool :=
@@ -159,7 +183,7 @@ def TurnInfo.afterAttack (r : Rules) (t : TurnInfo) (sl : Slot) : TurnInfo :=
 
 /-- カード `sl` をタップしてマナを出したあとのターンの情報 -/
 def TurnInfo.afterTap (t : TurnInfo) (sl : Slot) : TurnInfo :=
-  { t with pool := t.pool + sl.card.mana, tapped := sl :: t.tapped }
+  { t with pool := t.pool ++ List.replicate sl.card.mana sl.card.manaColor, tapped := sl :: t.tapped }
 
 /-- ターン終了のあと、相手のターンの情報（相手のタップしていたカードは起き、自分のは残る） -/
 def TurnInfo.next (t : TurnInfo) : TurnInfo := { tp := !t.tp, count := t.count + 1, oppTapped := t.tapped }
@@ -191,12 +215,12 @@ where
   /-- ブロックを待っていないときの1歩 -/
   step0? (r : Rules) (m : Match) : TChoice → Option Match
   | .block _ _ => none
-  | .place h i j up =>
+  | .place h i j up pay =>
     match (m.g m.turn.tp).hand[h]? with
     | none => none
     | some c =>
-      if m.turn.placeOK r ⟨i, j, c, up⟩ then
-        (m.g.step? r (.place m.turn.tp h i j up)).map fun g => ⟨g, (m.turn.afterPlace r ⟨i, j, c, up⟩).prune g⟩
+      if m.turn.placeOK r ⟨i, j, c, up⟩ pay then
+        (m.g.step? r (.place m.turn.tp h i j up)).map fun g => ⟨g, (m.turn.afterPlace r ⟨i, j, c, up⟩ pay).prune g⟩
       else none
   | .resolve p k e apply =>
     (m.g.step? r (.resolve p k e apply)).map fun g => ⟨g, m.turn.prune g⟩
@@ -233,9 +257,9 @@ inductive TReachable (r : Rules) (decks : PlayerId → List Card) (first : Playe
 /-- 1歩のあとの盤面は、ターンのないモデルで、もとの盤面から到達できる盤面（`Step` の0回以上の繰り返し）。
 ターンの情報は、ある記録をその盤面に合わせたもの -/
 inductive Match.Moved (r : Rules) (m : Match) : TChoice → Match → Prop
-  | place {h i j up c g} : (m.g m.turn.tp).hand[h]? = some c → m.turn.placeOK r ⟨i, j, c, up⟩ →
+  | place {h i j up pay c g} : (m.g m.turn.tp).hand[h]? = some c → m.turn.placeOK r ⟨i, j, c, up⟩ pay →
       m.g.step? r (.place m.turn.tp h i j up) = some g →
-      Match.Moved r m (.place h i j up) ⟨g, (m.turn.afterPlace r ⟨i, j, c, up⟩).prune g⟩
+      Match.Moved r m (.place h i j up pay) ⟨g, (m.turn.afterPlace r ⟨i, j, c, up⟩ pay).prune g⟩
   | resolve {p k e apply g} : m.g.step? r (.resolve p k e apply) = some g →
       Match.Moved r m (.resolve p k e apply) ⟨g, m.turn.prune g⟩
   | declare {k t neg sl} : (m.g m.turn.tp).field[k]? = some sl →
@@ -254,7 +278,7 @@ theorem Match.step0?_moved {r : Rules} {m m' : Match} {ch : TChoice} (hs : Match
     Match.Moved r m ch m' := by
   cases ch with
   | block t neg => simp [Match.step?.step0?] at hs
-  | place h i j up =>
+  | place h i j up pay =>
     simp only [Match.step?.step0?] at hs
     split at hs
     · cases hs
@@ -357,7 +381,7 @@ theorem TReachable.summons_le {r : Rules} {decks : PlayerId → List Card} {firs
   | start => simp [Match.start]
   | step ch _ hs ih =>
     cases Match.step?_moved hs with
-    | @place _ _ _ _ c _ _ hok _ =>
+    | @place _ _ _ _ _ c _ _ hok _ =>
       simp only [TurnInfo.placeOK, Bool.and_eq_true, Bool.or_eq_true, Bool.not_eq_true',
         beq_iff_eq, decide_eq_true_eq] at hok
       simp only [TurnInfo.prune_summons, TurnInfo.afterPlace]
@@ -383,7 +407,7 @@ theorem TReachable.placed_le {r : Rules} {decks : PlayerId → List Card} {first
   | start => simp [Match.start]
   | step ch _ hs ih =>
     cases Match.step?_moved hs with
-    | @place _ _ _ _ c _ _ hok _ =>
+    | @place _ _ _ _ _ c _ _ hok _ =>
       simp only [TurnInfo.placeOK, Bool.and_eq_true, List.all_eq_true] at hok
       have := hok.1.2 l hl
       simp only [TurnInfo.prune_placed, TurnInfo.afterPlace, List.filter_append, List.length_append]

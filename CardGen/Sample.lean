@@ -418,29 +418,32 @@ def mana0 : Match :=
 -- コスト 1 のモンスターは、マナがなければ置けない。泉をタップして1マナを出せば置ける
 #guard (Match.run manaRules mana0 [.place 0 1 0 true, .place 1 0 0 true]).isNone
 #guard match Match.run manaRules mana0 [.place 0 1 0 true, .tap 0] with
-  | some m => m.turn.pool == 1
+  | some m => m.turn.pool == [""]
   | none => false
-#guard match Match.run manaRules mana0 [.place 0 1 0 true, .tap 0, .place 1 0 0 true] with
-  | some m => m.turn.pool == 0 && (m.g true).field.length == 2
+#guard match Match.run manaRules mana0 [.place 0 1 0 true, .tap 0, .place 1 0 0 true [""]] with
+  | some m => m.turn.pool == [] && (m.g true).field.length == 2
   | none => false
+-- 払うマナを指定しない（足りない）・持っていないマナで払うことはできない
+#guard (Match.run manaRules mana0 [.place 0 1 0 true, .tap 0, .place 1 0 0 true]).isNone
+#guard (Match.run manaRules mana0 [.place 0 1 0 true, .tap 0, .place 1 0 0 true ["赤"]]).isNone
 -- タップしているカードはタップできない。マナを出さないカード（ブラック・マジシャン）もタップできない
 #guard (Match.run manaRules mana0 [.place 0 1 0 true, .tap 0, .tap 0]).isNone
-#guard (Match.run manaRules mana0 [.place 0 1 0 true, .tap 0, .place 1 0 0 true, .tap 1]).isNone
+#guard (Match.run manaRules mana0 [.place 0 1 0 true, .tap 0, .place 1 0 0 true [""], .tap 1]).isNone
 -- 召喚酔い：置いたターンには攻撃できない。次の自分のターンには攻撃でき、攻撃するとタップする
-#guard (Match.run manaRules mana0 [.place 0 1 0 true, .tap 0, .place 1 0 0 true, .attack 1 none []]).isNone
+#guard (Match.run manaRules mana0 [.place 0 1 0 true, .tap 0, .place 1 0 0 true [""], .attack 1 none []]).isNone
 #guard match Match.run manaRules mana0
-    [.place 0 1 0 true, .tap 0, .place 1 0 0 true, .endTurn, .endTurn, .attack 1 none []] with
+    [.place 0 1 0 true, .tap 0, .place 1 0 0 true [""], .endTurn, .endTurn, .attack 1 none []] with
   | some m => m.turn.tapped.length == 1 && (m.g false).life == 8000 - 2400
   | none => false
 -- マナはターンの終わりに消える。タップしたカードは、次の自分のターンの始めに起きる
 #guard match Match.run manaRules mana0 [.place 0 1 0 true, .tap 0, .endTurn] with
-  | some m => m.turn.pool == 0 && m.turn.oppTapped.length == 1
+  | some m => m.turn.pool == [] && m.turn.oppTapped.length == 1
   | none => false
 #guard (Match.run manaRules mana0 [.place 0 1 0 true, .tap 0, .endTurn, .endTurn, .tap 0]).isSome
 -- 攻撃でタップしたカードは、そのターンにはマナにも使えない（攻撃でタップしないルールなら、タップしていない）
 #guard match Match.run { manaRules with attackTaps := false } (Match.start { manaRules with attackTaps := false }
     (fun _ => [spring, spring, cheap, darkBlessing, blackMagician, fireball, fireball, fireball]) true)
-    [.place 0 1 0 true, .tap 0, .place 1 0 0 true, .endTurn, .endTurn, .attack 1 none []] with
+    [.place 0 1 0 true, .tap 0, .place 1 0 0 true [""], .endTurn, .endTurn, .attack 1 none []] with
   | some m => m.turn.tapped.isEmpty
   | none => false
 

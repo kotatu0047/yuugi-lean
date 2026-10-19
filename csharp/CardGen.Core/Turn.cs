@@ -19,8 +19,8 @@ namespace CardGen
         public List<string> Placed = new List<string>();
         /// <summary>このターンに置いたカード（ターンプレイヤーのフィールドにあるものだけ。召喚酔いに使う）</summary>
         public List<Slot> Entered = new List<Slot>();
-        /// <summary>ターンプレイヤーのマナ</summary>
-        public int Pool;
+        /// <summary>ターンプレイヤーのマナ（色の名前を1マナにつき1つ。"" は無色）</summary>
+        public List<string> Pool = new List<string>();
         /// <summary>タップしている、ターンプレイヤーのカード</summary>
         public List<Slot> Tapped = new List<Slot>();
         /// <summary>タップしている、相手のカード</summary>
@@ -57,7 +57,7 @@ namespace CardGen
         public TurnInfo Copy() => new TurnInfo
         {
             Tp = Tp, Count = Count, Summons = Summons, Attacked = Attacked.ToList(), Placed = Placed.ToList(),
-            Entered = Entered.ToList(), Pool = Pool, Tapped = Tapped.ToList(), OppTapped = OppTapped.ToList(),
+            Entered = Entered.ToList(), Pool = Pool.ToList(), Tapped = Tapped.ToList(), OppTapped = OppTapped.ToList(),
             Pending = Pending, Blocked = Blocked.ToList(),
         };
 
@@ -77,11 +77,28 @@ namespace CardGen
         /// <summary>このカードはこのターンにまだ攻撃していないか</summary>
         public bool CanAttack(Slot sl, List<Slot> field) => NotIn(Attacked, field, sl);
 
-        /// <summary>TurnInfo.placeOK：このターンに置けるか（召喚の上限・種類ごとの上限・マナ）</summary>
-        public bool PlaceOK(Rules r, Slot sl) =>
+        /// <summary>bagLeB：l の各要素の個数が m の個数以下</summary>
+        public static bool BagLe(List<string> l, List<string> m) => l.All(a => l.Count(x => x == a) <= m.Count(x => x == a));
+
+        /// <summary>payOK：マナ pay でカード c のコストを払えるか</summary>
+        public static bool PayOK(Card c, List<string> pool, List<string> pay) =>
+            BagLe(pay, pool) && BagLe(c.ColorCost, pay) && pay.Count == c.Cost + c.ColorCost.Count;
+
+        /// <summary>autoPay：払い方を1つ選ぶ（色の決まったコストはその色、残りは無色から先に、次に持っている順）。払えなければ null</summary>
+        public static List<string> AutoPay(Card c, List<string> pool)
+        {
+            var rest = pool.ToList();
+            foreach (var col in c.ColorCost) rest.Remove(col);
+            var generic = rest.Where(x => x == "").Concat(rest.Where(x => x != "")).ToList();
+            var pay = c.ColorCost.Concat(generic.Take(c.Cost)).ToList();
+            return PayOK(c, pool, pay) ? pay : null;
+        }
+
+        /// <summary>TurnInfo.placeOK：このターンに、マナ pay で払って置けるか（召喚の上限・種類ごとの上限・マナ）</summary>
+        public bool PlaceOK(Rules r, Slot sl, List<string> pay) =>
             (!MatchState.Fights(r, sl) || r.SummonsPerTurn == 0 || Summons < r.SummonsPerTurn) &&
             r.PlaceLimits.All(l => !l.Types.Contains(sl.Card.Type) || Placed.Count(l.Types.Contains) < l.Count) &&
-            sl.Card.Cost <= Pool;
+            PayOK(sl.Card, Pool, pay);
 
         /// <summary>TurnInfo.sick：召喚酔いで動けないか</summary>
         public bool Sick(Rules r, List<Slot> field, Slot sl) =>
@@ -124,8 +141,12 @@ namespace CardGen
         public int? Target;
         public List<(bool player, int index)> Neg = new List<(bool, int)>();
 
-        public static TChoice Place(int hand, int zone, int cell, bool faceUp) =>
-            new TChoice { Kind = TChoiceKind.Place, Hand = hand, Zone = zone, Cell = cell, FaceUp = faceUp };
+        /// <summary>置くときに払うマナ</summary>
+        public List<string> Pay = new List<string>();
+
+        public static TChoice Place(int hand, int zone, int cell, bool faceUp, List<string> pay = null) =>
+            new TChoice { Kind = TChoiceKind.Place, Hand = hand, Zone = zone, Cell = cell, FaceUp = faceUp,
+                          Pay = pay ?? new List<string>() };
         public static TChoice Resolve(bool p, int field, int effect, bool apply) =>
             new TChoice { Kind = TChoiceKind.Resolve, Player = p, Field = field, Effect = effect, Apply = apply };
         public static TChoice Attack(int field, int? target, List<(bool, int)> neg) =>
@@ -188,14 +209,14 @@ namespace CardGen
                     var hand = G.Get(p).Hand;
                     if (ch.Hand < 0 || ch.Hand >= hand.Count) return null;
                     var sl = new Slot(ch.Zone, ch.Cell, hand[ch.Hand], ch.FaceUp);
-                    if (!Turn.PlaceOK(r, sl)) return null;
+                    if (!Turn.PlaceOK(r, sl, ch.Pay)) return null;
                     var g = G.Step(r, Choice.Place(p, ch.Hand, ch.Zone, ch.Cell, ch.FaceUp));
                     if (g == null) return null;
                     var t = Turn.Copy();
                     t.Summons += MatchState.Fights(r, sl) ? 1 : 0;
                     t.Placed.Add(sl.Card.Type);
                     t.Entered.Insert(0, sl);
-                    t.Pool -= sl.Card.Cost;
+                    foreach (var x in ch.Pay) t.Pool.Remove(x);
                     return new Match { G = g, Turn = t.Pruned(g) };
                 }
                 case TChoiceKind.Resolve:
@@ -231,7 +252,7 @@ namespace CardGen
                     var sl = field[ch.Field];
                     if (!Turn.TapOK(r, field, sl)) return null;
                     var t = Turn.Copy();
-                    t.Pool += sl.Card.Mana;
+                    t.Pool.AddRange(Enumerable.Repeat(sl.Card.ManaColor, sl.Card.Mana));
                     t.Tapped.Insert(0, sl);
                     return new Match { G = G, Turn = t.Pruned(G) };
                 }
@@ -245,7 +266,7 @@ namespace CardGen
         }
 
         /// <summary>このターンにこのカードを置けるか（召喚の上限・種類ごとの上限・マナ。置ける場所は MatchState.Step が決める）</summary>
-        public bool SummonOK(Rules r, Slot sl) => Turn.PlaceOK(r, sl);
+        public bool SummonOK(Rules r, Slot sl, List<string> pay) => Turn.PlaceOK(r, sl, pay);
 
         /// <summary>このターンに攻撃できる時期か（先攻の最初のターンでないか、ルールで許されているか）</summary>
         public bool AttackPhaseOK(Rules r) => r.FirstTurnAttack || Turn.Count != 1;

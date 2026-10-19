@@ -4,7 +4,8 @@ import CardGen.Sample
 # MTG 風の見本
 
 マナ・タップ・召喚酔い・ブロック（MTG 式の戦闘）を使う、MTG に似たゲームの見本。
-色のマナは表せないので、マナは1種類だけ（色はタグで表すだけ）。カードの種類は土地・クリーチャー・ソーサリー・
+マナは5色（白・青・黒・赤・緑）で、基本土地はそれぞれ1色のマナを出す。コストは「どの色でも払える分」と
+「色の決まった分」に分かれる（灰色熊は 1 ＋ 緑）。カードの種類は土地・クリーチャー・ソーサリー・
 エンチャントで、ソーサリーは「スタック」のゾーンに置いてから発動する（フィールド上には数えない）。
 
 - デッキ（ライブラリー）40枚・初期手札7枚・ライフ20・1ターンに1枚引く（先攻の最初のターンは引かない）
@@ -13,7 +14,7 @@ import CardGen.Sample
 - 攻撃されたプレイヤーがブロックするクリーチャーを選ぶ。ブロックされたら、攻撃力（パワー）と守備力（タフネス）で
   互いにダメージを与え、守備力以上のダメージを受けた方を破壊する。ブロックされなければ攻撃力のダメージ
 
-実際の MTG との違い（このプロトタイプで表せないもの）：色のマナ、インスタントとスタックの応答、攻撃するクリーチャーを
+実際の MTG との違い（このプロトタイプで表せないもの）：2色以上から選べるマナ（多色の土地）、インスタントとスタックの応答、攻撃するクリーチャーを
 まとめて宣言すること（ここでは1体ずつ攻撃する）、複数でのブロック、受けたダメージがターンの終わりまで残ること、
 トランプルなどの能力、守備力（タフネス）を変える効果、デッキ切れの敗北。
 
@@ -48,43 +49,49 @@ def rules : Rules where
   attackTaps := true
   summoningSickness := true
   blocking := true
+  manaColors := ["白", "青", "黒", "赤", "緑"]
 
-def mountain : Card := { name := "山", type := land, tags := ["赤"], effects := [], mana := 1 }
-def forest : Card := { name := "森", type := land, tags := ["緑"], effects := [], mana := 1 }
-def plains : Card := { name := "平地", type := land, tags := ["白"], effects := [], mana := 1 }
+def mountain : Card := { name := "山", type := land, tags := [], effects := [], mana := 1, manaColor := "赤" }
+def forest : Card := { name := "森", type := land, tags := [], effects := [], mana := 1, manaColor := "緑" }
+def plains : Card := { name := "平地", type := land, tags := [], effects := [], mana := 1, manaColor := "白" }
+def island : Card := { name := "島", type := land, tags := [], effects := [], mana := 1, manaColor := "青" }
 
 def goblin : Card :=
-  { name := "ゴブリンの先兵", type := creature, tags := ["赤", "ゴブリン"], effects := [], attack := 1, defense := 1, cost := 1 }
+  { name := "ゴブリンの先兵", type := creature, tags := ["赤", "ゴブリン"], effects := [], attack := 1, defense := 1,
+    colorCost := ["赤"] }
 def bear : Card :=
-  { name := "灰色熊", type := creature, tags := ["緑", "熊"], effects := [], attack := 2, defense := 2, cost := 2 }
+  { name := "灰色熊", type := creature, tags := ["緑", "熊"], effects := [], attack := 2, defense := 2,
+    cost := 1, colorCost := ["緑"] }
 def giant : Card :=
-  { name := "丘巨人", type := creature, tags := ["赤", "巨人"], effects := [], attack := 3, defense := 3, cost := 4 }
+  { name := "丘巨人", type := creature, tags := ["赤", "巨人"], effects := [], attack := 3, defense := 3,
+    cost := 3, colorCost := ["赤"] }
 def knight : Card :=
-  { name := "白騎士", type := creature, tags := ["白", "騎士"], effects := [], attack := 2, defense := 2, cost := 2 }
+  { name := "白騎士", type := creature, tags := ["白", "騎士"], effects := [], attack := 2, defense := 2,
+    colorCost := ["白", "白"] }
 
 def bolt : Card :=
-  { name := "稲妻", type := sorcery, tags := ["赤"], effects := [.activated [.damage 3]], cost := 1 }
+  { name := "稲妻", type := sorcery, tags := ["赤"], effects := [.activated [.damage 3]], colorCost := ["赤"] }
 def wrath : Card :=
   { name := "神の怒り", type := sorcery, tags := ["白"],
-    effects := [.activated [.destroy (sel [creature] .both)]], cost := 4 }
+    effects := [.activated [.destroy (sel [creature] .both)]], cost := 2, colorCost := ["白", "白"] }
 def unsummon : Card :=
   { name := "送還の波", type := sorcery, tags := ["青"],
-    effects := [.activated [.bounce (sel [creature] .opp)]], cost := 4 }
+    effects := [.activated [.bounce (sel [creature] .opp)]], cost := 3, colorCost := ["青"] }
 def divination : Card :=
-  { name := "予言", type := sorcery, tags := ["青"], effects := [.activated [.draw 2]], cost := 2 }
+  { name := "予言", type := sorcery, tags := ["青"], effects := [.activated [.draw 2]], cost := 1, colorCost := ["青"] }
 def salve : Card :=
-  { name := "治癒の軟膏", type := sorcery, tags := ["白"], effects := [.activated [.heal 4]], cost := 1 }
+  { name := "治癒の軟膏", type := sorcery, tags := ["白"], effects := [.activated [.heal 4]], colorCost := ["白"] }
 def anthem : Card :=
   { name := "栄光の頌歌", type := enchantment, tags := ["白"],
-    effects := [.boost (sel [creature] .self) 1], cost := 3 }
+    effects := [.boost (sel [creature] .self) 1], cost := 2, colorCost := ["白"] }
 def silence : Card :=
   { name := "沈黙の結界", type := enchantment, tags := ["白"],
-    effects := [.negate (sel [enchantment] .opp)], cost := 2 }
+    effects := [.negate (sel [enchantment] .opp)], cost := 1, colorCost := ["白"] }
 
 def game : Game where
   version := currentVersion
   rules := rules
-  cards := [mountain, forest, plains, goblin, bear, giant, knight, bolt, wrath, unsummon, divination, salve, anthem,
+  cards := [mountain, forest, plains, island, goblin, bear, giant, knight, bolt, wrath, unsummon, divination, salve, anthem,
             silence]
 
 /-! ## 検査 -/
@@ -113,15 +120,25 @@ def deck : List Card :=
 
 def m0 : Match := Match.start rules (fun _ => deck) true
 
-/-- 1ターン目：山を置き、タップしてゴブリンの先兵を置く -/
-def turn1 : List TChoice := [.place 0 0 0 true, .tap 0, .place 1 0 0 true]
+/-- 1ターン目：山を置き、タップして赤マナを出し、それでゴブリンの先兵（赤）を置く -/
+def turn1 : List TChoice := [.place 0 0 0 true, .tap 0, .place 1 0 0 true ["赤"]]
 
 #guard match Match.run rules m0 turn1 with
-  | some m => (m.g true).field.map (·.card.name) == ["山", "ゴブリンの先兵"] && m.turn.pool == 0
+  | some m => (m.g true).field.map (·.card.name) == ["山", "ゴブリンの先兵"] && m.turn.pool == []
   | none => false
--- 土地は1ターンに1枚まで。マナが足りなければ置けない（灰色熊はコスト 2）
+-- 土地は1ターンに1枚まで。マナが足りなければ置けない（灰色熊は 1 ＋ 緑）
 #guard (Match.run rules m0 [.place 0 0 0 true, .place 0 0 0 true]).isNone
-#guard (Match.run rules m0 [.place 0 0 0 true, .tap 0, .place 2 0 0 true]).isNone
+#guard (Match.run rules m0 [.place 0 0 0 true, .tap 0, .place 2 0 0 true ["赤"]]).isNone
+-- 色が違えば払えない：森を置いて緑マナを出しても、ゴブリンの先兵（赤）は置けない
+#guard (Match.run rules m0 [.place 6 0 0 true, .tap 0, .place 2 0 0 true ["緑"]]).isNone
+#guard (Match.run rules m0 [.place 6 0 0 true, .tap 0, .place 2 0 0 true ["赤"]]).isNone
+-- 3ターン目に森を置けば、山と森で灰色熊（1 ＋ 緑）を置ける。どの色でも払える分は赤で払う
+#guard match Match.run rules m0
+    (turn1 ++ [.endTurn] ++ turn1 ++ [.endTurn, .place 4 0 0 true, .tap 0, .tap 2]) with
+  | some m => m.turn.pool == ["赤", "緑"] && autoPay bear m.turn.pool == some ["緑", "赤"] &&
+      autoPay giant m.turn.pool == none &&
+      ((m.step? rules (.place 1 0 0 true ["緑", "赤"])).map fun m' => m'.turn.pool) == some []
+  | none => false
 -- 召喚酔い：置いたターンには攻撃できない
 #guard (Match.run rules m0 (turn1 ++ [.attack 1 none []])).isNone
 

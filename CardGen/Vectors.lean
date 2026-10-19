@@ -84,7 +84,9 @@ def verdictName : Verdict → String
 ターンのある対戦のマナを試すため、半分ほどにコスト 1 を、3枚に1枚ほどにタップで出る1マナを付ける -/
 def vecCards : List Card :=
   (Sample.game.cards ++ [Sample.spellBreaker, Sample.selfNegator]).mapIdx fun i c =>
-    { c with cost := i % 2, mana := if i % 3 == 0 then 1 else 0 }
+    { c with cost := i % 2, mana := if i % 3 == 0 then 1 + i % 2 else 0,
+             manaColor := if i % 3 == 0 then ["赤", "緑", ""][i % 9 / 3]! else "",
+             colorCost := if i % 4 == 1 then ["赤"] else if i % 4 == 2 then ["緑"] else [] }
 
 /-- フィールドのカード：ゾーンは見本の 4 つと存在しない番号、マスは 0〜5 -/
 def Rand.slot (zones : Nat) : Rand Slot := do
@@ -126,6 +128,9 @@ def checkCases : List Game :=
     { g with rules := { r with fighters := ["儀式"] } },
     { g with rules := { r with life := 0 } },
     { g with rules := { r with placeLimits := [⟨[], 0⟩, ⟨["土地", "罠"], 1⟩] } },
+    { g with rules := { r with manaColors := ["赤", "赤", ""] } },
+    { g with rules := { r with manaColors := ["赤"] },
+             cards := [{ Sample.jinzo with colorCost := ["紫", "赤", "紫"], manaColor := "青" }] },
     { g with cards := [{ Sample.fireball with effects := [.activated [.damage 0, .heal 0]] }] },
     { g with cards := [{ Sample.darkBlessing with effects := [.boost (Sample.sel ["魔法"] .self) 0] }] } ]
 
@@ -184,7 +189,7 @@ def turnJson (t : TurnInfo) : Json :=
          oppTapped: $(t.oppTapped.map slotJson), pending: $(t.pending), blocked: $(t.blocked.map slotJson)}
 
 def tchoiceJson : TChoice → Json
-  | .place h z c up => json% {kind: "place", hand: $(h), zone: $(z), cell: $(c), faceUp: $(up)}
+  | .place h z c up pay => json% {kind: "place", hand: $(h), zone: $(z), cell: $(c), faceUp: $(up), pay: $(pay)}
   | .resolve p k e apply => json% {kind: "resolve", player: $(p), field: $(k), effect: $(e), apply: $(apply)}
   | .attack k t neg => json% {kind: "attack", field: $(k), target: $(t),
       neg: $(neg.map fun (q, j) => json% [$(q), $(j)])}
@@ -204,9 +209,19 @@ def Rand.tchoice (m : Match) : Rand TChoice := do
         (if (← Rand.bool) then pure none else some <$> Rand.next (o.length + 1))
       else some <$> Rand.pick ts
     return .block t (← Rand.negs m.g)
-  match ← Rand.next 12 with
+  -- マナがあれば、払えるカードを置くことを多くする
+  let hand := (m.g tp).hand
+  let payable := (List.range hand.length).filter fun h => (hand[h]?.bind (autoPay · m.turn.pool)).isSome
+  if !m.turn.pool.isEmpty && !payable.isEmpty && (← Rand.bool) then
+    let h ← Rand.pick payable
+    let c := hand[h]!
+    let zs := (List.range playRules.zones.length).filter fun i =>
+      (playRules.zones[i]?.map fun z => z.role == .plain && z.admits.contains c.type).getD false
+    let z ← if zs.isEmpty then pure 0 else Rand.pick zs
+    return .place h z (m.g.freeCell playRules tp z) true ((autoPay c m.turn.pool).getD [])
+  match ← Rand.next 15 with
   | 0 => return .endTurn
-  | 10 | 11 => do
+  | 10 | 11 | 12 | 13 | 14 => do
     -- タップ：マナを出すカードを選びやすくする
     let f := (m.g tp).field
     let ms := (List.range f.length).filter fun i => (f[i]?.map fun (sl : Slot) => decide (0 < sl.card.mana)).getD false
@@ -225,7 +240,14 @@ def Rand.tchoice (m : Match) : Rand TChoice := do
     -- ターンプレイヤーを「自分」として選ぶ（置く・発動）。発動はときどき相手のカードも
     let ch ← Rand.choice (fun q => m.g (if q then tp else !tp))
     match ch with
-    | .place q h z c up => return if q then .place h z c up else .resolve (!tp) 0 0 true
+    | .place q h z c up =>
+      -- 払うマナ：たいていは自動の払い方、ときどき持っているマナから適当に選ぶ
+      let pay ← match (m.g tp).hand[h]?.bind (autoPay · m.turn.pool) with
+        | some pay => if (← Rand.next 5) == 0 then Rand.subset m.turn.pool else pure pay
+        | none => Rand.subset m.turn.pool
+      -- マナを出すカードをタップできるように、表側で置くことを多くする
+      let up' := up || (← Rand.next 3) != 0
+      return if q then .place h z c up' pay else .resolve (!tp) 0 0 true
     | .attack _ k t neg => return .attack k t neg
     | .resolve q k e apply => return .resolve (if q then tp else !tp) k e apply
     | .draw _ => return .place 0 0 0 true

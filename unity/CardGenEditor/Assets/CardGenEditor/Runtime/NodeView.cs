@@ -133,7 +133,8 @@ namespace CardGen.App
                 (n.Rules.FirstTurnDraw ? "・先攻1ターン目も引く" : "") + (n.Rules.FirstTurnAttack ? "・先攻1ターン目も攻撃" : "") +
                 (n.Rules.PlaceLimits.Count > 0 ? $"\n上限：{string.Join("・", n.Rules.PlaceLimits.Select(l => $"{string.Join("+", l.Types)} {l.Count}枚"))}" : "") +
                 (n.Rules.AttackTaps ? "\n攻撃でタップ" : "") + (n.Rules.SummoningSickness ? (n.Rules.AttackTaps ? "・" : "\n") + "召喚酔い" : "") +
-                (n.Rules.Blocking ? "\nMTG 式の戦闘（ブロック）" : ""),
+                (n.Rules.Blocking ? "\nMTG 式の戦闘（ブロック）" : "") +
+                (n.Rules.ManaColors.Count > 0 ? $"\nマナの色：{List(n.Rules.ManaColors)}" : ""),
             NodeKind.Zone =>
                 $"{n.Zone.Count}マス・{(n.Zone.Capacity == Capacity.One ? "1枚まで" : "何枚でも")}・" +
                 $"{(n.Zone.Role == ZoneRole.Deck ? "デッキ" : n.Zone.Role == ZoneRole.Grave ? "墓地" : n.Zone.OnField ? "フィールド上" : "フィールド外")}\n" +
@@ -142,7 +143,8 @@ namespace CardGen.App
             NodeKind.Card =>
                 $"種類：{(n.Card.Type.Length == 0 ? "（未設定）" : n.Card.Type)}" + (n.Card.Tags.Count > 0 ? $"\nタグ：{List(n.Card.Tags)}" : "") +
                 (n.Card.Attack > 0 || n.Card.Defense > 0 ? $"\n攻撃力 {n.Card.Attack}・守備力 {n.Card.Defense}" : "") +
-                (n.Card.Cost > 0 || n.Card.Mana > 0 ? $"\nコスト {n.Card.Cost}" + (n.Card.Mana > 0 ? $"・タップで {n.Card.Mana} マナ" : "") : ""),
+                (n.Card.Mana > 0 ? $"\nタップで{(n.Card.ManaColor == "" ? "無色" : n.Card.ManaColor)}マナ {n.Card.Mana}" : "") +
+                (n.Card.Cost > 0 || n.Card.ColorCost.Count > 0 ? $"\nコスト {(n.Card.Cost > 0 ? n.Card.Cost.ToString() : "")}{(n.Card.Cost > 0 && n.Card.ColorCost.Count > 0 ? "＋" : "")}{string.Concat(n.Card.ColorCost)}" : ""),
             NodeKind.Activate => "発動し、つないだ動きを上から順に行う",
             NodeKind.Destroy => "つないだ範囲のカードをすべて破壊し、持ち主の墓地へ送る",
             NodeKind.Bounce => "つないだ範囲のカードをすべて持ち主の手札に戻す",

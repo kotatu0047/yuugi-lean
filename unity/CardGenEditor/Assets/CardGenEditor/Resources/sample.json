@@ -1,4 +1,4 @@
-{"version": 5,
+{"version": 6,
  "rules":
  {"zones":
   [{"role": "plain",
@@ -42,6 +42,7 @@
   "summonsPerTurn": 1,
   "summoningSickness": false,
   "placeLimits": [],
+  "manaColors": [],
   "life": 8000,
   "handSize": 5,
   "firstTurnDraw": false,
@@ -56,6 +57,7 @@
  [{"type": "魔法",
    "tags": [],
    "name": "サンダー・ボルト",
+   "manaColor": "",
    "mana": 0,
    "effects":
    [{"activated":
@@ -70,10 +72,12 @@
           "excludeSelf": false}}}]}}],
    "defense": 0,
    "cost": 0,
+   "colorCost": [],
    "attack": 0},
   {"type": "魔法",
    "tags": [],
    "name": "ハーピィの羽根帚",
+   "manaColor": "",
    "mana": 0,
    "effects":
    [{"activated":
@@ -88,10 +92,12 @@
           "excludeSelf": false}}}]}}],
    "defense": 0,
    "cost": 0,
+   "colorCost": [],
    "attack": 0},
   {"type": "罠",
    "tags": [],
    "name": "スキルドレイン",
+   "manaColor": "",
    "mana": 0,
    "effects":
    [{"negate":
@@ -104,10 +110,12 @@
        "excludeSelf": false}}}],
    "defense": 0,
    "cost": 0,
+   "colorCost": [],
    "attack": 0},
   {"type": "罠",
    "tags": [],
    "name": "王宮のお触れ",
+   "manaColor": "",
    "mana": 0,
    "effects":
    [{"negate":
@@ -120,10 +128,12 @@
        "excludeSelf": true}}}],
    "defense": 0,
    "cost": 0,
+   "colorCost": [],
    "attack": 0},
   {"type": "モンスター",
    "tags": ["闇属性", "機械族"],
    "name": "人造人間－サイコ・ショッカー",
+   "manaColor": "",
    "mana": 0,
    "effects":
    [{"negate":
@@ -136,10 +146,12 @@
        "excludeSelf": false}}}],
    "defense": 1500,
    "cost": 0,
+   "colorCost": [],
    "attack": 2400},
   {"type": "モンスター",
    "tags": ["闇属性", "戦士族"],
    "name": "D－HERO Bloo－D",
+   "manaColor": "",
    "mana": 0,
    "effects":
    [{"negate":
@@ -152,10 +164,12 @@
        "excludeSelf": false}}}],
    "defense": 600,
    "cost": 0,
+   "colorCost": [],
    "attack": 1900},
   {"type": "魔法",
    "tags": [],
    "name": "一斉送還",
+   "manaColor": "",
    "mana": 0,
    "effects":
    [{"activated":
@@ -170,26 +184,32 @@
           "excludeSelf": false}}}]}}],
    "defense": 0,
    "cost": 0,
+   "colorCost": [],
    "attack": 0},
   {"type": "魔法",
    "tags": [],
    "name": "二枚引き",
+   "manaColor": "",
    "mana": 0,
    "effects": [{"activated": {"actions": [{"draw": {"count": 2}}]}}],
    "defense": 0,
    "cost": 0,
+   "colorCost": [],
    "attack": 0},
   {"type": "モンスター",
    "tags": ["闇属性", "魔法使い族"],
    "name": "ブラック・マジシャン",
+   "manaColor": "",
    "mana": 0,
    "effects": [],
    "defense": 2100,
    "cost": 0,
+   "colorCost": [],
    "attack": 2500},
   {"type": "モンスター",
    "tags": ["闇属性", "戦士族"],
    "name": "闇の指揮官",
+   "manaColor": "",
    "mana": 0,
    "effects":
    [{"boost":
@@ -203,10 +223,12 @@
       "amount": 300}}],
    "defense": 1000,
    "cost": 0,
+   "colorCost": [],
    "attack": 1600},
   {"type": "魔法",
    "tags": [],
    "name": "闇の加護",
+   "manaColor": "",
    "mana": 0,
    "effects":
    [{"boost":
@@ -220,26 +242,32 @@
       "amount": 500}}],
    "defense": 0,
    "cost": 0,
+   "colorCost": [],
    "attack": 0},
   {"type": "魔法",
    "tags": [],
    "name": "ファイヤー・ボール",
+   "manaColor": "",
    "mana": 0,
    "effects": [{"activated": {"actions": [{"damage": {"amount": 500}}]}}],
    "defense": 0,
    "cost": 0,
+   "colorCost": [],
    "attack": 0},
   {"type": "魔法",
    "tags": [],
    "name": "レッド・ポーション",
+   "manaColor": "",
    "mana": 0,
    "effects": [{"activated": {"actions": [{"heal": {"amount": 500}}]}}],
    "defense": 0,
    "cost": 0,
+   "colorCost": [],
    "attack": 0},
   {"type": "魔法",
    "tags": [],
    "name": "縦一閃",
+   "manaColor": "",
    "mana": 0,
    "effects":
    [{"activated":
@@ -254,10 +282,12 @@
           "excludeSelf": false}}}]}}],
    "defense": 0,
    "cost": 0,
+   "colorCost": [],
    "attack": 0},
   {"type": "モンスター",
    "tags": ["戦士族"],
    "name": "援護の兵士",
+   "manaColor": "",
    "mana": 0,
    "effects":
    [{"boost":
@@ -271,4 +301,5 @@
       "amount": 400}}],
    "defense": 1200,
    "cost": 0,
+   "colorCost": [],
    "attack": 1200}]}

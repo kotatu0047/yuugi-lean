@@ -137,26 +137,41 @@ namespace CardGen.App
             {
                 if (m > 0) EndTurn();
                 var p = turn;
-                for (int k = 0; k < state.Get(p).Field.Count; k++)
+                // マナを使うルールなら、マナを出すカード（土地）を先に置き、タップしてから、払えるカードを置けるだけ置く
+                bool DemoPlace(Func<Card, bool> which)
                 {
-                    var tapped = match.Step(game.Rules, TChoice.Tap(k));
-                    if (tapped == null) continue;
-                    log.Add($"{Who(p)}：{state.Get(p).Field[k].Card.Name} をタップ（マナ +{state.Get(p).Field[k].Card.Mana}）");
-                    match = tapped;
-                }
-                var s = state.Get(p);
-                var placed = false;
-                for (int h = 0; h < s.Hand.Count && !placed; h++)
-                    for (int zi = 0; zi < game.Rules.Zones.Count && !placed; zi++)
+                    var s = state.Get(p);
+                    for (int h = 0; h < s.Hand.Count; h++)
                     {
-                        var cell = state.FreeCell(game.Rules, p, zi);
-                        var next = match.Step(game.Rules, TChoice.Place(h, zi, cell, true));
-                        if (next == null) continue;
-                        log.Add($"{Who(p)}：{s.Hand[h].Name} を{CellName(zi, cell)}に表側で置く");
-                        match = next;
-                        judge.Sync(state, game.Rules, turn);
-                        placed = true;
+                        if (!which(s.Hand[h])) continue;
+                        var pay = TurnInfo.AutoPay(s.Hand[h], match.Turn.Pool);
+                        if (pay == null) continue;
+                        for (int zi = 0; zi < game.Rules.Zones.Count; zi++)
+                        {
+                            var cell = state.FreeCell(game.Rules, p, zi);
+                            var next = match.Step(game.Rules, TChoice.Place(h, zi, cell, true, pay));
+                            if (next == null) continue;
+                            log.Add($"{Who(p)}：{s.Hand[h].Name} を{CellName(zi, cell)}に表側で置く{PayText(pay)}");
+                            match = next;
+                            judge.Sync(state, game.Rules, turn);
+                            return true;
+                        }
                     }
+                    return false;
+                }
+                if (UsesMana)
+                {
+                    DemoPlace(c => c.Mana > 0);
+                    for (int k = 0; k < state.Get(p).Field.Count; k++)
+                    {
+                        var tapped = match.Step(game.Rules, TChoice.Tap(k));
+                        if (tapped == null) continue;
+                        log.Add($"{Who(p)}：{state.Get(p).Field[k].Card.Name} をタップ（{ManaText(state.Get(p).Field[k].Card)}）");
+                        match = tapped;
+                    }
+                    while (DemoPlace(c => c.Mana == 0)) { }
+                }
+                else DemoPlace(c => true);
             }
             // MTG 式の戦闘なら、攻撃を宣言してブロックの場面を見せる
             if (game.Rules.Blocking)
@@ -190,13 +205,14 @@ namespace CardGen.App
         void PlaceSelected(int zi, int cell)
         {
             var c = state.Get(selPlayer).Hand[selHand];
-            Do(TChoice.Place(selHand, zi, cell, placeUp), $"{Who(selPlayer)}：{c.Name} を{CellName(zi, cell)}に{(placeUp ? "表側" : "裏側")}で置く");
+            var pay = SelectedPay(selPlayer);
+            Do(TChoice.Place(selHand, zi, cell, placeUp, pay), $"{Who(selPlayer)}：{c.Name} を{CellName(zi, cell)}に{(placeUp ? "表側" : "裏側")}で置く{PayText(pay)}");
         }
 
         /// <summary>選んでいる手札を、ゾーン zi の cell 番目のマスに置けるか</summary>
         bool CanPlaceSelected(bool p, int zi, int cell) =>
             selHand >= 0 && selPlayer == p && p == turn && selHand < state.Get(p).Hand.Count &&
-            match.Step(game.Rules, TChoice.Place(selHand, zi, cell, placeUp)) != null;
+            match.Step(game.Rules, TChoice.Place(selHand, zi, cell, placeUp, SelectedPay(p))) != null;
 
         void Do(TChoice ch, string message)
         {
@@ -209,8 +225,34 @@ namespace CardGen.App
             Render();
         }
 
+        /// <summary>マナの色の表示名（"" は無色）</summary>
+        static string ColorName(string c) => c == "" ? "無色" : c;
+
+        /// <summary>マナの並びを「赤2・緑1」の形にする</summary>
+        static string PoolText(List<string> pool) =>
+            pool.Count == 0 ? "なし" : string.Join("・", pool.GroupBy(x => x).Select(g => $"{ColorName(g.Key)}{g.Count()}"));
+
+        /// <summary>カードのコストの表示（例：「1＋緑」「赤赤」「0」）</summary>
+        public static string CostText(Card c)
+        {
+            var colors = string.Concat(c.ColorCost);
+            if (c.Cost == 0 && colors.Length == 0) return "0";
+            if (colors.Length == 0) return c.Cost.ToString();
+            return c.Cost == 0 ? colors : $"{c.Cost}＋{colors}";
+        }
+
+        /// <summary>タップで出るマナの表示（例：「赤マナ +1」）</summary>
+        static string ManaText(Card c) => $"{ColorName(c.ManaColor)}マナ +{c.Mana}";
+
+        static string PayText(List<string> pay) => pay.Count == 0 ? "" : $"（{PoolText(pay)} で払う）";
+
+        /// <summary>選んでいる手札を置くときに払うマナ（自動の払い方。払えなければ空にして、置けない動きにする）</summary>
+        List<string> SelectedPay(bool p) =>
+            selHand >= 0 && selHand < state.Get(p).Hand.Count
+                ? TurnInfo.AutoPay(state.Get(p).Hand[selHand], match.Turn.Pool) ?? new List<string>() : new List<string>();
+
         /// <summary>マナやタップを使うルールか（カードにコストかマナがあるか、攻撃でタップするか）</summary>
-        bool UsesMana => game.Rules.AttackTaps || game.Cards.Any(c => c.Cost > 0 || c.Mana > 0);
+        bool UsesMana => game.Rules.AttackTaps || game.Cards.Any(c => c.Cost > 0 || c.ColorCost.Count > 0 || c.Mana > 0);
 
         /// <summary>置く場所はあるのに置けない理由（召喚の上限・種類ごとの上限・マナ）。置けるなら null</summary>
         string PlaceBlocked(Slot sl)
@@ -222,8 +264,8 @@ namespace CardGen.App
             foreach (var l in r.PlaceLimits)
                 if (l.Types.Contains(sl.Card.Type) && t.Placed.Count(l.Types.Contains) >= l.Count)
                     return $"このターンはもう「{string.Join("・", l.Types)}」を置けません（1ターンに {l.Count} 枚まで）";
-            if (sl.Card.Cost > t.Pool)
-                return $"マナが足りません（コスト {sl.Card.Cost}・今のマナ {t.Pool}）。マナを出すカードを選んでタップしてください";
+            if (TurnInfo.AutoPay(sl.Card, t.Pool) == null)
+                return $"マナが足りません（コスト {CostText(sl.Card)}・今のマナ {PoolText(t.Pool)}）。マナを出すカードを選んでタップしてください";
             return null;
         }
 
@@ -404,7 +446,7 @@ namespace CardGen.App
                 int idx = i;
                 var hc = s.Hand[i];
                 hand.Add(Chip(hc, true, null, selPlayer == p && selHand == idx, () => { selPlayer = p; selHand = idx; selField = -1; Render(); },
-                    UsesMana && (hc.Cost > 0 || hc.Mana > 0) ? $"コスト {hc.Cost}" + (hc.Mana > 0 ? $"・{hc.Mana}マナ" : "") : null));
+                    UsesMana ? (hc.Mana > 0 ? ManaText(hc) : $"コスト {CostText(hc)}") : null));
             }
 
             // 相手のフィールドは自分のフィールドを逆さまにした形（共通ルール②）
@@ -429,7 +471,7 @@ namespace CardGen.App
             {
                 var notes = new List<string>();
                 if (tapped) notes.Add("タップ中");
-                if (sl.Card.Mana > 0) notes.Add($"{sl.Card.Mana}マナ");
+                if (sl.Card.Mana > 0) notes.Add(ManaText(sl.Card));
                 if (p == turn && match.Turn.Sick(game.Rules, f, sl)) notes.Add("召喚酔い");
                 if (notes.Count > 0) stats = (stats == null ? "" : stats + "\n") + string.Join("・", notes);
             }
@@ -642,7 +684,7 @@ namespace CardGen.App
             var lim = game.Rules.SummonsPerTurn == 0 ? "制限なし" : $"{match.Turn.Summons}/{game.Rules.SummonsPerTurn}";
             side.Add(Text($"このターンの召喚：{lim}・攻撃したカード：{match.Turn.Attacked.Count} 枚", 11, Quiet));
             if (UsesMana)
-                side.Add(Text($"{Who(turn)}のマナ：{match.Turn.Pool}（ターンの終わりに消えます）", 13, Good, true));
+                side.Add(Text($"{Who(turn)}のマナ：{PoolText(match.Turn.Pool)}（ターンの終わりに消えます）", 13, Good, true));
             if (game.Rules.PlaceLimits.Count > 0)
                 side.Add(Text("このターンに置いた枚数：" + string.Join("・", game.Rules.PlaceLimits.Select(l =>
                     $"{string.Join("+", l.Types)} {match.Turn.Placed.Count(l.Types.Contains)}/{l.Count}")), 11, Quiet));
@@ -723,7 +765,7 @@ namespace CardGen.App
                     else if (match.Turn.TapOK(game.Rules, s.Field, sl))
                     {
                         int tk = selField;
-                        ActionButton($"タップしてマナを出す（+{sl.Card.Mana}）", () => Do(TChoice.Tap(tk), $"{Who(turn)}：{sl.Card.Name} をタップ（マナ +{sl.Card.Mana}）"));
+                        ActionButton($"タップしてマナを出す（{ManaText(sl.Card)}）", () => Do(TChoice.Tap(tk), $"{Who(turn)}：{sl.Card.Name} をタップ（{ManaText(sl.Card)}）"));
                     }
                     else if (match.Turn.IsTapped(selPlayer, s.Field, sl))
                         side.Add(Text("タップしています（次の自分のターンの始めに起きます）", 12, Quiet));

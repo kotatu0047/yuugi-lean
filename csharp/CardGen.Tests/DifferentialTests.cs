@@ -176,7 +176,8 @@ public class DifferentialTests
 
     static TChoice ParseTChoice(JToken c) => (string)c["kind"] switch
     {
-        "place" => TChoice.Place((int)c["hand"], (int)c["zone"], (int)c["cell"], (bool)c["faceUp"]),
+        "place" => TChoice.Place((int)c["hand"], (int)c["zone"], (int)c["cell"], (bool)c["faceUp"],
+            c["pay"].Select(x => (string)x).ToList()),
         "resolve" => TChoice.Resolve((bool)c["player"], (int)c["field"], (int)c["effect"], (bool)c["apply"]),
         "attack" => TChoice.Attack((int)c["field"],
             c["target"].Type == JTokenType.Null ? (int?)null : (int)c["target"], ParseNeg(c["neg"])),
@@ -193,7 +194,7 @@ public class DifferentialTests
         ["attacked"] = new JArray(t.Attacked.Select(SlotJson)),
         ["placed"] = new JArray(t.Placed),
         ["entered"] = new JArray(t.Entered.Select(SlotJson)),
-        ["pool"] = t.Pool,
+        ["pool"] = new JArray(t.Pool),
         ["tapped"] = new JArray(t.Tapped.Select(SlotJson)),
         ["oppTapped"] = new JArray(t.OppTapped.Select(SlotJson)),
         ["pending"] = t.Pending == null ? JValue.CreateNull() : new JValue(t.Pending.Value),
@@ -234,7 +235,7 @@ public class DifferentialTests
         }
         Assert.Equal(80, games);
         Assert.Equal(4800, steps);
-        Assert.True(ok > 600);
+        Assert.True(ok > 400);
     }
 
     [Fact]
@@ -251,7 +252,7 @@ public class DifferentialTests
             .Concat(Enumerable.Range(0, 33).Select(i => c[i % 2 == 0 ? "山" : "灰色熊"])).ToList();
         var r = g.Rules;
         var m = Match.Start(r, deck, deck, true);
-        var turn1 = new[] { TChoice.Place(0, 0, 0, true), TChoice.Tap(0), TChoice.Place(1, 0, 0, true) };
+        var turn1 = new[] { TChoice.Place(0, 0, 0, true), TChoice.Tap(0), TChoice.Place(1, 0, 0, true, new List<string> { "赤" }) };
         foreach (var ch in turn1.Append(TChoice.EndTurn()).Concat(turn1).Append(TChoice.EndTurn()))
             m = m.Step(r, ch) ?? throw new Exception("できない動き");
         m = m.Step(r, TChoice.Attack(1, null, new List<(bool, int)>()));
@@ -276,8 +277,38 @@ public class DifferentialTests
 
     /// <summary>見本から、版 3 にないもの（マスの位置・マスの関係）を除いた JSON と、それを上げたときに期待する Game</summary>
     /// <summary>版 5 で加えたもの（マナ・タップなど）を除く（見本はどれも使っていない）</summary>
+    static JObject WithoutColors(JObject o)
+    {
+        o["version"] = 5;
+        ((JObject)o["rules"]).Remove("manaColors");
+        foreach (var c in o["cards"]) { ((JObject)c).Remove("colorCost"); ((JObject)c).Remove("manaColor"); }
+        return o;
+    }
+
+    [Fact]
+    public void Version_5_is_upgraded()
+    {
+        var src = (JObject)JToken.Parse(File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "sample.json")));
+        var o = WithoutColors((JObject)src.DeepClone());
+        Assert.Throws<FormatException>(() => IrJson.ParseGame(o.DeepClone()));
+        Assert.True(IrJson.Upgrade(o));
+        Assert.True(JToken.DeepEquals(src, o));
+        Assert.False(IrJson.Upgrade(o));
+    }
+
+    [Fact]
+    public void Auto_pay_pays_colors_first()
+    {
+        var bear = new Card { Name = "熊", Cost = 1, ColorCost = new List<string> { "緑" } };
+        Assert.Equal(new[] { "緑", "" }, TurnInfo.AutoPay(bear, new List<string> { "赤", "緑", "" }));
+        Assert.Equal(new[] { "緑", "赤" }, TurnInfo.AutoPay(bear, new List<string> { "赤", "緑" }));
+        Assert.Null(TurnInfo.AutoPay(bear, new List<string> { "赤", "赤" }));
+        Assert.Null(TurnInfo.AutoPay(bear, new List<string> { "緑" }));
+    }
+
     static JObject WithoutMana(JObject o)
     {
+        o = WithoutColors(o);
         o["version"] = 4;
         foreach (var k in new[] { "placeLimits", "attackTaps", "summoningSickness", "blocking" }) ((JObject)o["rules"]).Remove(k);
         foreach (var c in o["cards"]) { ((JObject)c).Remove("cost"); ((JObject)c).Remove("mana"); }

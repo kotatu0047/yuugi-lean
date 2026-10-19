@@ -107,7 +107,9 @@ namespace CardGen
                 Attack = Int(o, "attack"),
                 Defense = Int(o, "defense"),
                 Cost = Int(o, "cost"),
+                ColorCost = Strs(o, "colorCost"),
                 Mana = Int(o, "mana"),
+                ManaColor = Str(o, "manaColor"),
             };
         }
 
@@ -149,6 +151,7 @@ namespace CardGen
                 AttackTaps = Bool(o, "attackTaps"),
                 SummoningSickness = Bool(o, "summoningSickness"),
                 Blocking = Bool(o, "blocking"),
+                ManaColors = Strs(o, "manaColors"),
             };
         }
 
@@ -176,7 +179,7 @@ namespace CardGen
         {
             if (o["version"]?.Type != JTokenType.Integer || !(o["rules"] is JObject r)) return false;
             var v = (int)o["version"];
-            if (v < 2 || v > 4) return false;
+            if (v < 2 || v > 5) return false;
             if (v == 2)
             {
                 if (r["summonsPerTurn"] == null) r["summonsPerTurn"] = 1;
@@ -194,11 +197,14 @@ namespace CardGen
             if (r["attackTaps"] == null) r["attackTaps"] = false;
             if (r["summoningSickness"] == null) r["summoningSickness"] = false;
             if (r["blocking"] == null) r["blocking"] = false;
+            if (r["manaColors"] == null) r["manaColors"] = new JArray();
             if (o["cards"] is JArray cs)
                 foreach (var c in cs.OfType<JObject>())
                 {
                     if (c["cost"] == null) c["cost"] = 0;
                     if (c["mana"] == null) c["mana"] = 0;
+                    if (c["colorCost"] == null) c["colorCost"] = new JArray();
+                    if (c["manaColor"] == null) c["manaColor"] = "";
                 }
             o["version"] = Game.CurrentVersion;
             return true;
@@ -243,7 +249,9 @@ namespace CardGen
             ["attack"] = c.Attack,
             ["defense"] = c.Defense,
             ["cost"] = c.Cost,
+            ["colorCost"] = new JArray(c.ColorCost),
             ["mana"] = c.Mana,
+            ["manaColor"] = c.ManaColor,
         };
 
         static JObject ToJson(Zone z) => new JObject
@@ -273,6 +281,7 @@ namespace CardGen
             ["attackTaps"] = r.AttackTaps,
             ["summoningSickness"] = r.SummoningSickness,
             ["blocking"] = r.Blocking,
+            ["manaColors"] = new JArray(r.ManaColors),
         };
 
         public static JObject ToJson(Game g) => new JObject

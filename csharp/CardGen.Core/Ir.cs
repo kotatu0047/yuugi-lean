@@ -94,6 +94,8 @@ namespace CardGen
         /// <summary>MTG 式の戦闘：攻撃されたプレイヤーがブロックするカードを選ぶ。ブロックされたら互いの攻撃力をダメージとして与え、
         /// 守備力以上のダメージを受けた方を破壊する</summary>
         public bool Blocking;
+        /// <summary>マナの色（例：白・青・黒・赤・緑）。空なら色のマナは使わない</summary>
+        public List<string> ManaColors = new List<string>();
 
         /// <summary>i 番目のゾーンが「フィールド上」に数えるゾーンか（Rules.onFieldZone）</summary>
         public bool OnFieldZone(int i) =>
@@ -230,16 +232,20 @@ namespace CardGen
         public List<Effect> Effects = new List<Effect>();
         public int Attack;
         public int Defense;
-        /// <summary>置くのに支払うマナ</summary>
+        /// <summary>置くのに支払うマナのうち、どの色でも払える分</summary>
         public int Cost;
-        /// <summary>タップすると出るマナ</summary>
+        /// <summary>置くのに支払うマナのうち、色の決まった分（例：赤・赤）</summary>
+        public List<string> ColorCost = new List<string>();
+        /// <summary>タップすると出るマナの量</summary>
         public int Mana;
+        /// <summary>タップすると出るマナの色（"" なら無色）</summary>
+        public string ManaColor = "";
     }
 
     /// <summary>エディタが出力する中間表現の全体</summary>
     public sealed class Game
     {
-        public const int CurrentVersion = 5;
+        public const int CurrentVersion = 6;
         public int Version = CurrentVersion;
         public Rules Rules = new Rules();
         public List<Card> Cards = new List<Card>();

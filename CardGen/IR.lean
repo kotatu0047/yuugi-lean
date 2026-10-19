@@ -21,7 +21,8 @@ JSON との相互変換は Lean の自動導出による（`Option` 以外のフ
 版 3 で、ターンのルールを加えた。版 4 で、マスの位置（ゾーンの `cells`）と、範囲の指定の
 マスの関係（`near`：隣・同じ縦列）を加えた。版 5 で、マナとタップ（カードの `cost`・`mana`）、
 1ターンに置ける枚数の上限（`placeLimits`）、攻撃でタップすること（`attackTaps`）、
-召喚酔い（`summoningSickness`）、MTG 式の戦闘（`blocking`）を加えた。
+召喚酔い（`summoningSickness`）、MTG 式の戦闘（`blocking`）を加えた。版 6 で、色のマナ（ルールの `manaColors`、
+カードの `colorCost`・`manaColor`）を加えた。
 
 マスの並びは、縦と横の2本の序列で表す。盤面全体（2人分）は `gridSize`×`gridSize`（49×49。
 前提の「最大 50×50」に収まり、中心のマスがあるように奇数にした）のマス目で、マスは（列, 行）で表し、
@@ -119,6 +120,8 @@ structure Rules where
   /-- MTG 式の戦闘：攻撃されたプレイヤーが、ブロックするカードを選ぶ（選ばなければ直接のダメージ）。
   ブロックされたら、攻撃力（パワー）と守備力（タフネス）で互いにダメージを与え、守備力以上のダメージを受けた方を破壊する -/
   blocking : Bool := false
+  /-- マナの色（例：白・青・黒・赤・緑）。空なら色のマナは使わない -/
+  manaColors : List String := []
 deriving Repr, DecidableEq, FromJson, ToJson
 
 /-- 効果の持ち主から見た陣営 -/
@@ -184,10 +187,14 @@ structure Card where
   attack : Nat := 0
   /-- 守備力（裏側表示で攻撃されたときに使う） -/
   defense : Nat := 0
-  /-- 置くのに支払うマナ -/
+  /-- 置くのに支払うマナのうち、どの色でも払える分 -/
   cost : Nat := 0
-  /-- タップすると出るマナ -/
+  /-- 置くのに支払うマナのうち、色の決まった分（例：`["赤", "赤"]`）。色はルールの `manaColors` のどれか -/
+  colorCost : List String := []
+  /-- タップすると出るマナの量 -/
   mana : Nat := 0
+  /-- タップすると出るマナの色（`""` なら無色） -/
+  manaColor : String := ""
 deriving Repr, DecidableEq, FromJson, ToJson
 
 instance : Inhabited Card := ⟨{ name := "", type := "", tags := [], effects := [] }⟩
@@ -201,7 +208,7 @@ structure Game where
 deriving Repr, DecidableEq, FromJson, ToJson
 
 /-- 現在の形式の版 -/
-def currentVersion : Nat := 5
+def currentVersion : Nat := 6
 
 /-! ## 範囲の指定の意味
 
@@ -272,6 +279,12 @@ def Effect.check (r : Rules) (where_ : String) : Effect → List String
 def Card.check (r : Rules) (c : Card) : List String :=
   (if r.cardTypes.contains c.type then [] else
     [s!"カード「{c.name}」：種類「{c.type}」はルールにありません"]) ++
+  (c.colorCost.eraseDups.filter (!r.manaColors.contains ·)).map
+    (s!"カード「{c.name}」：コストの色「{·}」はルールのマナの色にありません") ++
+  (if c.manaColor != "" && !r.manaColors.contains c.manaColor then
+    [s!"カード「{c.name}」：出るマナの色「{c.manaColor}」はルールのマナの色にありません"] else []) ++
+  (if c.manaColor != "" && c.mana = 0 then
+    [s!"カード「{c.name}」：マナの色があるのに、出るマナの量が0です"] else []) ++
   c.effects.flatMap (·.check r s!"カード「{c.name}」")
 
 def Zone.check (r : Rules) (z : Zone) : List String :=
@@ -313,6 +326,8 @@ def Rules.check (r : Rules) : List String :=
   (dups r.allCells).map (fun c => s!"ルール：マス（{c.col}, {c.row}）が重なっています（相手の側のマスも含む）") ++
   (r.fighters.filter (!r.cardTypes.contains ·)).map (s!"ルール：戦闘できる種類「{·}」はカードの種類にありません") ++
   (if !r.fighters.isEmpty && r.life = 0 then ["ルール：戦闘できる種類があるのに、初期ライフが0です"] else []) ++
+  (dups r.manaColors).map (s!"ルール：マナの色「{·}」が重複しています") ++
+  (if r.manaColors.contains "" then ["ルール：マナの色に空の名前があります"] else []) ++
   r.placeLimits.flatMap fun l =>
     (if l.types.isEmpty then ["ルール：置ける枚数の上限の、カードの種類が空です"] else []) ++
     (l.types.filter (!r.cardTypes.contains ·)).map (s!"ルール：置ける枚数の上限の種類「{·}」はカードの種類にありません") ++

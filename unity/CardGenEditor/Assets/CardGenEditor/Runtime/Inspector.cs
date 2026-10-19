@@ -165,6 +165,7 @@ namespace CardGen.App
                     Toggle("攻撃するとタップする", n.Rules.AttackTaps, v => n.Rules.AttackTaps = v);
                     Toggle("召喚酔い（置いたターンは攻撃・タップできない）", n.Rules.SummoningSickness, v => n.Rules.SummoningSickness = v);
                     Toggle("MTG 式の戦闘（守る側がブロックを選ぶ）", n.Rules.Blocking, v => n.Rules.Blocking = v);
+                    ListField("マナの色", n.Rules.ManaColors, v => n.Rules.ManaColors = v);
                     Hint("MTG 式の戦闘：攻撃されたプレイヤーが、ブロックするカードを選びます（選ばなければ攻撃力のダメージ）。" +
                          "ブロックされたら、攻撃力（パワー）と守備力（タフネス）で互いにダメージを与え、守備力以上のダメージを受けた方を破壊します。");
                     Hint("マナ：ターンプレイヤーは、マナを出すカードをタップしてマナを得て、カードのコストを支払って置きます。" +
@@ -216,8 +217,11 @@ namespace CardGen.App
                     ListField("タグ", n.Card.Tags, v => n.Card.Tags = v);
                     Int("攻撃力", n.Card.Attack, v => n.Card.Attack = v);
                     Int("守備力", n.Card.Defense, v => n.Card.Defense = v);
-                    Int("コスト（置くのに払うマナ）", n.Card.Cost, v => n.Card.Cost = Math.Max(0, v));
-                    Int("タップで出るマナ", n.Card.Mana, v => n.Card.Mana = Math.Max(0, v));
+                    Int("コスト（どの色でも払える分）", n.Card.Cost, v => n.Card.Cost = Math.Max(0, v));
+                    ListField("コスト（色の決まった分）", n.Card.ColorCost, v => n.Card.ColorCost = v);
+                    Int("タップで出るマナの量", n.Card.Mana, v => n.Card.Mana = Math.Max(0, v));
+                    Text("タップで出るマナの色", n.Card.ManaColor, v => n.Card.ManaColor = v.Trim());
+                    Hint("色の決まったコストは、色をその数だけ並べます（例：「白、白」）。マナの色はルールの「マナの色」から選び、空なら無色です。");
                     break;
                 case NodeKind.Activate:
                     Hint("発動し、解決したときに、つないだ動き（破壊・手札に戻す・ドロー・ダメージ・回復）を上から順に行います。無効にされていれば何も起きません。");

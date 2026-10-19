@@ -51,6 +51,11 @@ namespace CardGen
         static IEnumerable<string> Card(Rules r, Card c)
         {
             if (!r.CardTypes.Contains(c.Type)) yield return $"カード「{c.Name}」：種類「{c.Type}」はルールにありません";
+            foreach (var col in c.ColorCost.Distinct().Where(x => !r.ManaColors.Contains(x)))
+                yield return $"カード「{c.Name}」：コストの色「{col}」はルールのマナの色にありません";
+            if (c.ManaColor != "" && !r.ManaColors.Contains(c.ManaColor))
+                yield return $"カード「{c.Name}」：出るマナの色「{c.ManaColor}」はルールのマナの色にありません";
+            if (c.ManaColor != "" && c.Mana == 0) yield return $"カード「{c.Name}」：マナの色があるのに、出るマナの量が0です";
             foreach (var m in c.Effects.SelectMany(e => Effect(r, $"カード「{c.Name}」", e))) yield return m;
         }
 
@@ -90,6 +95,8 @@ namespace CardGen
             foreach (var t in r.Fighters.Where(t => !r.CardTypes.Contains(t)))
                 yield return $"ルール：戦闘できる種類「{t}」はカードの種類にありません";
             if (r.Fighters.Count > 0 && r.Life == 0) yield return "ルール：戦闘できる種類があるのに、初期ライフが0です";
+            foreach (var col in Dups(r.ManaColors)) yield return $"ルール：マナの色「{col}」が重複しています";
+            if (r.ManaColors.Contains("")) yield return "ルール：マナの色に空の名前があります";
             foreach (var l in r.PlaceLimits)
             {
                 if (l.Types.Count == 0) yield return "ルール：置ける枚数の上限の、カードの種類が空です";

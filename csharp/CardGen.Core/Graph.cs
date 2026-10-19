@@ -27,6 +27,7 @@ namespace CardGen
         public bool AttackTaps;
         public bool SummoningSickness;
         public bool Blocking;
+        public List<string> ManaColors = new List<string>();
     }
 
     /// <summary>カードのノードの中身（効果はつないだノードから作る）</summary>
@@ -38,7 +39,9 @@ namespace CardGen
         public int Attack;
         public int Defense;
         public int Cost;
+        public List<string> ColorCost = new List<string>();
         public int Mana;
+        public string ManaColor = "";
     }
 
     public sealed class Node
@@ -187,6 +190,7 @@ namespace CardGen
                 rules.AttackTaps = r.Rules.AttackTaps;
                 rules.SummoningSickness = r.Rules.SummoningSickness;
                 rules.Blocking = r.Rules.Blocking;
+                rules.ManaColors = r.Rules.ManaColors.ToList();
                 rules.Zones = Children(r).Select(z => z.Zone).ToList();
             }
             foreach (var z in Nodes.Where(n => n.Kind == NodeKind.Zone && Parents(n).Count == 0))
@@ -196,7 +200,8 @@ namespace CardGen
             foreach (var c in Nodes.Where(n => n.Kind == NodeKind.Card).OrderBy(n => n.Y).ThenBy(n => n.X))
             {
                 var card = new Card { Name = c.Card.Name, Type = c.Card.Type, Tags = c.Card.Tags.ToList(),
-                                      Attack = c.Card.Attack, Defense = c.Card.Defense, Cost = c.Card.Cost, Mana = c.Card.Mana };
+                                      Attack = c.Card.Attack, Defense = c.Card.Defense, Cost = c.Card.Cost, Mana = c.Card.Mana,
+                                      ColorCost = c.Card.ColorCost.ToList(), ManaColor = c.Card.ManaColor };
                 Selector SelectorOf(Node n, string what)
                 {
                     var s = Children(n).FirstOrDefault();
@@ -268,6 +273,7 @@ namespace CardGen
             r.Rules.AttackTaps = g.Rules.AttackTaps;
             r.Rules.SummoningSickness = g.Rules.SummoningSickness;
             r.Rules.Blocking = g.Rules.Blocking;
+            r.Rules.ManaColors = g.Rules.ManaColors.ToList();
             float zy = 40;
             foreach (var z in g.Rules.Zones)
             {
@@ -282,7 +288,7 @@ namespace CardGen
             {
                 var cn = Add(NodeKind.Card, colCard, y);
                 cn.Card = new CardData { Name = c.Name, Type = c.Type, Tags = c.Tags.ToList(), Attack = c.Attack, Defense = c.Defense,
-                                     Cost = c.Cost, Mana = c.Mana };
+                                     Cost = c.Cost, Mana = c.Mana, ColorCost = c.ColorCost.ToList(), ManaColor = c.ManaColor };
                 float ey = y;
                 foreach (var e in c.Effects)
                 {
