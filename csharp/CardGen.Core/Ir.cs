@@ -58,6 +58,14 @@ namespace CardGen
         public List<Cell> Cells = new List<Cell>();
     }
 
+    /// <summary>1ターンに置ける枚数の上限（例：土地は1ターンに1枚）</summary>
+    public sealed class PlaceLimit
+    {
+        /// <summary>対象のカードの種類（このどれか）</summary>
+        public List<string> Types = new List<string>();
+        public int Count;
+    }
+
     /// <summary>ゲームのルール</summary>
     public sealed class Rules
     {
@@ -77,6 +85,12 @@ namespace CardGen
         public bool FirstTurnDraw;
         /// <summary>先攻の最初のターンにも攻撃できるか</summary>
         public bool FirstTurnAttack;
+        /// <summary>1ターンに置ける枚数の上限（種類ごと）</summary>
+        public List<PlaceLimit> PlaceLimits = new List<PlaceLimit>();
+        /// <summary>攻撃するとタップする（タップしているカードは攻撃できない）</summary>
+        public bool AttackTaps;
+        /// <summary>置いたターンには、戦闘できるカードで攻撃したりマナを出したりできない（召喚酔い）</summary>
+        public bool SummoningSickness;
 
         /// <summary>i 番目のゾーンが「フィールド上」に数えるゾーンか（Rules.onFieldZone）</summary>
         public bool OnFieldZone(int i) =>
@@ -213,12 +227,16 @@ namespace CardGen
         public List<Effect> Effects = new List<Effect>();
         public int Attack;
         public int Defense;
+        /// <summary>置くのに支払うマナ</summary>
+        public int Cost;
+        /// <summary>タップすると出るマナ</summary>
+        public int Mana;
     }
 
     /// <summary>エディタが出力する中間表現の全体</summary>
     public sealed class Game
     {
-        public const int CurrentVersion = 4;
+        public const int CurrentVersion = 5;
         public int Version = CurrentVersion;
         public Rules Rules = new Rules();
         public List<Card> Cards = new List<Card>();

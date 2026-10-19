@@ -19,7 +19,9 @@ JSON との相互変換は Lean の自動導出による（`Option` 以外のフ
 
 版 2 で、ライフと戦闘（ルールの `life`・`fighters`、カードの `attack`・`defense`）を加えた。
 版 3 で、ターンのルールを加えた。版 4 で、マスの位置（ゾーンの `cells`）と、範囲の指定の
-マスの関係（`near`：隣・同じ縦列）を加えた。
+マスの関係（`near`：隣・同じ縦列）を加えた。版 5 で、マナとタップ（カードの `cost`・`mana`）、
+1ターンに置ける枚数の上限（`placeLimits`）、攻撃でタップすること（`attackTaps`）、
+召喚酔い（`summoningSickness`）を加えた。
 
 マスの並びは、縦と横の2本の序列で表す。盤面全体（2人分）は `gridSize`×`gridSize`（49×49。
 前提の「最大 50×50」に収まり、中心のマスがあるように奇数にした）のマス目で、マスは（列, 行）で表し、
@@ -81,6 +83,13 @@ structure Zone where
   cells : List Cell := []
 deriving Repr, DecidableEq, FromJson, ToJson
 
+/-- 1ターンに置ける枚数の上限（例：土地は1ターンに1枚） -/
+structure PlaceLimit where
+  /-- 対象のカードの種類（このどれか） -/
+  types : List TypeName
+  count : Nat
+deriving Repr, DecidableEq, FromJson, ToJson
+
 /-- ゲームのルール -/
 structure Rules where
   cardTypes : List TypeName
@@ -101,6 +110,12 @@ structure Rules where
   firstTurnDraw : Bool := false
   /-- 先攻の最初のターンにも攻撃できるか -/
   firstTurnAttack : Bool := false
+  /-- 1ターンに置ける枚数の上限（種類ごと） -/
+  placeLimits : List PlaceLimit := []
+  /-- 攻撃するとタップする（タップしているカードは攻撃できない） -/
+  attackTaps : Bool := false
+  /-- 置いたターンには、戦闘できるカードで攻撃したりマナを出したりできない（召喚酔い） -/
+  summoningSickness : Bool := false
 deriving Repr, DecidableEq, FromJson, ToJson
 
 /-- 効果の持ち主から見た陣営 -/
@@ -166,6 +181,10 @@ structure Card where
   attack : Nat := 0
   /-- 守備力（裏側表示で攻撃されたときに使う） -/
   defense : Nat := 0
+  /-- 置くのに支払うマナ -/
+  cost : Nat := 0
+  /-- タップすると出るマナ -/
+  mana : Nat := 0
 deriving Repr, DecidableEq, FromJson, ToJson
 
 instance : Inhabited Card := ⟨{ name := "", type := "", tags := [], effects := [] }⟩
@@ -179,7 +198,7 @@ structure Game where
 deriving Repr, DecidableEq, FromJson, ToJson
 
 /-- 現在の形式の版 -/
-def currentVersion : Nat := 4
+def currentVersion : Nat := 5
 
 /-! ## 範囲の指定の意味
 
@@ -290,7 +309,11 @@ def Rules.check (r : Rules) : List String :=
   r.zones.flatMap (·.check r) ++
   (dups r.allCells).map (fun c => s!"ルール：マス（{c.col}, {c.row}）が重なっています（相手の側のマスも含む）") ++
   (r.fighters.filter (!r.cardTypes.contains ·)).map (s!"ルール：戦闘できる種類「{·}」はカードの種類にありません") ++
-  (if !r.fighters.isEmpty && r.life = 0 then ["ルール：戦闘できる種類があるのに、初期ライフが0です"] else [])
+  (if !r.fighters.isEmpty && r.life = 0 then ["ルール：戦闘できる種類があるのに、初期ライフが0です"] else []) ++
+  r.placeLimits.flatMap fun l =>
+    (if l.types.isEmpty then ["ルール：置ける枚数の上限の、カードの種類が空です"] else []) ++
+    (l.types.filter (!r.cardTypes.contains ·)).map (s!"ルール：置ける枚数の上限の種類「{·}」はカードの種類にありません") ++
+    (if l.count = 0 then [s!"ルール：「{"・".intercalate l.types}」を置ける枚数の上限が0です"] else [])
 
 def Game.check (g : Game) : List String :=
   (if g.version = currentVersion then [] else

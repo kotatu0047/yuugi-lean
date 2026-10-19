@@ -18,6 +18,7 @@ namespace CardGen.App
     /// ターンプレイヤーだけ（場のカードの発動はどちらのターンでもできる）、召喚は1ターンにルールの回数まで、攻撃は1ターンに
     /// 1枚1回まで。「ターン終了」で相手のターンになり、新しいターンプレイヤーがルールの枚数を引く。
     /// マスの位置があるゾーンは、盤面のマス目の並び（相手が上、自分が下）で表示し、空いているマスをクリックして置ける。
+    /// マナを使うルールでは、ターンプレイヤーがマナを出すカードをタップしてマナを得て、コストを払ってカードを置く。
     /// </summary>
     public sealed class PlayView : VisualElement
     {
@@ -128,6 +129,13 @@ namespace CardGen.App
             {
                 if (m > 0) EndTurn();
                 var p = turn;
+                for (int k = 0; k < state.Get(p).Field.Count; k++)
+                {
+                    var tapped = match.Step(game.Rules, TChoice.Tap(k));
+                    if (tapped == null) continue;
+                    log.Add($"{Who(p)}：{state.Get(p).Field[k].Card.Name} をタップ（マナ +{state.Get(p).Field[k].Card.Mana}）");
+                    match = tapped;
+                }
                 var s = state.Get(p);
                 var placed = false;
                 for (int h = 0; h < s.Hand.Count && !placed; h++)
@@ -180,6 +188,24 @@ namespace CardGen.App
             judge.Sync(state, game.Rules, turn);
             ClearSelection();
             Render();
+        }
+
+        /// <summary>マナやタップを使うルールか（カードにコストかマナがあるか、攻撃でタップするか）</summary>
+        bool UsesMana => game.Rules.AttackTaps || game.Cards.Any(c => c.Cost > 0 || c.Mana > 0);
+
+        /// <summary>置く場所はあるのに置けない理由（召喚の上限・種類ごとの上限・マナ）。置けるなら null</summary>
+        string PlaceBlocked(Slot sl)
+        {
+            var r = game.Rules;
+            var t = match.Turn;
+            if (MatchState.Fights(r, sl) && r.SummonsPerTurn != 0 && t.Summons >= r.SummonsPerTurn)
+                return $"このターンはもう召喚できません（1ターンに {r.SummonsPerTurn} 回まで）";
+            foreach (var l in r.PlaceLimits)
+                if (l.Types.Contains(sl.Card.Type) && t.Placed.Count(l.Types.Contains) >= l.Count)
+                    return $"このターンはもう「{string.Join("・", l.Types)}」を置けません（1ターンに {l.Count} 枚まで）";
+            if (sl.Card.Cost > t.Pool)
+                return $"マナが足りません（コスト {sl.Card.Cost}・今のマナ {t.Pool}）。マナを出すカードを選んでタップしてください";
+            return null;
         }
 
         // ---- 無効の状態 ----
@@ -357,7 +383,9 @@ namespace CardGen.App
             for (int i = 0; i < s.Hand.Count; i++)
             {
                 int idx = i;
-                hand.Add(Chip(s.Hand[i], true, null, selPlayer == p && selHand == idx, () => { selPlayer = p; selHand = idx; selField = -1; Render(); }));
+                var hc = s.Hand[i];
+                hand.Add(Chip(hc, true, null, selPlayer == p && selHand == idx, () => { selPlayer = p; selHand = idx; selField = -1; Render(); },
+                    UsesMana && (hc.Cost > 0 || hc.Mana > 0) ? $"コスト {hc.Cost}" + (hc.Mana > 0 ? $"・{hc.Mana}マナ" : "") : null));
             }
 
             // 相手のフィールドは自分のフィールドを逆さまにした形（共通ルール②）
@@ -376,8 +404,19 @@ namespace CardGen.App
                 var atk = state.AtkOf(game.Rules, NegList(neg), (p, i), sl);
                 stats = $"攻 {atk}" + (atk != sl.Card.Attack ? $"（元 {sl.Card.Attack}）" : "") + $"・守 {sl.Card.Defense}";
             }
-            return Chip(sl.Card, sl.FaceUp, st, selPlayer == p && selField == i,
+            var f = state.Get(p).Field;
+            if (UsesMana)
+            {
+                var notes = new List<string>();
+                if (match.Turn.IsTapped(p, f, sl)) notes.Add("タップ中");
+                if (sl.Card.Mana > 0) notes.Add($"{sl.Card.Mana}マナ");
+                if (p == turn && match.Turn.Sick(game.Rules, f, sl)) notes.Add("召喚酔い");
+                if (notes.Count > 0) stats = (stats == null ? "" : stats + "\n") + string.Join("・", notes);
+            }
+            var chip = Chip(sl.Card, sl.FaceUp, st, selPlayer == p && selField == i,
                 () => { selPlayer = p; selField = i; selHand = -1; Render(); }, stats);
+            if (UsesMana && match.Turn.IsTapped(p, f, sl)) chip.style.opacity = 0.6f;
+            return chip;
         }
 
         /// <summary>空いているマスに置くボタン</summary>
@@ -534,6 +573,11 @@ namespace CardGen.App
             side.Add(turnRow);
             var lim = game.Rules.SummonsPerTurn == 0 ? "制限なし" : $"{match.Turn.Summons}/{game.Rules.SummonsPerTurn}";
             side.Add(Text($"このターンの召喚：{lim}・攻撃したカード：{match.Turn.Attacked.Count} 枚", 11, Quiet));
+            if (UsesMana)
+                side.Add(Text($"{Who(turn)}のマナ：{match.Turn.Pool}（ターンの終わりに消えます）", 13, Good, true));
+            if (game.Rules.PlaceLimits.Count > 0)
+                side.Add(Text("このターンに置いた枚数：" + string.Join("・", game.Rules.PlaceLimits.Select(l =>
+                    $"{string.Join("+", l.Types)} {match.Turn.Placed.Count(l.Types.Contains)}/{l.Count}")), 11, Quiet));
             side.Add(Text("両方のプレイヤーを動かせます。カードを置く・攻撃するのはターンプレイヤーだけで、場のカードの発動はどちらのターンでも" +
                           "できます。引くのはターンの最初だけです。カードを選ぶと、できる動きが出ます。", 11, Quiet));
             if (judge.Choices != null)
@@ -565,12 +609,12 @@ namespace CardGen.App
                         var free = Enumerable.Range(0, z.Count).Where(k => CanPlaceSelected(selPlayer, zi, k)).ToList();
                         if (free.Count == 0)
                         {
-                            // 置ける場所なのに召喚の上限で置けないときは、そう伝える
+                            // 置ける場所なのに、召喚の上限・種類ごとの上限・マナで置けないときは、そう伝える
                             var cell = state.FreeCell(game.Rules, selPlayer, zi);
-                            if (state.Step(game.Rules, Choice.Place(selPlayer, selHand, zi, cell, placeUp)) != null && !any &&
-                                !match.SummonOK(game.Rules, new Slot(zi, cell, c, placeUp)))
+                            var why = PlaceBlocked(new Slot(zi, cell, c, placeUp));
+                            if (state.Step(game.Rules, Choice.Place(selPlayer, selHand, zi, cell, placeUp)) != null && !any && why != null)
                             {
-                                side.Add(Text($"このターンはもう召喚できません（1ターンに {game.Rules.SummonsPerTurn} 回まで）", 12, Warn));
+                                side.Add(Text(why, 12, Warn));
                                 any = true;
                             }
                             continue;
@@ -602,6 +646,22 @@ namespace CardGen.App
                     if (st != "有効")
                         ActionButton("無効にされた状態で解決する（何も起きない）", () => Do(TChoice.Resolve(selPlayer, selField, ei, false), $"{Who(selPlayer)}：{sl.Card.Name} を発動したが無効"));
                 }
+                if (sl.Card.Mana > 0)
+                {
+                    if (selPlayer != turn)
+                        side.Add(Text($"{Who(turn)}のターンなので、タップしてマナを出せません", 12, Quiet));
+                    else if (match.Turn.TapOK(game.Rules, s.Field, sl))
+                    {
+                        int tk = selField;
+                        ActionButton($"タップしてマナを出す（+{sl.Card.Mana}）", () => Do(TChoice.Tap(tk), $"{Who(turn)}：{sl.Card.Name} をタップ（マナ +{sl.Card.Mana}）"));
+                    }
+                    else if (match.Turn.IsTapped(selPlayer, s.Field, sl))
+                        side.Add(Text("タップしています（次の自分のターンの始めに起きます）", 12, Quiet));
+                    else if (match.Turn.Sick(game.Rules, s.Field, sl))
+                        side.Add(Text("召喚酔いで、このターンはタップできません", 12, Quiet));
+                    else if (!sl.FaceUp)
+                        side.Add(Text("裏側のカードはタップしてマナを出せません", 12, Quiet));
+                }
                 foreach (var n in sl.Card.Effects.OfType<Negate>())
                     side.Add(Text($"永続効果：{NodeView.SelectorSummary(n.Target).Replace("\n", "・")}の効果を無効にする", 11, Quiet));
                 foreach (var bo in sl.Card.Effects.OfType<Boost>())
@@ -612,6 +672,10 @@ namespace CardGen.App
                     side.Add(Text("先攻の最初のターンは攻撃できません", 12, Quiet));
                 else if (sl.FaceUp && MatchState.Fights(game.Rules, sl) && !match.Turn.CanAttack(sl, s.Field))
                     side.Add(Text("このカードはこのターンにもう攻撃しました", 12, Quiet));
+                else if (sl.FaceUp && MatchState.Fights(game.Rules, sl) && game.Rules.AttackTaps && match.Turn.IsTapped(selPlayer, s.Field, sl))
+                    side.Add(Text("タップしているので攻撃できません", 12, Quiet));
+                else if (sl.FaceUp && MatchState.Fights(game.Rules, sl) && match.Turn.Sick(game.Rules, s.Field, sl))
+                    side.Add(Text("召喚酔いで、置いたターンには攻撃できません", 12, Quiet));
                 else if (sl.FaceUp && MatchState.Fights(game.Rules, sl))
                 {
                     var negs = NegList(neg);

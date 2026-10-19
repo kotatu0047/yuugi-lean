@@ -155,7 +155,15 @@ def turnClaims (r : Rules) : List ClaimOut :=
   (if r.fighters.isEmpty then [] else
     [⟨"戦闘できるカードの攻撃は、1ターンに1枚1回まで",
       ["攻撃したカードの記録は、いつもターンプレイヤーのフィールドのカードの一部（同じカードの枚数も含めて）"],
-      "proved", "CardGen.TReachable.attacked_bagLe"⟩])
+      "proved", "CardGen.TReachable.attacked_bagLe"⟩]) ++
+  r.placeLimits.map (fun l =>
+    ⟨s!"「{"・".intercalate l.types}」を置けるのは、1ターンに {l.count} 枚まで",
+      [s!"ルール：「{"・".intercalate l.types}」を1ターンに置ける枚数の上限は {l.count}"], "proved",
+      "CardGen.TReachable.placed_le"⟩) ++
+  (if r.attackTaps then
+    [⟨"タップしているカードは、持ち主の次のターンが来るまで、攻撃にもマナにも使えない",
+      ["ルール：攻撃するとタップする", "タップしたカードの記録は、いつもフィールドのカードの一部（同じカードの枚数も含めて）"],
+      "proved", "CardGen.TReachable.fits"⟩] else [])
 
 def report (input : String) : Report :=
   let fail (es : List String) : Report := ⟨1, false, es, [], none⟩

@@ -397,6 +397,53 @@ def turn0 : Match := Match.start rules (fun _ => turnDeck) true
 #guard (Match.run { rules with summonsPerTurn := 0 }
   (Match.start { rules with summonsPerTurn := 0 } (fun _ => turnDeck) true) [.place 0 0 0 true, .place 0 0 1 true]).isSome
 
+/-! ## マナとタップ -/
+
+/-- タップすると1マナを出す罠（土地の代わり） -/
+def spring : Card := { name := "マナの泉", type := "罠", tags := [], effects := [], mana := 1 }
+/-- コスト 1 のモンスター -/
+def cheap : Card := { jinzo with name := "安いショッカー", cost := 1 }
+
+/-- 罠は1ターンに1枚まで、攻撃でタップ、召喚酔いあり、先攻の最初のターンも攻撃できる -/
+def manaRules : Rules :=
+  { rules with placeLimits := [⟨["罠"], 1⟩], attackTaps := true, summoningSickness := true, firstTurnAttack := true }
+
+/-- 手札：マナの泉・マナの泉・安いショッカー・闇の加護・ブラック・マジシャン -/
+def mana0 : Match :=
+  Match.start manaRules (fun _ => [spring, spring, cheap, darkBlessing, blackMagician, fireball, fireball, fireball]) true
+
+-- 罠（マナの泉）は1ターンに1枚まで
+#guard (Match.run manaRules mana0 [.place 0 1 0 true]).isSome
+#guard (Match.run manaRules mana0 [.place 0 1 0 true, .place 0 1 1 true]).isNone
+-- コスト 1 のモンスターは、マナがなければ置けない。泉をタップして1マナを出せば置ける
+#guard (Match.run manaRules mana0 [.place 0 1 0 true, .place 1 0 0 true]).isNone
+#guard match Match.run manaRules mana0 [.place 0 1 0 true, .tap 0] with
+  | some m => m.turn.pool == 1
+  | none => false
+#guard match Match.run manaRules mana0 [.place 0 1 0 true, .tap 0, .place 1 0 0 true] with
+  | some m => m.turn.pool == 0 && (m.g true).field.length == 2
+  | none => false
+-- タップしているカードはタップできない。マナを出さないカード（ブラック・マジシャン）もタップできない
+#guard (Match.run manaRules mana0 [.place 0 1 0 true, .tap 0, .tap 0]).isNone
+#guard (Match.run manaRules mana0 [.place 0 1 0 true, .tap 0, .place 1 0 0 true, .tap 1]).isNone
+-- 召喚酔い：置いたターンには攻撃できない。次の自分のターンには攻撃でき、攻撃するとタップする
+#guard (Match.run manaRules mana0 [.place 0 1 0 true, .tap 0, .place 1 0 0 true, .attack 1 none []]).isNone
+#guard match Match.run manaRules mana0
+    [.place 0 1 0 true, .tap 0, .place 1 0 0 true, .endTurn, .endTurn, .attack 1 none []] with
+  | some m => m.turn.tapped.length == 1 && (m.g false).life == 8000 - 2400
+  | none => false
+-- マナはターンの終わりに消える。タップしたカードは、次の自分のターンの始めに起きる
+#guard match Match.run manaRules mana0 [.place 0 1 0 true, .tap 0, .endTurn] with
+  | some m => m.turn.pool == 0 && m.turn.oppTapped.length == 1
+  | none => false
+#guard (Match.run manaRules mana0 [.place 0 1 0 true, .tap 0, .endTurn, .endTurn, .tap 0]).isSome
+-- 攻撃でタップしたカードは、そのターンにはマナにも使えない（攻撃でタップしないルールなら、タップしていない）
+#guard match Match.run { manaRules with attackTaps := false } (Match.start { manaRules with attackTaps := false }
+    (fun _ => [spring, spring, cheap, darkBlessing, blackMagician, fireball, fireball, fireball]) true)
+    [.place 0 1 0 true, .tap 0, .place 1 0 0 true, .endTurn, .endTurn, .attack 1 none []] with
+  | some m => m.turn.tapped.isEmpty
+  | none => false
+
 /-! ## マスの並び -/
 
 -- 見本のゾーンのマスは盤面の中で重ならない（相手の側も含む）。重ねたり、盤面の外に置いたりすると誤り

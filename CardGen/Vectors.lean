@@ -15,7 +15,8 @@ C# のゲームエンジンが Lean の定義と同じ結果を出すかを確�
 - `boards`：盤面の無効の関係（`instRel`）と判定の手続きの分類（`analyzeBoard`）
 - `timed`：適用の時刻つきの判定の1歩（`TSys.succ`）。有効・無効と適用の順番、ターンプレイヤーをいろいろに選ぶ
 - `attack`：攻撃力（`State.atkOf`）。無効になっているカードの位置もいろいろに選ぶ
-- `turnPlay`：ターンのある対戦（`Match.step?`）。ターンのルール（召喚の上限・引く枚数など）も対戦ごとに変える
+- `turnPlay`：ターンのある対戦（`Match.step?`）。ターンのルール（召喚の上限・引く枚数・種類ごとの上限・
+  攻撃でタップ・召喚酔いなど）も対戦ごとに変える。マナとタップも含む
 - `play`：小さなルール（`playRules`）での対戦。開始時の状態から、選んだ動きを `State.step?` で進める
   （できない動きは `null`）
 
@@ -79,8 +80,11 @@ def verdictName : Verdict → String
   | .ok => "ok" | .someLoop => "someLoop" | .multiStable => "multiStable"
   | .cannotHalt => "cannotHalt" | .noStable => "noStable"
 
-/-- テストに使うカード：見本の13枚と、循環のない例・自分を無効にする例 -/
-def vecCards : List Card := Sample.game.cards ++ [Sample.spellBreaker, Sample.selfNegator]
+/-- テストに使うカード：見本のカードと、循環のない例・自分を無効にする例。
+ターンのある対戦のマナを試すため、半分ほどにコスト 1 を、3枚に1枚ほどにタップで出る1マナを付ける -/
+def vecCards : List Card :=
+  (Sample.game.cards ++ [Sample.spellBreaker, Sample.selfNegator]).mapIdx fun i c =>
+    { c with cost := i % 2, mana := if i % 3 == 0 then 1 else 0 }
 
 /-- フィールドのカード：ゾーンは見本の 4 つと存在しない番号、マスは 0〜5 -/
 def Rand.slot (zones : Nat) : Rand Slot := do
@@ -174,21 +178,29 @@ def Rand.choice (g : State) : Rand Choice := do
     return .resolve p k (if (← Rand.next 5) == 0 then 1 else 0) ((← Rand.next 4) != 0)
 
 def turnJson (t : TurnInfo) : Json :=
-  json% {tp: $(t.tp), count: $(t.count), summons: $(t.summons), attacked: $(t.attacked.map slotJson)}
+  json% {tp: $(t.tp), count: $(t.count), summons: $(t.summons), attacked: $(t.attacked.map slotJson),
+         placed: $(t.placed), entered: $(t.entered.map slotJson), pool: $(t.pool), tapped: $(t.tapped.map slotJson),
+         oppTapped: $(t.oppTapped.map slotJson)}
 
 def tchoiceJson : TChoice → Json
   | .place h z c up => json% {kind: "place", hand: $(h), zone: $(z), cell: $(c), faceUp: $(up)}
   | .resolve p k e apply => json% {kind: "resolve", player: $(p), field: $(k), effect: $(e), apply: $(apply)}
   | .attack k t neg => json% {kind: "attack", field: $(k), target: $(t),
       neg: $(neg.map fun (q, j) => json% [$(q), $(j)])}
+  | .tap k => json% {kind: "tap", field: $(k)}
   | .endTurn => json% {kind: "endTurn"}
 
 /-- ターンのある対戦の動きを1つ選ぶ（できない動きも混ぜる）。攻撃は、ターンプレイヤーの戦闘できるカードと、
 攻撃できる対象を選びやすくする -/
 def Rand.tchoice (m : Match) : Rand TChoice := do
   let tp := m.turn.tp
-  match ← Rand.next 10 with
+  match ← Rand.next 12 with
   | 0 => return .endTurn
+  | 10 | 11 => do
+    -- タップ：マナを出すカードを選びやすくする
+    let f := (m.g tp).field
+    let ms := (List.range f.length).filter fun i => (f[i]?.map fun (sl : Slot) => decide (0 < sl.card.mana)).getD false
+    return .tap (← if ms.isEmpty || (← Rand.next 5) == 0 then Rand.next (f.length + 1) else Rand.pick ms)
   | 1 | 2 | 3 => do
     let f := (m.g tp).field
     let mons := (List.range f.length).filter fun i => (f[i]?.map fun sl => sl.faceUp && playRules.fights sl).getD false
@@ -264,17 +276,19 @@ def vectors : Json := Id.run do
         steps := steps.push (json% {choice: $(choiceJson ch), result: $(next.map stateJson)})
         g := next.getD g
       return json% {decks: [$(d1.map (·.name)), $(d2.map (·.name))], start: $(stateJson g0), steps: $(steps)}
-    let turnPlay ← Rand.list 30 do
+    let turnPlay ← Rand.list 80 do
       let r : Rules := { playRules with
         summonsPerTurn := ← Rand.next 3, drawPerTurn := ← Rand.next 3,
-        firstTurnDraw := ← Rand.bool, firstTurnAttack := ← Rand.bool }
+        firstTurnDraw := ← Rand.bool, firstTurnAttack := ← Rand.bool,
+        placeLimits := ← Rand.pick [[], [⟨["罠"], 1⟩], [⟨["魔法", "罠"], 2⟩, ⟨["モンスター"], 1⟩]],
+        attackTaps := ← Rand.bool, summoningSickness := ← Rand.bool }
       let d1 ← Rand.list r.deckSize (Rand.pick vecCards)
       let d2 ← Rand.list r.deckSize (Rand.pick vecCards)
       let first ← Rand.bool
       let m0 := Match.start r (fun p => if p then d1 else d2) first
       let mut m := m0
       let mut steps : Array Json := #[]
-      for _ in [0:40] do
+      for _ in [0:60] do
         let ch ← Rand.tchoice m
         let next := m.step? r ch
         steps := steps.push (json% {choice: $(tchoiceJson ch),

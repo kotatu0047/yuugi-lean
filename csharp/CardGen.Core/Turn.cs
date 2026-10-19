@@ -15,6 +15,16 @@ namespace CardGen
         public int Summons;
         /// <summary>このターンに攻撃したカード（ターンプレイヤーのフィールドにあるものだけ）</summary>
         public List<Slot> Attacked = new List<Slot>();
+        /// <summary>このターンに置いたカードの種類（置いた順）</summary>
+        public List<string> Placed = new List<string>();
+        /// <summary>このターンに置いたカード（ターンプレイヤーのフィールドにあるものだけ。召喚酔いに使う）</summary>
+        public List<Slot> Entered = new List<Slot>();
+        /// <summary>ターンプレイヤーのマナ</summary>
+        public int Pool;
+        /// <summary>タップしている、ターンプレイヤーのカード</summary>
+        public List<Slot> Tapped = new List<Slot>();
+        /// <summary>タップしている、相手のカード</summary>
+        public List<Slot> OppTapped = new List<Slot>();
 
         /// <summary>Lean の Slot の等しさ（ゾーン・マス・カード・表裏が同じ）</summary>
         public static bool SameSlot(Slot a, Slot b) =>
@@ -22,12 +32,12 @@ namespace CardGen
 
         static int CountOf(IEnumerable<Slot> l, Slot s) => l.Count(x => SameSlot(x, s));
 
-        /// <summary>prune：攻撃したカードの記録を、今のフィールドにあるものだけに絞る（同じカードはある枚数まで）</summary>
-        public static List<Slot> Prune(List<Slot> attacked, List<Slot> field)
+        /// <summary>prune：記録を、今のフィールドにあるものだけに絞る（同じカードはある枚数まで）</summary>
+        public static List<Slot> Prune(List<Slot> record, List<Slot> field)
         {
             var rest = field.ToList();
             var result = new List<Slot>();
-            foreach (var a in attacked)
+            foreach (var a in record)
             {
                 int i = rest.FindIndex(x => SameSlot(x, a));
                 if (i < 0) continue;
@@ -37,16 +47,55 @@ namespace CardGen
             return result;
         }
 
-        /// <summary>このカードはこのターンにまだ攻撃できるか（同じカードの、攻撃した枚数がフィールドの枚数より少ない）</summary>
-        public bool CanAttack(Slot sl, List<Slot> field) => CountOf(Attacked, sl) < CountOf(field, sl);
+        /// <summary>notIn：記録 l にない（同じカードのうち、記録にない1枚がフィールドにある）</summary>
+        public static bool NotIn(List<Slot> l, List<Slot> field, Slot sl) => CountOf(l, sl) < CountOf(field, sl);
 
-        public TurnInfo With(int? summons = null, List<Slot> attacked = null) => new TurnInfo
+        public TurnInfo Copy() => new TurnInfo
         {
-            Tp = Tp, Count = Count, Summons = summons ?? Summons, Attacked = attacked ?? Attacked.ToList(),
+            Tp = Tp, Count = Count, Summons = Summons, Attacked = Attacked.ToList(), Placed = Placed.ToList(),
+            Entered = Entered.ToList(), Pool = Pool, Tapped = Tapped.ToList(), OppTapped = OppTapped.ToList(),
         };
+
+        /// <summary>TurnInfo.prune：記録を新しい盤面に合わせる</summary>
+        public TurnInfo Pruned(MatchState g)
+        {
+            var t = Copy();
+            var mine = g.Get(Tp).Field;
+            t.Attacked = Prune(Attacked, mine);
+            t.Entered = Prune(Entered, mine);
+            t.Tapped = Prune(Tapped, mine);
+            t.OppTapped = Prune(OppTapped, g.Get(!Tp).Field);
+            return t;
+        }
+
+        /// <summary>このカードはこのターンにまだ攻撃していないか</summary>
+        public bool CanAttack(Slot sl, List<Slot> field) => NotIn(Attacked, field, sl);
+
+        /// <summary>TurnInfo.placeOK：このターンに置けるか（召喚の上限・種類ごとの上限・マナ）</summary>
+        public bool PlaceOK(Rules r, Slot sl) =>
+            (!MatchState.Fights(r, sl) || r.SummonsPerTurn == 0 || Summons < r.SummonsPerTurn) &&
+            r.PlaceLimits.All(l => !l.Types.Contains(sl.Card.Type) || Placed.Count(l.Types.Contains) < l.Count) &&
+            sl.Card.Cost <= Pool;
+
+        /// <summary>TurnInfo.sick：召喚酔いで動けないか</summary>
+        public bool Sick(Rules r, List<Slot> field, Slot sl) =>
+            r.SummoningSickness && MatchState.Fights(r, sl) && !NotIn(Entered, field, sl);
+
+        /// <summary>TurnInfo.attackOK：このターンに攻撃できるか</summary>
+        public bool AttackOK(Rules r, List<Slot> field, Slot sl) =>
+            (r.FirstTurnAttack || Count != 1) && NotIn(Attacked, field, sl) &&
+            (!r.AttackTaps || NotIn(Tapped, field, sl)) && !Sick(r, field, sl);
+
+        /// <summary>TurnInfo.tapOK：タップしてマナを出せるか</summary>
+        public bool TapOK(Rules r, List<Slot> field, Slot sl) =>
+            sl.FaceUp && r.OnFieldZone(sl.Zone) && sl.Card.Mana > 0 && NotIn(Tapped, field, sl) && !Sick(r, field, sl);
+
+        /// <summary>タップしているか（どちらのプレイヤーのカードでも）</summary>
+        public bool IsTapped(bool owner, List<Slot> field, Slot sl) =>
+            !NotIn(owner == Tp ? Tapped : OppTapped, field, sl);
     }
 
-    public enum TChoiceKind { Place, Resolve, Attack, EndTurn }
+    public enum TChoiceKind { Place, Resolve, Attack, Tap, EndTurn }
 
     /// <summary>ターンのある対戦の動き（TChoice）</summary>
     public sealed class TChoice
@@ -65,6 +114,7 @@ namespace CardGen
             new TChoice { Kind = TChoiceKind.Resolve, Player = p, Field = field, Effect = effect, Apply = apply };
         public static TChoice Attack(int field, int? target, List<(bool, int)> neg) =>
             new TChoice { Kind = TChoiceKind.Attack, Field = field, Target = target, Neg = neg };
+        public static TChoice Tap(int field) => new TChoice { Kind = TChoiceKind.Tap, Field = field };
         public static TChoice EndTurn() => new TChoice { Kind = TChoiceKind.EndTurn };
     }
 
@@ -94,8 +144,6 @@ namespace CardGen
             return new Match { G = g, Turn = new TurnInfo { Tp = first } };
         }
 
-        TurnInfo Pruned(TurnInfo t, MatchState g) => t.With(attacked: TurnInfo.Prune(t.Attacked, g.Get(t.Tp).Field));
-
         /// <summary>Match.step?：選んだ動きをしたあとの状態（できない動きなら null）</summary>
         public Match Step(Rules r, TChoice ch)
         {
@@ -106,42 +154,58 @@ namespace CardGen
                 {
                     var hand = G.Get(p).Hand;
                     if (ch.Hand < 0 || ch.Hand >= hand.Count) return null;
-                    var fighter = MatchState.Fights(r, new Slot(ch.Zone, ch.Cell, hand[ch.Hand], ch.FaceUp));
-                    if (fighter && r.SummonsPerTurn != 0 && Turn.Summons >= r.SummonsPerTurn) return null;
+                    var sl = new Slot(ch.Zone, ch.Cell, hand[ch.Hand], ch.FaceUp);
+                    if (!Turn.PlaceOK(r, sl)) return null;
                     var g = G.Step(r, Choice.Place(p, ch.Hand, ch.Zone, ch.Cell, ch.FaceUp));
                     if (g == null) return null;
-                    return new Match { G = g, Turn = Turn.With(summons: Turn.Summons + (fighter ? 1 : 0)) };
+                    var t = Turn.Copy();
+                    t.Summons += MatchState.Fights(r, sl) ? 1 : 0;
+                    t.Placed.Add(sl.Card.Type);
+                    t.Entered.Insert(0, sl);
+                    t.Pool -= sl.Card.Cost;
+                    return new Match { G = g, Turn = t.Pruned(g) };
                 }
                 case TChoiceKind.Resolve:
                 {
                     var g = G.Step(r, Choice.Resolve(ch.Player, ch.Field, ch.Effect, ch.Apply));
                     if (g == null) return null;
-                    return new Match { G = g, Turn = Pruned(Turn, g) };
+                    return new Match { G = g, Turn = Turn.Pruned(g) };
                 }
                 case TChoiceKind.Attack:
                 {
                     var field = G.Get(p).Field;
                     if (ch.Field < 0 || ch.Field >= field.Count) return null;
                     var sl = field[ch.Field];
-                    if (!(r.FirstTurnAttack || Turn.Count != 1)) return null;
-                    if (!Turn.CanAttack(sl, field)) return null;
+                    if (!Turn.AttackOK(r, field, sl)) return null;
                     var g = G.Step(r, Choice.Attack(p, ch.Field, ch.Target, ch.Neg));
                     if (g == null) return null;
-                    var attacked = new List<Slot> { sl };
-                    attacked.AddRange(Turn.Attacked);
-                    return new Match { G = g, Turn = Pruned(Turn.With(attacked: attacked), g) };
+                    var t = Turn.Copy();
+                    t.Attacked.Insert(0, sl);
+                    if (r.AttackTaps) t.Tapped.Insert(0, sl);
+                    return new Match { G = g, Turn = t.Pruned(g) };
+                }
+                case TChoiceKind.Tap:
+                {
+                    var field = G.Get(p).Field;
+                    if (ch.Field < 0 || ch.Field >= field.Count) return null;
+                    var sl = field[ch.Field];
+                    if (!Turn.TapOK(r, field, sl)) return null;
+                    var t = Turn.Copy();
+                    t.Pool += sl.Card.Mana;
+                    t.Tapped.Insert(0, sl);
+                    return new Match { G = G, Turn = t.Pruned(G) };
                 }
                 default:
                 {
-                    var q = !p;
-                    return new Match { G = DrawUpTo(r, q, r.DrawPerTurn, G), Turn = new TurnInfo { Tp = q, Count = Turn.Count + 1 } };
+                    var g = DrawUpTo(r, !p, r.DrawPerTurn, G);
+                    var t = new TurnInfo { Tp = !p, Count = Turn.Count + 1, OppTapped = Turn.Tapped.ToList() };
+                    return new Match { G = g, Turn = t.Pruned(g) };
                 }
             }
         }
 
-        /// <summary>このターンにこのカードを置けるか（召喚の上限だけを見る。置ける場所は MatchState.Step が決める）</summary>
-        public bool SummonOK(Rules r, Slot sl) =>
-            !MatchState.Fights(r, sl) || r.SummonsPerTurn == 0 || Turn.Summons < r.SummonsPerTurn;
+        /// <summary>このターンにこのカードを置けるか（召喚の上限・種類ごとの上限・マナ。置ける場所は MatchState.Step が決める）</summary>
+        public bool SummonOK(Rules r, Slot sl) => Turn.PlaceOK(r, sl);
 
         /// <summary>このターンに攻撃できる時期か（先攻の最初のターンでないか、ルールで許されているか）</summary>
         public bool AttackPhaseOK(Rules r) => r.FirstTurnAttack || Turn.Count != 1;

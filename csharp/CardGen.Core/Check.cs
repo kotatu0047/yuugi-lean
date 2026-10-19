@@ -90,6 +90,13 @@ namespace CardGen
             foreach (var t in r.Fighters.Where(t => !r.CardTypes.Contains(t)))
                 yield return $"ルール：戦闘できる種類「{t}」はカードの種類にありません";
             if (r.Fighters.Count > 0 && r.Life == 0) yield return "ルール：戦闘できる種類があるのに、初期ライフが0です";
+            foreach (var l in r.PlaceLimits)
+            {
+                if (l.Types.Count == 0) yield return "ルール：置ける枚数の上限の、カードの種類が空です";
+                foreach (var t in l.Types.Where(t => !r.CardTypes.Contains(t)))
+                    yield return $"ルール：置ける枚数の上限の種類「{t}」はカードの種類にありません";
+                if (l.Count == 0) yield return $"ルール：「{string.Join("・", l.Types)}」を置ける枚数の上限が0です";
+            }
         }
 
         /// <summary>Game.check：問題をすべて返す。空なら中間表現として意味が通る</summary>

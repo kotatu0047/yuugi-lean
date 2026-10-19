@@ -23,6 +23,9 @@ namespace CardGen
         public int DrawPerTurn = 1;
         public bool FirstTurnDraw;
         public bool FirstTurnAttack;
+        public List<PlaceLimit> PlaceLimits = new List<PlaceLimit>();
+        public bool AttackTaps;
+        public bool SummoningSickness;
     }
 
     /// <summary>カードのノードの中身（効果はつないだノードから作る）</summary>
@@ -33,6 +36,8 @@ namespace CardGen
         public List<string> Tags = new List<string>();
         public int Attack;
         public int Defense;
+        public int Cost;
+        public int Mana;
     }
 
     public sealed class Node
@@ -177,6 +182,9 @@ namespace CardGen
                 rules.DrawPerTurn = r.Rules.DrawPerTurn;
                 rules.FirstTurnDraw = r.Rules.FirstTurnDraw;
                 rules.FirstTurnAttack = r.Rules.FirstTurnAttack;
+                rules.PlaceLimits = r.Rules.PlaceLimits.Select(l => new PlaceLimit { Types = l.Types.ToList(), Count = l.Count }).ToList();
+                rules.AttackTaps = r.Rules.AttackTaps;
+                rules.SummoningSickness = r.Rules.SummoningSickness;
                 rules.Zones = Children(r).Select(z => z.Zone).ToList();
             }
             foreach (var z in Nodes.Where(n => n.Kind == NodeKind.Zone && Parents(n).Count == 0))
@@ -186,7 +194,7 @@ namespace CardGen
             foreach (var c in Nodes.Where(n => n.Kind == NodeKind.Card).OrderBy(n => n.Y).ThenBy(n => n.X))
             {
                 var card = new Card { Name = c.Card.Name, Type = c.Card.Type, Tags = c.Card.Tags.ToList(),
-                                      Attack = c.Card.Attack, Defense = c.Card.Defense };
+                                      Attack = c.Card.Attack, Defense = c.Card.Defense, Cost = c.Card.Cost, Mana = c.Card.Mana };
                 Selector SelectorOf(Node n, string what)
                 {
                     var s = Children(n).FirstOrDefault();
@@ -254,6 +262,9 @@ namespace CardGen
             r.Rules.DrawPerTurn = g.Rules.DrawPerTurn;
             r.Rules.FirstTurnDraw = g.Rules.FirstTurnDraw;
             r.Rules.FirstTurnAttack = g.Rules.FirstTurnAttack;
+            r.Rules.PlaceLimits = g.Rules.PlaceLimits.Select(l => new PlaceLimit { Types = l.Types.ToList(), Count = l.Count }).ToList();
+            r.Rules.AttackTaps = g.Rules.AttackTaps;
+            r.Rules.SummoningSickness = g.Rules.SummoningSickness;
             float zy = 40;
             foreach (var z in g.Rules.Zones)
             {
@@ -267,7 +278,8 @@ namespace CardGen
             foreach (var c in g.Cards)
             {
                 var cn = Add(NodeKind.Card, colCard, y);
-                cn.Card = new CardData { Name = c.Name, Type = c.Type, Tags = c.Tags.ToList(), Attack = c.Attack, Defense = c.Defense };
+                cn.Card = new CardData { Name = c.Name, Type = c.Type, Tags = c.Tags.ToList(), Attack = c.Attack, Defense = c.Defense,
+                                     Cost = c.Cost, Mana = c.Mana };
                 float ey = y;
                 foreach (var e in c.Effects)
                 {

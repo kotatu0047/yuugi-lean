@@ -1,4 +1,4 @@
-{"version": 4,
+{"version": 5,
  "rules":
  {"zones":
   [{"role": "plain",
@@ -40,6 +40,8 @@
     "capacity": "many",
     "admits": ["モンスター", "魔法", "罠"]}],
   "summonsPerTurn": 1,
+  "summoningSickness": false,
+  "placeLimits": [],
   "life": 8000,
   "handSize": 5,
   "firstTurnDraw": false,
@@ -47,11 +49,13 @@
   "fighters": ["モンスター"],
   "drawPerTurn": 1,
   "deckSize": 40,
-  "cardTypes": ["モンスター", "魔法", "罠"]},
+  "cardTypes": ["モンスター", "魔法", "罠"],
+  "attackTaps": false},
  "cards":
  [{"type": "魔法",
    "tags": [],
    "name": "サンダー・ボルト",
+   "mana": 0,
    "effects":
    [{"activated":
      {"actions":
@@ -64,10 +68,12 @@
           "faceUpOnly": false,
           "excludeSelf": false}}}]}}],
    "defense": 0,
+   "cost": 0,
    "attack": 0},
   {"type": "魔法",
    "tags": [],
    "name": "ハーピィの羽根帚",
+   "mana": 0,
    "effects":
    [{"activated":
      {"actions":
@@ -80,10 +86,12 @@
           "faceUpOnly": false,
           "excludeSelf": false}}}]}}],
    "defense": 0,
+   "cost": 0,
    "attack": 0},
   {"type": "罠",
    "tags": [],
    "name": "スキルドレイン",
+   "mana": 0,
    "effects":
    [{"negate":
      {"target":
@@ -94,10 +102,12 @@
        "faceUpOnly": true,
        "excludeSelf": false}}}],
    "defense": 0,
+   "cost": 0,
    "attack": 0},
   {"type": "罠",
    "tags": [],
    "name": "王宮のお触れ",
+   "mana": 0,
    "effects":
    [{"negate":
      {"target":
@@ -108,10 +118,12 @@
        "faceUpOnly": true,
        "excludeSelf": true}}}],
    "defense": 0,
+   "cost": 0,
    "attack": 0},
   {"type": "モンスター",
    "tags": ["闇属性", "機械族"],
    "name": "人造人間－サイコ・ショッカー",
+   "mana": 0,
    "effects":
    [{"negate":
      {"target":
@@ -122,10 +134,12 @@
        "faceUpOnly": true,
        "excludeSelf": false}}}],
    "defense": 1500,
+   "cost": 0,
    "attack": 2400},
   {"type": "モンスター",
    "tags": ["闇属性", "戦士族"],
    "name": "D－HERO Bloo－D",
+   "mana": 0,
    "effects":
    [{"negate":
      {"target":
@@ -136,10 +150,12 @@
        "faceUpOnly": true,
        "excludeSelf": false}}}],
    "defense": 600,
+   "cost": 0,
    "attack": 1900},
   {"type": "魔法",
    "tags": [],
    "name": "一斉送還",
+   "mana": 0,
    "effects":
    [{"activated":
      {"actions":
@@ -152,22 +168,28 @@
           "faceUpOnly": false,
           "excludeSelf": false}}}]}}],
    "defense": 0,
+   "cost": 0,
    "attack": 0},
   {"type": "魔法",
    "tags": [],
    "name": "二枚引き",
+   "mana": 0,
    "effects": [{"activated": {"actions": [{"draw": {"count": 2}}]}}],
    "defense": 0,
+   "cost": 0,
    "attack": 0},
   {"type": "モンスター",
    "tags": ["闇属性", "魔法使い族"],
    "name": "ブラック・マジシャン",
+   "mana": 0,
    "effects": [],
    "defense": 2100,
+   "cost": 0,
    "attack": 2500},
   {"type": "モンスター",
    "tags": ["闇属性", "戦士族"],
    "name": "闇の指揮官",
+   "mana": 0,
    "effects":
    [{"boost":
      {"target":
@@ -179,10 +201,12 @@
        "excludeSelf": true},
       "amount": 300}}],
    "defense": 1000,
+   "cost": 0,
    "attack": 1600},
   {"type": "魔法",
    "tags": [],
    "name": "闇の加護",
+   "mana": 0,
    "effects":
    [{"boost":
      {"target":
@@ -194,22 +218,28 @@
        "excludeSelf": false},
       "amount": 500}}],
    "defense": 0,
+   "cost": 0,
    "attack": 0},
   {"type": "魔法",
    "tags": [],
    "name": "ファイヤー・ボール",
+   "mana": 0,
    "effects": [{"activated": {"actions": [{"damage": {"amount": 500}}]}}],
    "defense": 0,
+   "cost": 0,
    "attack": 0},
   {"type": "魔法",
    "tags": [],
    "name": "レッド・ポーション",
+   "mana": 0,
    "effects": [{"activated": {"actions": [{"heal": {"amount": 500}}]}}],
    "defense": 0,
+   "cost": 0,
    "attack": 0},
   {"type": "魔法",
    "tags": [],
    "name": "縦一閃",
+   "mana": 0,
    "effects":
    [{"activated":
      {"actions":
@@ -222,10 +252,12 @@
           "faceUpOnly": false,
           "excludeSelf": false}}}]}}],
    "defense": 0,
+   "cost": 0,
    "attack": 0},
   {"type": "モンスター",
    "tags": ["戦士族"],
    "name": "援護の兵士",
+   "mana": 0,
    "effects":
    [{"boost":
      {"target":
@@ -237,4 +269,5 @@
        "excludeSelf": true},
       "amount": 400}}],
    "defense": 1200,
+   "cost": 0,
    "attack": 1200}]}

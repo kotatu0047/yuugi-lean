@@ -106,6 +106,8 @@ namespace CardGen
                 Effects = Arr(o, "effects", ParseEffect),
                 Attack = Int(o, "attack"),
                 Defense = Int(o, "defense"),
+                Cost = Int(o, "cost"),
+                Mana = Int(o, "mana"),
             };
         }
 
@@ -139,6 +141,13 @@ namespace CardGen
                 DrawPerTurn = Int(o, "drawPerTurn"),
                 FirstTurnDraw = Bool(o, "firstTurnDraw"),
                 FirstTurnAttack = Bool(o, "firstTurnAttack"),
+                PlaceLimits = Arr(o, "placeLimits", t =>
+                {
+                    var l = Obj(t);
+                    return new PlaceLimit { Types = Strs(l, "types"), Count = Int(l, "count") };
+                }),
+                AttackTaps = Bool(o, "attackTaps"),
+                SummoningSickness = Bool(o, "summoningSickness"),
             };
         }
 
@@ -158,14 +167,15 @@ namespace CardGen
         /// <summary>
         /// 古い版の中間表現を今の版に上げる（エディタで開くとき用）。
         /// 版 2 → 3 はターンのルールを既定の値で加え、版 3 → 4 はゾーンのマスの位置を空（マス目の上にない）、
-        /// 範囲の指定のマスの関係を「条件なし」にする。
+        /// 範囲の指定のマスの関係を「条件なし」にする。版 4 → 5 はマナ・タップ・置ける枚数の上限・召喚酔いを
+        /// 使わない値（コスト 0、マナ 0、上限なし、攻撃でタップしない、召喚酔いなし）で加える。
         /// 上げたときは true。版が分からない・新しすぎるときは何もしない
         /// </summary>
         public static bool Upgrade(JObject o)
         {
             if (o["version"]?.Type != JTokenType.Integer || !(o["rules"] is JObject r)) return false;
             var v = (int)o["version"];
-            if (v != 2 && v != 3) return false;
+            if (v < 2 || v > 4) return false;
             if (v == 2)
             {
                 if (r["summonsPerTurn"] == null) r["summonsPerTurn"] = 1;
@@ -173,12 +183,21 @@ namespace CardGen
                 if (r["firstTurnDraw"] == null) r["firstTurnDraw"] = false;
                 if (r["firstTurnAttack"] == null) r["firstTurnAttack"] = false;
             }
-            if (r["zones"] is JArray zones)
+            if (v <= 3 && r["zones"] is JArray zones)
                 foreach (var z in zones.OfType<JObject>())
                     if (z["cells"] == null) z["cells"] = new JArray();
-            if (o["cards"] is JArray cards)
+            if (v <= 3 && o["cards"] is JArray cards)
                 foreach (var t in cards.Descendants().OfType<JProperty>().Where(p => p.Name == "target").ToList())
                     if (t.Value is JObject sel && sel["near"] == null) sel["near"] = "any";
+            if (r["placeLimits"] == null) r["placeLimits"] = new JArray();
+            if (r["attackTaps"] == null) r["attackTaps"] = false;
+            if (r["summoningSickness"] == null) r["summoningSickness"] = false;
+            if (o["cards"] is JArray cs)
+                foreach (var c in cs.OfType<JObject>())
+                {
+                    if (c["cost"] == null) c["cost"] = 0;
+                    if (c["mana"] == null) c["mana"] = 0;
+                }
             o["version"] = Game.CurrentVersion;
             return true;
         }
@@ -221,6 +240,8 @@ namespace CardGen
             ["effects"] = new JArray(c.Effects.Select(ToJson)),
             ["attack"] = c.Attack,
             ["defense"] = c.Defense,
+            ["cost"] = c.Cost,
+            ["mana"] = c.Mana,
         };
 
         static JObject ToJson(Zone z) => new JObject
@@ -246,6 +267,9 @@ namespace CardGen
             ["drawPerTurn"] = r.DrawPerTurn,
             ["firstTurnDraw"] = r.FirstTurnDraw,
             ["firstTurnAttack"] = r.FirstTurnAttack,
+            ["placeLimits"] = new JArray(r.PlaceLimits.Select(l => new JObject { ["types"] = new JArray(l.Types), ["count"] = l.Count })),
+            ["attackTaps"] = r.AttackTaps,
+            ["summoningSickness"] = r.SummoningSickness,
         };
 
         public static JObject ToJson(Game g) => new JObject

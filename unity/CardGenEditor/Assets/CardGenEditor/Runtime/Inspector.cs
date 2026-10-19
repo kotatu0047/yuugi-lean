@@ -43,6 +43,24 @@ namespace CardGen.App
             return result;
         }
 
+        /// <summary>置ける枚数の上限を「種類+種類=枚数」をスペースで区切った文字列にする（例：「土地=1 魔法+罠=2」）</summary>
+        public static string LimitsText(IEnumerable<PlaceLimit> ls) =>
+            string.Join(" ", ls.Select(l => $"{string.Join("+", l.Types)}={l.Count}"));
+
+        /// <summary>LimitsText を読む。読めない書き方があれば null</summary>
+        public static List<PlaceLimit> ParseLimits(string s)
+        {
+            var result = new List<PlaceLimit>();
+            foreach (var tok in s.Split(new[] { ' ', '　', '、', ',', ';' }, StringSplitOptions.RemoveEmptyEntries))
+            {
+                var kv = tok.Replace('＝', '=').Split('=');
+                if (kv.Length != 2 || !int.TryParse(kv[1], out var n) || n < 0) return null;
+                var types = kv[0].Split(new[] { '+', '＋' }, StringSplitOptions.RemoveEmptyEntries).Select(t => t.Trim()).ToList();
+                result.Add(new PlaceLimit { Types = types, Count = n });
+            }
+            return result;
+        }
+
         void Changed() => Edited?.Invoke(node);
 
         void Heading(string text)
@@ -134,6 +152,20 @@ namespace CardGen.App
                     Toggle("先攻の最初のターンも引く", n.Rules.FirstTurnDraw, v => n.Rules.FirstTurnDraw = v);
                     Toggle("先攻の最初のターンも攻撃できる", n.Rules.FirstTurnAttack, v => n.Rules.FirstTurnAttack = v);
                     Hint("召喚の上限は、戦闘できる種類のカードを1ターンに置ける枚数です（0 なら制限なし）。攻撃は1ターンに1枚1回です。");
+                    var limits = new TextField("種類ごとの上限") { value = LimitsText(n.Rules.PlaceLimits), isDelayed = true };
+                    limits.RegisterValueChangedCallback(e =>
+                    {
+                        var parsed = ParseLimits(e.newValue);
+                        if (parsed == null) { limits.SetValueWithoutNotify(LimitsText(n.Rules.PlaceLimits)); return; }
+                        n.Rules.PlaceLimits = parsed;
+                        Changed();
+                    });
+                    Add(limits);
+                    Hint("1ターンに置ける枚数の上限を、種類ごとに「種類=枚数」で書きます（例：「土地=1」。種類をまとめるなら「魔法+罠=2」）。");
+                    Toggle("攻撃するとタップする", n.Rules.AttackTaps, v => n.Rules.AttackTaps = v);
+                    Toggle("召喚酔い（置いたターンは攻撃・タップできない）", n.Rules.SummoningSickness, v => n.Rules.SummoningSickness = v);
+                    Hint("マナ：ターンプレイヤーは、マナを出すカードをタップしてマナを得て、カードのコストを支払って置きます。" +
+                         "マナはターンの終わりに消え、タップしたカードは持ち主の次のターンの始めに起きます。");
                     break;
                 case NodeKind.Zone:
                     Hint("1人分のゾーン。相手のフィールドは同じ形になります（共通ルール②）。");
@@ -181,6 +213,8 @@ namespace CardGen.App
                     ListField("タグ", n.Card.Tags, v => n.Card.Tags = v);
                     Int("攻撃力", n.Card.Attack, v => n.Card.Attack = v);
                     Int("守備力", n.Card.Defense, v => n.Card.Defense = v);
+                    Int("コスト（置くのに払うマナ）", n.Card.Cost, v => n.Card.Cost = Math.Max(0, v));
+                    Int("タップで出るマナ", n.Card.Mana, v => n.Card.Mana = Math.Max(0, v));
                     break;
                 case NodeKind.Activate:
                     Hint("発動し、解決したときに、つないだ動き（破壊・手札に戻す・ドロー・ダメージ・回復）を上から順に行います。無効にされていれば何も起きません。");

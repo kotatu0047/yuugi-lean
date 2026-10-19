@@ -130,7 +130,9 @@ namespace CardGen.App
                 $"カードの種類：{List(n.Rules.CardTypes)}\nデッキ {n.Rules.DeckSize}枚・初期手札 {n.Rules.HandSize}枚\n" +
                 $"ライフ {n.Rules.Life}・戦闘できる種類：{List(n.Rules.Fighters)}\n" +
                 $"召喚 {(n.Rules.SummonsPerTurn == 0 ? "制限なし" : $"1ターン{n.Rules.SummonsPerTurn}回")}・ドロー {n.Rules.DrawPerTurn}枚" +
-                (n.Rules.FirstTurnDraw ? "・先攻1ターン目も引く" : "") + (n.Rules.FirstTurnAttack ? "・先攻1ターン目も攻撃" : ""),
+                (n.Rules.FirstTurnDraw ? "・先攻1ターン目も引く" : "") + (n.Rules.FirstTurnAttack ? "・先攻1ターン目も攻撃" : "") +
+                (n.Rules.PlaceLimits.Count > 0 ? $"\n上限：{string.Join("・", n.Rules.PlaceLimits.Select(l => $"{string.Join("+", l.Types)} {l.Count}枚"))}" : "") +
+                (n.Rules.AttackTaps ? "\n攻撃でタップ" : "") + (n.Rules.SummoningSickness ? (n.Rules.AttackTaps ? "・" : "\n") + "召喚酔い" : ""),
             NodeKind.Zone =>
                 $"{n.Zone.Count}マス・{(n.Zone.Capacity == Capacity.One ? "1枚まで" : "何枚でも")}・" +
                 $"{(n.Zone.Role == ZoneRole.Deck ? "デッキ" : n.Zone.Role == ZoneRole.Grave ? "墓地" : n.Zone.OnField ? "フィールド上" : "フィールド外")}\n" +
@@ -138,7 +140,8 @@ namespace CardGen.App
                 (n.Zone.Cells.Count > 0 ? $"\nマス：{Inspector.CellsText(n.Zone.Cells.Take(3))}{(n.Zone.Cells.Count > 3 ? " …" : "")}" : ""),
             NodeKind.Card =>
                 $"種類：{(n.Card.Type.Length == 0 ? "（未設定）" : n.Card.Type)}" + (n.Card.Tags.Count > 0 ? $"\nタグ：{List(n.Card.Tags)}" : "") +
-                (n.Card.Attack > 0 || n.Card.Defense > 0 ? $"\n攻撃力 {n.Card.Attack}・守備力 {n.Card.Defense}" : ""),
+                (n.Card.Attack > 0 || n.Card.Defense > 0 ? $"\n攻撃力 {n.Card.Attack}・守備力 {n.Card.Defense}" : "") +
+                (n.Card.Cost > 0 || n.Card.Mana > 0 ? $"\nコスト {n.Card.Cost}" + (n.Card.Mana > 0 ? $"・タップで {n.Card.Mana} マナ" : "") : ""),
             NodeKind.Activate => "発動し、つないだ動きを上から順に行う",
             NodeKind.Destroy => "つないだ範囲のカードをすべて破壊し、持ち主の墓地へ送る",
             NodeKind.Bounce => "つないだ範囲のカードをすべて持ち主の手札に戻す",

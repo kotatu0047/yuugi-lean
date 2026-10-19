@@ -180,6 +180,7 @@ public class DifferentialTests
         "resolve" => TChoice.Resolve((bool)c["player"], (int)c["field"], (int)c["effect"], (bool)c["apply"]),
         "attack" => TChoice.Attack((int)c["field"],
             c["target"].Type == JTokenType.Null ? (int?)null : (int)c["target"], ParseNeg(c["neg"])),
+        "tap" => TChoice.Tap((int)c["field"]),
         _ => TChoice.EndTurn(),
     };
 
@@ -189,6 +190,11 @@ public class DifferentialTests
         ["count"] = t.Count,
         ["summons"] = t.Summons,
         ["attacked"] = new JArray(t.Attacked.Select(SlotJson)),
+        ["placed"] = new JArray(t.Placed),
+        ["entered"] = new JArray(t.Entered.Select(SlotJson)),
+        ["pool"] = t.Pool,
+        ["tapped"] = new JArray(t.Tapped.Select(SlotJson)),
+        ["oppTapped"] = new JArray(t.OppTapped.Select(SlotJson)),
     };
 
     static JObject MatchJson(Match m) => new JObject
@@ -223,9 +229,9 @@ public class DifferentialTests
             }
             games++;
         }
-        Assert.Equal(30, games);
-        Assert.Equal(1200, steps);
-        Assert.True(ok > 200);
+        Assert.Equal(80, games);
+        Assert.Equal(4800, steps);
+        Assert.True(ok > 600);
     }
 
     [Fact]
@@ -238,6 +244,26 @@ public class DifferentialTests
     }
 
     /// <summary>見本から、版 3 にないもの（マスの位置・マスの関係）を除いた JSON と、それを上げたときに期待する Game</summary>
+    /// <summary>版 5 で加えたもの（マナ・タップなど）を除く（見本はどれも使っていない）</summary>
+    static JObject WithoutMana(JObject o)
+    {
+        o["version"] = 4;
+        foreach (var k in new[] { "placeLimits", "attackTaps", "summoningSickness" }) ((JObject)o["rules"]).Remove(k);
+        foreach (var c in o["cards"]) { ((JObject)c).Remove("cost"); ((JObject)c).Remove("mana"); }
+        return o;
+    }
+
+    [Fact]
+    public void Version_4_is_upgraded()
+    {
+        var src = (JObject)JToken.Parse(File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "sample.json")));
+        var o = WithoutMana((JObject)src.DeepClone());
+        Assert.Throws<FormatException>(() => IrJson.ParseGame(o.DeepClone()));
+        Assert.True(IrJson.Upgrade(o));
+        Assert.True(JToken.DeepEquals(src, o));
+        Assert.False(IrJson.Upgrade(o));
+    }
+
     static (JObject old, Game expected) WithoutGrid()
     {
         var o = (JObject)JToken.Parse(File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "sample.json")));
@@ -256,6 +282,7 @@ public class DifferentialTests
                 };
                 foreach (var sel in sels) sel.Near = Near.Any;
             }
+        o = WithoutMana(o);
         o["version"] = 3;
         foreach (var z in o["rules"]["zones"]) ((JObject)z).Remove("cells");
         foreach (var p in ((JArray)o["cards"]).Descendants().OfType<JProperty>().Where(p => p.Name == "near").ToList()) p.Remove();
