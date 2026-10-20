@@ -61,18 +61,76 @@
     -unity-background-image-tint-color: rgb(0, 229, 255);
 }
 
-/* 選ぶ形の入力の一覧 */
+/* 選ぶ形の入力（セレクトボックス）：ほかの入力欄より少し明るい地と濃い線で、押せることが分かるように。
+   マウスを乗せる・押す・一覧を開いているときも暗い地のまま（標準の灰色にしない） */
+.unity-base-popup-field__input {
+    background-color: rgba(0, 229, 255, 0.07);
+    border-color: rgba(0, 229, 255, 0.45);
+}
+.unity-base-popup-field__input:hover,
+.unity-base-popup-field:hover .unity-base-popup-field__input,
+.unity-base-popup-field:hover:enabled > .unity-base-popup-field__input,
+.unity-base-field:hover:enabled > .unity-base-popup-field__input,
+.unity-base-popup-field__input:hover:enabled {
+    background-color: rgba(0, 229, 255, 0.14);
+    border-color: rgba(0, 229, 255, 0.85);
+}
+.unity-base-popup-field__input:active,
+.unity-base-popup-field__input:checked,
+.unity-base-popup-field__input:hover:checked,
+.unity-base-popup-field__input:focus,
+.unity-base-popup-field:focus .unity-base-popup-field__input,
+.unity-base-popup-field:checked > .unity-base-popup-field__input,
+.unity-base-popup-field:active > .unity-base-popup-field__input,
+.unity-base-popup-field:hover:checked > .unity-base-popup-field__input,
+.unity-base-popup-field:hover:active > .unity-base-popup-field__input,
+.unity-base-field:focus:enabled > .unity-base-popup-field__input,
+.unity-base-field:checked:enabled > .unity-base-popup-field__input,
+.unity-base-field:active:enabled > .unity-base-popup-field__input,
+.unity-base-popup-field__input:active:enabled,
+.unity-base-popup-field__input:checked:enabled,
+.unity-base-popup-field__input:hover:active:enabled,
+.unity-base-popup-field__input:hover:checked:enabled {
+    background-color: rgba(0, 229, 255, 0.2);
+    border-color: rgb(0, 229, 255);
+}
+.unity-base-popup-field__text {
+    color: rgb(235, 250, 255);
+}
+
+/* 選ぶ形の入力の一覧：暗い地に明るい文字。選んでいる項目はシアンの帯、マウスを乗せた項目はアンバーの帯 */
 .unity-base-dropdown__container-outer {
     background-color: rgb(8, 19, 29);
-    border-color: rgba(0, 229, 255, 0.55);
+    border-color: rgba(0, 229, 255, 0.7);
     border-width: 1px;
 }
-.unity-base-dropdown__item:hover,
-.unity-base-dropdown__item:checked {
-    background-color: rgba(0, 229, 255, 0.18);
+.unity-base-dropdown__container-inner {
+    background-color: rgb(8, 19, 29);
+    border-width: 0;
 }
-.unity-base-dropdown__label {
-    color: rgb(214, 240, 255);
+.unity-base-dropdown__item {
+    background-color: rgba(0, 0, 0, 0);
+    min-height: 26px;
+}
+.unity-base-dropdown__item:checked {
+    background-color: rgba(0, 229, 255, 0.22);
+}
+.unity-base-dropdown__item:hover,
+.unity-base-dropdown__item:hover:checked,
+.unity-base-dropdown__item:focus {
+    background-color: rgba(255, 184, 0, 0.22);
+}
+.unity-base-dropdown__label,
+.unity-base-dropdown__item:checked .unity-base-dropdown__label,
+.unity-base-dropdown__item:hover .unity-base-dropdown__label {
+    color: rgb(235, 250, 255);
+    font-size: 13px;
+}
+.unity-base-dropdown__checkmark {
+    -unity-background-image-tint-color: rgb(0, 229, 255);
+}
+.unity-base-dropdown__separator {
+    background-color: rgba(0, 229, 255, 0.25);
 }
 
 /* スクロールバー：細く、矢印なし、溝はうっすら、つまみは半透明のシアン（マウスを乗せると明るく、つかむとアンバー） */
