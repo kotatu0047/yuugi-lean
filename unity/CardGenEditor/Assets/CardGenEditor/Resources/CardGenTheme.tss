@@ -41,11 +41,25 @@
     border-radius: 2px;
 }
 .unity-base-text-field:focus .unity-base-text-field__input,
-.unity-base-field:focus .unity-base-field__input {
+.unity-base-field:focus .unity-base-field__input,
+.unity-base-text-field:focus:enabled > .unity-base-text-field__input,
+.unity-base-field:focus:enabled > .unity-base-field__input {
     border-color: rgba(0, 229, 255, 0.9);
 }
 .unity-base-field__label {
     color: rgb(156, 190, 210);
+}
+/* 選んでいる欄（ラベルをクリックしたときも）のラベルは、標準の暗い青ではなく明るいシアン。マウスを乗せたら白っぽく */
+.unity-base-field:hover > .unity-base-field__label,
+.unity-base-field:hover:enabled > .unity-base-field__label {
+    color: rgb(235, 250, 255);
+}
+.unity-base-field:focus > .unity-base-field__label,
+.unity-base-field:focus:enabled > .unity-base-field__label,
+.unity-base-field:focus:hover:enabled > .unity-base-field__label,
+.unity-base-field:checked:enabled > .unity-base-field__label,
+.unity-base-field:active:enabled > .unity-base-field__label {
+    color: rgb(0, 229, 255);
 }
 .unity-text-element--inner-input-field-component {
     color: rgb(214, 240, 255);
