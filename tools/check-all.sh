@@ -35,9 +35,9 @@ step() {
   echo "○ $name（$(( $(date +%s) - t0 )) 秒）"
 }
 
-# Lean：CardGen と検査ツール。#guard のテストと、vectors.json が最新かの確認（VectorsCheck）も含む
-step "Lean のビルド（lake build）" lake build
-step "証明ジョブの再検査" python3 jobs/accept.py --recheck
+# Lean：CardGen と検査ツールのビルド（#guard のテストと、vectors.json が最新かの確認も含む）、
+# 凍結した主張（spec/）との一致・公理・禁止した書き方・leanchecker・証明ジョブの再検査
+step "証明のゲート（spec/check.sh）" spec/check.sh
 step "C# のテスト（dotnet test）" bash -c "cd csharp/CardGen.Tests && dotnet test --nologo -v q"
 step "ドキュメントのサイト（mkdocs build --strict）" bash -c "python3 tools/docs-site.py >/dev/null && mkdocs build --strict -q"
 if [ $unity = 1 ]; then

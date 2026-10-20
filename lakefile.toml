@@ -1,6 +1,6 @@
 name = "YuugiLean"
 version = "0.1.0"
-defaultTargets = ["CardGen", "cardgen"]
+defaultTargets = ["CardGen", "cardgen", "Spec"]
 
 [[lean_lib]]
 name = "YuugiLean"
@@ -15,3 +15,9 @@ name = "CardGen"
 [[lean_exe]]
 name = "cardgen"
 root = "CardGen.Cli"
+
+# 凍結した主張と、その検査（spec/。人がレビューする。spec/check.sh から）
+[[lean_lib]]
+name = "Spec"
+srcDir = "spec"
+globs = ["Spec.+"]

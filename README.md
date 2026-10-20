@@ -32,14 +32,20 @@
 - `CardGen/Sample.lean`・`CardGen/Mtg.lean`：見本（遊戯王風と MTG 風）と `#guard` のテスト
 - `CardGen/Vectors.lean`：C# との差分テスト用のテストベクトル
 
+`spec/`：証明のゲート。レポートが「証明済み」と出す定理の主張を書き写して凍結し（`spec/Spec/Statements.lean`、人がレビューする）、
+`spec/check.sh` が、定理の型がその主張と一致すること・公理が標準の3つだけであること・ソースに `sorry` などがないこと・
+leanchecker でのカーネルの再検査・証明ジョブの再検査をまとめて確かめる。CI とコミット前のフックでも走る。
+エージェントへの決まりは `CLAUDE.md`、書き込みの禁止は `.claude/settings.json`。
+
 `csharp/`：Unity で使う C# 実装と差分テスト。`unity/CardGenEditor/`：エディタ（実行時のアプリ）
 
 ```
-lake build                                       # CardGen と検査ツール（YuugiLean は含まない）
+lake build                                       # CardGen と検査ツールと Spec（YuugiLean は含まない）
 lake build YuugiLean                             # 遊戯王 OCG の形式化（YuugiLean）
 lake exe cardgen CardGen/sample.json --text
 lake exe cardgen CardGen/mtg.json --text
 lake exe cardgen --game-vectors CardGen/mtg.json  # そのゲームのテストベクトル（C# との照合用。エディタの「C# と照合」）
+spec/check.sh                                    # 証明のゲート（--quick でカーネルの再検査とジョブの再検査を飛ばす）
 python3 jobs/accept.py --recheck                 # 受け入れ済みの証明のジョブを検査し直す
 cd csharp/CardGen.Tests && dotnet test           # C# の差分テスト
 tools/unity-build.sh                             # Unity のエディタをビルド（Windows 側で）
