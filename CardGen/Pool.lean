@@ -6,12 +6,8 @@ import CardGen.Claims
 動き（ドロー・置く・発動・攻撃）はどれもカードを移すだけなので、カードの一覧から作ったデッキで始めれば、
 到達できるどの状態でも、どのプレイヤーのところにあるカードも一覧のカードである（`Reachable.fromPool`）。
 
-これを使うと、カードの一覧によって決まる★を証明できる。
-
-| 型 | 規則 |
-|---|---|
-| F. ライフ | 一覧に「回復」の動きを持つカードがなければ、ライフは初期ライフを超えない（`Reachable.life_le`） |
-| G. ライフ | 戦闘できる種類がなく、一覧に「ダメージ」の動きを持つカードがなければ、ライフは初期ライフより減らない（`Reachable.life_ge`） |
+これを使うと、カードの一覧によって決まる★を証明できる。ここではライフの上限と下限（`Reachable.life_le`・
+`Reachable.life_ge`）を示す。★の列挙は `PoolClaims.lean`
 -/
 
 namespace CardGen
@@ -593,46 +589,5 @@ theorem Reachable.life_ge {r : Rules} {decks : PlayerId → List Card} {pool : L
       split
       · exact lifeGe_foldl r _ _ as has ih
       · exact ih
-
-/-! ## カードの一覧によって決まる★ -/
-
-/-- カードの一覧によって決まる★の中身 -/
-def gameProps (g : Game) : List ClaimProp :=
-  (if g.rules.life > 0 && g.cards.all (!·.heals) then [.lifeMax g.rules.life] else []) ++
-  (if g.rules.life > 0 && g.rules.fighters.isEmpty && g.cards.all (!·.damages) then [.lifeMin g.rules.life] else [])
-
-/-- **カードの一覧によって決まる★は、一覧のカードで作ったどのデッキでも成り立つ** -/
-theorem gameProps_sound (g : Game) (decks : PlayerId → List Card) (hpool : ∀ p, ∀ x ∈ decks p, x ∈ g.cards) :
-    ∀ c ∈ gameProps g, c.Valid g.rules decks := by
-  intro c hc
-  unfold gameProps at hc
-  rw [List.mem_append] at hc
-  rcases hc with hc | hc
-  · split at hc
-    · rename_i h
-      simp only [List.mem_singleton] at hc; subst hc
-      simp only [Bool.and_eq_true] at h
-      simp only [ClaimProp.Valid, ClaimProp.atStart]
-      intro s hs p
-      exact hs.life_le hpool h.2 p
-    · simp at hc
-  · split at hc
-    · rename_i h
-      simp only [List.mem_singleton] at hc; subst hc
-      simp only [Bool.and_eq_true, List.isEmpty_iff] at h
-      simp only [ClaimProp.Valid, ClaimProp.atStart]
-      intro s hs p
-      exact hs.life_ge hpool h.2 h.1.2 p
-    · simp at hc
-
-/-- 人が読む形の、カードの一覧によって決まる★ -/
-def gameClaims (g : Game) : List Claim := (gameProps g).map (·.describe g.rules)
-
-theorem gameClaims_valid (g : Game) (decks : PlayerId → List Card) (hpool : ∀ p, ∀ x ∈ decks p, x ∈ g.cards) :
-    ∀ c ∈ gameClaims g, c.prop.Valid g.rules decks := by
-  intro c hc
-  obtain ⟨p, hp, rfl⟩ := List.mem_map.1 hc
-  rw [ClaimProp.describe_prop]
-  exact gameProps_sound g decks hpool p hp
 
 end CardGen

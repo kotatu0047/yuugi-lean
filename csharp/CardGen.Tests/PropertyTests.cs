@@ -114,6 +114,24 @@ public class PropertyTests
         Assert.True(ga.Count <= gb.Count && gb.Take(ga.Count).SequenceEqual(ga), $"{where}：墓地は後ろに加わるだけ");
     }
 
+    static bool RaisesAtk(Card c) => c.Effects.Any(e =>
+        (e is Activated a ? a.Actions : e is Triggered t ? t.Actions : new List<CardGen.Action>())
+            .Any(x => x is Pump p && p.Attack > 0));
+
+    /// <summary>
+    /// ★「攻撃力の上限」（PoolClaims.lean の Reachable.atk_le）の値。攻撃力を上げる「ターンの終わりまでの変化」があれば null
+    /// </summary>
+    static int? AtkCap(Game game)
+    {
+        var r = game.Rules;
+        if (r.Fighters.Count == 0 || game.Cards.Any(RaisesAtk)) return null;
+        int maxAtk = game.Cards.Select(c => c.Attack).DefaultIfEmpty(0).Max();
+        int boost = game.Cards.Select(c => c.Effects.OfType<Boost>().Sum(b => Math.Max(b.Amount, 0))).DefaultIfEmpty(0).Max();
+        var holds = r.Zones.Where(z => z.Role == ZoneRole.Plain && z.OnField).ToList();
+        int fieldCap = holds.All(z => z.Capacity == Capacity.One) ? holds.Sum(z => z.Count) : r.DeckSize;
+        return maxAtk + 2 * (boost * fieldCap);
+    }
+
     [Theory]
     [InlineData("mtg.json")]
     [InlineData("sample.json")]
@@ -122,6 +140,8 @@ public class PropertyTests
         var game = Load(file);
         var r = game.Rules;
         int moves = 0, attacks = 0, blocks = 0, resolves = 0, triggers = 0;
+        var cap = AtkCap(game);
+        Assert.Equal(file == "sample.json", cap != null);   // MTG 風には巨大化があるので上限の★はない
         for (int seed = 1; seed <= 30; seed++)
         {
             var rng = new Random(seed);
@@ -150,6 +170,11 @@ public class PropertyTests
                 if (k == TChoiceKind.Resolve) resolves++;
                 if (k == TChoiceKind.Trigger) triggers++;
                 CheckInvariants(r, m, $"{file} 種 {seed} {step} 手目（{k}）", game.Cards);
+                // 攻撃力の上限（Reachable.atk_le）
+                if (cap is int c)
+                    foreach (var q in new[] { true, false })
+                        for (int i = 0; i < m.G.Get(q).Field.Count; i++)
+                            Assert.InRange(m.G.AtkOf(r, new List<(bool, int)>(), (q, i), m.G.Get(q).Field[i]), 0, c);
                 // カードの流れ（Match.step?_flow）と、名前ごとの枚数は開始時のデッキのまま（Reachable.cards_perm）
                 foreach (var q in new[] { true, false })
                 {

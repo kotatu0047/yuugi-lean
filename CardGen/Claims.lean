@@ -38,6 +38,9 @@ inductive ClaimProp
   | lifeMax (n : Nat)
   /-- どちらのライフも常に `n` 以上（カードの一覧によって決まる★。`Pool.lean`） -/
   | lifeMin (n : Nat)
+  /-- フィールドのどのカードの攻撃力も常に `a + 2 * (b * f)` 以下（カードの一覧によって決まる★。`PoolClaims.lean`）。
+      `a`：カードに書いた攻撃力の最大、`b`：1枚の永続の攻撃力の変化の合計の最大、`f`：1人分のフィールド上のカードの最大数 -/
+  | atkMax (a b f : Nat)
 deriving Repr, DecidableEq
 
 /-- フィールド上の、種類 `t` のカードの枚数 -/
@@ -58,6 +61,7 @@ def ClaimProp.Holds (r : Rules) (g : State) : ClaimProp → Prop
   | .deckMax n => ∀ p, (g p).deck.length ≤ n
   | .lifeMax n => ∀ p, (g p).life ≤ n
   | .lifeMin n => ∀ p, n ≤ (g p).life
+  | .atkMax a b f => ∀ p k sl neg, (g p).field[k]? = some sl → g.atkOf r neg (p, k) sl ≤ a + 2 * (b * f)
 
 /-- ★として正しい：開始時の性質は開始時に、それ以外は到達できるどの状態でも成り立つ -/
 def ClaimProp.Valid (r : Rules) (decks : PlayerId → List Card) (c : ClaimProp) : Prop :=
@@ -253,6 +257,10 @@ def ClaimProp.describe (r : Rules) : ClaimProp → Claim
   | p@(.lifeMin n) => ⟨p, s!"ライフは各プレイヤー最小{n}（初期ライフより減らない）",
       [s!"初期ライフ（{r.life}）", "カードの一覧に「ダメージ」の動きを持つカードがない",
        "ルールに戦闘できる種類がない（攻撃でライフが減ることはない）"]⟩
+  | p@(.atkMax a b f) => ⟨p, s!"フィールドのカードの攻撃力は最大{a + 2 * (b * f)}",
+      [s!"カードに書いた攻撃力の最大（{a}）",
+       s!"1枚の永続の攻撃力の変化の合計の最大（+{b}）× フィールド上のカードの最大数（両プレイヤーで{2 * f}枚）",
+       "カードの一覧に、攻撃力を上げる「ターンの終わりまでの変化」を持つカードがない"]⟩
 
 /-- ルールから導いた★（どれも `derived_sound` で証明済み） -/
 def derived (r : Rules) : List Claim := (derivedProps r).map (·.describe r)

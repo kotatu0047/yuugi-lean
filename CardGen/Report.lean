@@ -1,5 +1,5 @@
 import CardGen.Timed
-import CardGen.Pool
+import CardGen.PoolClaims
 import CardGen.TurnProps
 import CardGen.Flow
 

@@ -5,6 +5,7 @@ import CardGen.Inv
 import CardGen.Play
 import CardGen.Claims
 import CardGen.Pool
+import CardGen.PoolClaims
 import CardGen.Turn
 import CardGen.TurnProps
 import CardGen.Flow

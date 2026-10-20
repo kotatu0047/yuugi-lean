@@ -188,6 +188,13 @@ def game : Game where
   "ターンの終わりに、ターンプレイヤーの手札は 7 枚以下（超えていれば、選んで墓地へ捨ててからターンを終える）"
 #guard ["CardGen.TReachable.mana_from", "CardGen.Match.step?_prio", "CardGen.Match.step?_over", "CardGen.Match.endTurn_clean", "CardGen.TReachable.stack_fits"].all
   ((report (toJson game).compress).claims.map (·.theorem)).contains
+-- 巨大化（ターンの終わりまで +3、何度でも重ねられる）があるので、攻撃力の上限の★は出ない。巨大化を除けば出る
+#guard (gameClaims game).all fun c => match c.prop with | .atkMax .. => false | _ => true
+#guard (gameClaims { game with cards := game.cards.filter (·.name != "巨大化") }).any fun c =>
+  match c.prop with | .atkMax .. => true | _ => false
+-- カードの流れの★は、どのゲームでも出る
+#guard ["CardGen.Reachable.cards_perm", "CardGen.Reachable.deck_suffix", "CardGen.Step.grave_prefix"].all
+  ((report (toJson game).compress).claims.map (·.theorem)).contains
 
 -- 形式の検査：永続効果の範囲では対象を選べない。打ち消す範囲は「フィールド上」でないゾーンに置ける種類
 #guard !({ game with cards := [{ anthem with effects := [.boost (target [creature] .self) 1] }] }).WellFormed
