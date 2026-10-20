@@ -35,7 +35,8 @@
 `csharp/`：Unity で使う C# 実装と差分テスト。`unity/CardGenEditor/`：エディタ（実行時のアプリ）
 
 ```
-lake build
+lake build                                       # CardGen と検査ツール（YuugiLean は含まない）
+lake build YuugiLean                             # 遊戯王 OCG の形式化（YuugiLean）
 lake exe cardgen CardGen/sample.json --text
 lake exe cardgen CardGen/mtg.json --text
 lake exe cardgen --game-vectors CardGen/mtg.json  # そのゲームのテストベクトル（C# との照合用。エディタの「C# と照合」）
