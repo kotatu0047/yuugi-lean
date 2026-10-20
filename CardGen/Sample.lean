@@ -379,6 +379,10 @@ def battleState : State := fun p =>
 -- 見本には回復の魔法があるので、ライフの上限の★はない。回復の魔法を除けば★「ライフは最大8000」が出る
 #guard (gameClaims game).isEmpty
 #guard (gameClaims { game with cards := game.cards.filter (· != potion) }).map (·.prop) == [.lifeMax 8000]
+-- 戦闘できる種類がなく、ダメージ（ファイヤー・ボール）と回復の魔法も除けば、★「ライフは最小8000」も出る
+#guard (gameClaims { game with cards := game.cards.filter (· != potion) }).all (·.prop != .lifeMin 8000)
+def calmGame : Game := { game with rules := { rules with fighters := [] }, cards := game.cards.filter fun c => !c.heals && !c.damages }
+#guard (gameClaims calmGame).map (·.prop) == [.lifeMax 8000, .lifeMin 8000]
 
 -- 攻撃力と無効の衝突：スキルドレイン（4すくみの循環の中）は闇の指揮官を無効にしうるので「プレイヤーの選択」
 #guard (attackClaim game.cards).map (·.status) == some "choice"

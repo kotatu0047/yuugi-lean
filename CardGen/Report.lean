@@ -1,6 +1,7 @@
 import CardGen.Timed
 import CardGen.Pool
 import CardGen.TurnProps
+import CardGen.Flow
 
 /-!
 # 検査ツールの報告
@@ -8,7 +9,8 @@ import CardGen.TurnProps
 中間表現の JSON を受け取り、次をまとめて返す。
 
 - `errors`：形式の誤り（あれば★と無効の検査は行わない）
-- `claims`：ルールから導いた★。どれも `CardGen.derived_valid` で証明済み
+- `claims`：ルールから導いた★（`CardGen.derived_valid`）、どのゲームでも成り立つカードの流れの★（`Flow.lean`）、
+  カードの一覧によって決まる★（`CardGen.gameClaims_valid`）、ターンについての★。どれも証明済み
 - `negation`：無効の関係の検査。循環がなければ `CardGen.negation_settles` で証明済み。
   循環があれば、まとまりごとに小さな盤面を総当たりで調べた結果（`CardGen.exploreGroup`）。
   分類は OCG の手順（適用の時刻つき、`Timed.lean`）による
@@ -149,6 +151,21 @@ def attackClaim (cards : List Card) : Option ClaimOut :=
       ["無効にしうる関係に循環がないので、どのカードの効果が有効かは1通りに決まる（メタ定理1）",
        "攻撃力・守備力の変化は足し算なので、適用する順番によらない"], "proved", "CardGen.negation_settles"⟩
 
+/-- カードの流れの★（`Flow.lean`）。ルールやカードによらず、どのゲームでも成り立つ。どれも証明済み -/
+def flowClaims : List ClaimOut :=
+  [⟨"各プレイヤーのカード（デッキ・手札・墓地・フィールドを合わせて）は、名前ごとの枚数が開始時のデッキのまま" ++
+      "（相手のカードが自分のところに来ることはない）",
+    ["どの動きも、カードをそのプレイヤーの中で移すだけ（引く・置く・破壊・手札に戻す・打ち消す・捨てる・戦闘）"],
+    "proved", "CardGen.Reachable.cards_perm"⟩,
+   ⟨"デッキの並びは変わらず、上から引いて減るだけ",
+    ["デッキを変える動きは、上から引くことだけ", "デッキにカードを戻す・デッキを混ぜ直す効果の部品がない"],
+    "proved", "CardGen.Reachable.deck_suffix"⟩,
+   ⟨"墓地のカードは減らず、並びも変わらない（どの動きでも、墓地には後ろに加わるだけ）",
+    ["墓地からカードを取り出す効果の部品がない",
+     "破壊・打ち消し・捨てる・効果の解決・戦闘で、カードは墓地の後ろに加わる",
+     "ターンのある対戦の動き（ターンの終わりのドローも含む）でも同じ（CardGen.Match.step?_grave_prefix）"],
+    "proved", "CardGen.Step.grave_prefix"⟩]
+
 /-- ターンについての★（`TurnProps.lean`）。どれも証明済み -/
 def turnClaims (r : Rules) (cards : List Card) : List ClaimOut :=
   let fighters := "・".intercalate r.fighters
@@ -222,6 +239,7 @@ def report (input : String) : Report :=
       | [] =>
         let claims := (derived g.rules).map (fun c =>
           (⟨c.text, c.grounds, "proved", "CardGen.derived_valid"⟩ : ClaimOut)) ++
+          flowClaims ++
           (gameClaims g).map (fun c => (⟨c.text, c.grounds, "proved", "CardGen.gameClaims_valid"⟩ : ClaimOut)) ++
           turnClaims g.rules g.cards ++
           (attackClaim g.cards).toList

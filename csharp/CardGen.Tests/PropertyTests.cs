@@ -94,6 +94,26 @@ public class PropertyTests
         Assert.Equal(2 * r.DeckSize, total);
     }
 
+    static List<string> SortedNames(IEnumerable<Card> cs) => cs.Select(c => c.Name).OrderBy(x => x, StringComparer.Ordinal).ToList();
+
+    /// <summary>1人分の状態にあるカード（デッキ・手札・墓地・フィールド）</summary>
+    static IEnumerable<Card> AllCards(PState s) => s.Deck.Concat(s.Hand).Concat(s.Grave).Concat(s.Field.Select(x => x.Card));
+
+    /// <summary>
+    /// カードの流れ（Flow.lean の Match.step?_flow）：動きの前 a と後 b で、カードは並べ替えただけ・デッキは上から減るだけ・
+    /// 墓地は後ろに加わるだけ
+    /// </summary>
+    static void CheckFlow(PState a, PState b, string where)
+    {
+        Assert.Equal(SortedNames(AllCards(a)), SortedNames(AllCards(b)));
+        var da = a.Deck.Select(c => c.Name).ToList();
+        var db = b.Deck.Select(c => c.Name).ToList();
+        Assert.True(db.Count <= da.Count && da.Skip(da.Count - db.Count).SequenceEqual(db), $"{where}：デッキは上から減るだけ");
+        var ga = a.Grave.Select(c => c.Name).ToList();
+        var gb = b.Grave.Select(c => c.Name).ToList();
+        Assert.True(ga.Count <= gb.Count && gb.Take(ga.Count).SequenceEqual(ga), $"{where}：墓地は後ろに加わるだけ");
+    }
+
     [Theory]
     [InlineData("mtg.json")]
     [InlineData("sample.json")]
@@ -105,7 +125,9 @@ public class PropertyTests
         for (int seed = 1; seed <= 30; seed++)
         {
             var rng = new Random(seed);
-            var m = Match.Start(r, DeckBuilder.Make(game, rng), DeckBuilder.Make(game, rng), seed % 2 == 0);
+            var d1 = DeckBuilder.Make(game, rng);
+            var d2 = DeckBuilder.Make(game, rng);
+            var m = Match.Start(r, d1, d2, seed % 2 == 0);
             CheckInvariants(r, m, $"{file} 種 {seed} 開始");
             for (int step = 0; step < 200 && !m.Over(r); step++)
             {
@@ -128,6 +150,12 @@ public class PropertyTests
                 if (k == TChoiceKind.Resolve) resolves++;
                 if (k == TChoiceKind.Trigger) triggers++;
                 CheckInvariants(r, m, $"{file} 種 {seed} {step} 手目（{k}）", game.Cards);
+                // カードの流れ（Match.step?_flow）と、名前ごとの枚数は開始時のデッキのまま（Reachable.cards_perm）
+                foreach (var q in new[] { true, false })
+                {
+                    CheckFlow(before.G.Get(q), m.G.Get(q), $"{file} 種 {seed} {step} 手目（{k}）");
+                    Assert.Equal(SortedNames(q ? d1 : d2), SortedNames(AllCards(m.G.Get(q))));
+                }
                 // ターンの終わりにダメージと一時的な変化が消える（Match.endTurn_clean）
                 if (k == TChoiceKind.EndTurn)
                     Assert.All(new[] { m.G.P1, m.G.P2 }.SelectMany(s => s.Field),

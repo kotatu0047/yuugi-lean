@@ -11,6 +11,7 @@ import CardGen.Claims
 | 型 | 規則 |
 |---|---|
 | F. ライフ | 一覧に「回復」の動きを持つカードがなければ、ライフは初期ライフを超えない（`Reachable.life_le`） |
+| G. ライフ | 戦闘できる種類がなく、一覧に「ダメージ」の動きを持つカードがなければ、ライフは初期ライフより減らない（`Reachable.life_ge`） |
 -/
 
 namespace CardGen
@@ -474,25 +475,155 @@ theorem Reachable.life_le {r : Rules} {decks : PlayerId → List Card} {pool : L
       · exact lifeLe_foldl r _ _ as has ih
       · exact ih
 
+/-! ## ライフの下限 -/
+
+def Action.isDamage : Action → Bool
+  | .damage _ => true
+  | _ => false
+
+/-- 「ダメージ」（プレイヤーへのダメージ）の動きを持つ -/
+def Card.damages (c : Card) : Bool := c.effects.any fun
+  | .activated as => as.any Action.isDamage
+  | .triggered _ _ as => as.any Action.isDamage
+  | _ => false
+
+/-- ライフが `L` 以上 -/
+def LifeGe (L : Nat) (g : State) : Prop := ∀ q, L ≤ (g q).life
+
+theorem LifeGe.map {L : Nat} {g : State} {f : PlayerId → PState → PState} (h : LifeGe L g)
+    (hf : ∀ q s, (f q s).life = s.life) : LifeGe L (g.map f) := by
+  intro q; rw [State.map_apply, hf]; exact h q
+
+theorem lifeGe_set {L : Nat} {g : State} {p : PlayerId} {s : PState} (h : LifeGe L g) (hs : (g p).life ≤ s.life) :
+    LifeGe L (g.set p s) := by
+  intro q
+  by_cases hq : q = p
+  · subst hq; rw [State.set_same]; exact Nat.le_trans (h q) hs
+  · rw [State.set_other _ _ hq]; exact h q
+
+theorem lifeGe_sweep {L : Nat} (r : Rules) {g : State} (h : LifeGe L g) (neg : List Pos) :
+    LifeGe L (g.sweep r neg) := h.map fun _ _ => rfl
+
+theorem lifeGe_applyAction {L : Nat} (r : Rules) (src : Src) (negS : List (PlayerId × Slot)) {g : State}
+    (h : LifeGe L g) (a : Action) (ha : a.isDamage = false) : LifeGe L (g.applyAction r src negS a) := by
+  cases a with
+  | destroy sel => exact h.map fun _ _ => rfl
+  | bounce sel => exact h.map fun _ _ => rfl
+  | counter sel => exact h.map fun _ _ => rfl
+  | strike sel n =>
+    have h1 : LifeGe L (g.strikeMarks r sel n src) := h.map fun _ _ => rfl
+    exact lifeGe_sweep r h1 _
+  | pump sel a d =>
+    have h1 : LifeGe L (g.pumpMarks r sel a d src) := h.map fun _ _ => rfl
+    exact lifeGe_sweep r h1 _
+  | damage n => simp [Action.isDamage] at ha
+  | draw n => exact lifeGe_set h (Nat.le_refl _)
+  | heal n => exact lifeGe_set h (Nat.le_add_right _ _)
+
+theorem lifeGe_foldl {L : Nat} (r : Rules) (p : Src) (negS : List (PlayerId × Slot)) (as : List Action)
+    (has : as.any Action.isDamage = false) :
+    ∀ {g : State}, LifeGe L g → LifeGe L (as.foldl (State.applyAction r p negS) g) := by
+  induction as with
+  | nil => exact fun h => h
+  | cons a t ih =>
+    intro g h
+    simp only [List.any_cons, Bool.or_eq_false_iff] at has
+    exact ih has.2 (lifeGe_applyAction r p negS h a has.1)
+
+/-- 一覧のカード `c` が「ダメージ」の動きを持たなければ、その効果の動き `as` にも「ダメージ」はない -/
+theorem noDamage_of_pool {pool : List Card} (hdmg : pool.all (!·.damages) = true) {c : Card} (hc : c ∈ pool)
+    {as : List Action} (h : .activated as ∈ c.effects ∨ ∃ on opt, .triggered on opt as ∈ c.effects) :
+    as.any Action.isDamage = false := by
+  have hno : c.damages = false := by
+    have := List.all_eq_true.1 hdmg _ hc
+    simpa using this
+  unfold Card.damages at hno
+  rcases h with h | ⟨on, opt, h⟩
+  · have := List.any_eq_false.1 hno _ h
+    simpa using this
+  · have := List.any_eq_false.1 hno _ h
+    simpa using this
+
+/-- **戦闘できる種類がなく、一覧に「ダメージ」の動きを持つカードがなければ、到達できるどの状態でもライフは初期ライフ以上** -/
+theorem Reachable.life_ge {r : Rules} {decks : PlayerId → List Card} {pool : List Card}
+    (hpool : ∀ p, ∀ x ∈ decks p, x ∈ pool) (hdmg : pool.all (!·.damages) = true) (hf : r.fighters = [])
+    {g : State} (hg : Reachable r decks g) : LifeGe r.life g := by
+  induction hg with
+  | start => intro q; simp [CardGen.start]
+  | @step g g' hg' hs ih =>
+    cases hs with
+    | draw p c d hd => exact lifeGe_set ih (Nat.le_refl _)
+    | place p c i z up _ _ _ _ _ => exact lifeGe_set ih (Nat.le_refl _)
+    | attack p k sl t neg _ _ hfi _ => simp [Rules.fights, hf] at hfi
+    | combat p atk blocks neg hok =>
+      have hnil : atk = [] := by
+        cases atk with
+        | nil => rfl
+        | cons k t =>
+          exfalso
+          simp only [State.combatOK, List.all_cons, Bool.and_eq_true] at hok
+          have := hok.1.1
+          revert this
+          cases (g p).field[k]? <;> simp [Rules.fights, hf]
+      subst hnil
+      simp only [State.combat]
+      refine lifeGe_sweep r ?_ neg
+      have hne : (!p) ≠ p := by cases p <;> decide
+      refine lifeGe_set (lifeGe_set ih (Nat.le_refl _)) ?_
+      rw [State.set_other _ _ hne]
+      simp [PState.damage, PState.mark]
+    | mend => exact ih.map fun _ _ => rfl
+    | discard p c _ => exact lifeGe_set ih (Nat.le_refl _)
+    | settle neg => exact lifeGe_sweep r ih neg
+    | resolve p k sl as apply neg tgt hk hact =>
+      have hcard : sl.card ∈ pool := (hg'.fromPool hpool).field (List.mem_of_getElem? hk)
+      have has := noDamage_of_pool hdmg hcard (.inl hact)
+      let g1 := g.set p { g p with field := (g p).field.eraseIdx k }
+      have h1 : LifeGe r.life g1 := lifeGe_set ih (Nat.le_refl _)
+      have h2 : LifeGe r.life
+          (if apply then as.foldl (State.applyAction r (g.srcOf r p sl tgt) (g.negSlots neg)) g1 else g1) := by
+        split
+        · exact lifeGe_foldl r _ _ as has h1
+        · exact h1
+      exact lifeGe_set h2 (Nat.le_refl _)
+    | trigger p c on opt as cell apply neg tgt hact hc =>
+      have hcard : c ∈ pool := hg'.fromPool hpool p c (PState.mem_cards.2 hc)
+      have has := noDamage_of_pool hdmg hcard (.inr ⟨on, opt, hact⟩)
+      unfold State.fire
+      split
+      · exact lifeGe_foldl r _ _ as has ih
+      · exact ih
+
 /-! ## カードの一覧によって決まる★ -/
 
 /-- カードの一覧によって決まる★の中身 -/
 def gameProps (g : Game) : List ClaimProp :=
-  if g.rules.life > 0 && g.cards.all (!·.heals) then [.lifeMax g.rules.life] else []
+  (if g.rules.life > 0 && g.cards.all (!·.heals) then [.lifeMax g.rules.life] else []) ++
+  (if g.rules.life > 0 && g.rules.fighters.isEmpty && g.cards.all (!·.damages) then [.lifeMin g.rules.life] else [])
 
 /-- **カードの一覧によって決まる★は、一覧のカードで作ったどのデッキでも成り立つ** -/
 theorem gameProps_sound (g : Game) (decks : PlayerId → List Card) (hpool : ∀ p, ∀ x ∈ decks p, x ∈ g.cards) :
     ∀ c ∈ gameProps g, c.Valid g.rules decks := by
   intro c hc
   unfold gameProps at hc
-  split at hc
-  · rename_i h
-    simp only [List.mem_singleton] at hc; subst hc
-    simp only [Bool.and_eq_true] at h
-    simp only [ClaimProp.Valid, ClaimProp.atStart]
-    intro s hs p
-    exact hs.life_le hpool h.2 p
-  · simp at hc
+  rw [List.mem_append] at hc
+  rcases hc with hc | hc
+  · split at hc
+    · rename_i h
+      simp only [List.mem_singleton] at hc; subst hc
+      simp only [Bool.and_eq_true] at h
+      simp only [ClaimProp.Valid, ClaimProp.atStart]
+      intro s hs p
+      exact hs.life_le hpool h.2 p
+    · simp at hc
+  · split at hc
+    · rename_i h
+      simp only [List.mem_singleton] at hc; subst hc
+      simp only [Bool.and_eq_true, List.isEmpty_iff] at h
+      simp only [ClaimProp.Valid, ClaimProp.atStart]
+      intro s hs p
+      exact hs.life_ge hpool h.2 h.1.2 p
+    · simp at hc
 
 /-- 人が読む形の、カードの一覧によって決まる★ -/
 def gameClaims (g : Game) : List Claim := (gameProps g).map (·.describe g.rules)
