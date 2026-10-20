@@ -379,11 +379,13 @@ def battleState : State := fun p =>
 -- 見本には回復の魔法があるので、ライフの上限の★はない。回復の魔法を除けば★「ライフは最大8000」が出る
 -- 攻撃力を上げる「ターンの終わりまでの変化」がないので、★「攻撃力は最大12500」が出る
 -- （カードに書いた最大 2500 ＋ 2 ×（1枚の永続の変化の最大 500 × フィールド上 10枚））
-#guard (gameClaims game).map (·.prop) == [.atkMax 2500 500 10]
-#guard (gameClaims game).map (·.text) == ["フィールドのカードの攻撃力は最大12500"]
-#guard (gameClaims { game with cards := game.cards.filter (· != potion) }).map (·.prop) == [.lifeMax 8000, .atkMax 2500 500 10]
+-- 守備力も同じ形で、永続の守備力の変化を持つカードがないので、カードに書いた最大（2100、ブラック・マジシャン）になる
+#guard (gameClaims game).map (·.prop) == [.atkMax 2500 500 10, .defMax 2100 0 10]
+#guard (gameClaims game).map (·.text) == ["フィールドのカードの攻撃力は最大12500", "フィールドのカードの守備力は最大2100"]
+#guard (gameClaims { game with cards := game.cards.filter (· != potion) }).map (·.prop) ==
+  [.lifeMax 8000, .atkMax 2500 500 10, .defMax 2100 0 10]
 -- 永続の攻撃力の変化を持つカードも除けば、攻撃力はカードに書いた最大（2500）を超えない
-#guard (gameClaims { game with cards := game.cards.filter (·.boostSum == 0) }).map (·.prop) |>.contains (.atkMax 2500 0 10)
+#guard (gameClaims { game with cards := game.cards.filter (·.boostSum true == 0) }).map (·.prop) |>.contains (.atkMax 2500 0 10)
 -- 戦闘できる種類がなく、ダメージ（ファイヤー・ボール）と回復の魔法も除けば、★「ライフは最小8000」も出る（攻撃力の★は出ない）
 def calmGame : Game := { game with rules := { rules with fighters := [] }, cards := game.cards.filter fun c => !c.heals && !c.damages }
 #guard (gameClaims calmGame).map (·.prop) == [.lifeMax 8000, .lifeMin 8000]

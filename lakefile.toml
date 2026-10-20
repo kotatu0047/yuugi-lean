@@ -1,6 +1,6 @@
 name = "YuugiLean"
 version = "0.1.0"
-defaultTargets = ["yuugilean", "CardGen", "cardgen"]
+defaultTargets = ["CardGen", "cardgen"]
 
 [[lean_lib]]
 name = "YuugiLean"

@@ -20,7 +20,7 @@
 - `CardGen/Claims.lean`：ルールから導く性質（★）と、それがすべての対戦で成り立つことの証明（`derived_valid`）
 - `CardGen/Negation.lean`：無効の関係に循環がなければ判定が必ず止まり結果が1通りであることの証明（`negation_settles`）
 - `CardGen/Pool.lean`：盤面のカードはカードの一覧から来ること、回復のカードがなければライフは増えないこと（★の型 F）、戦闘もダメージのカードもなければライフは減らないこと（★の型 G）
-- `CardGen/PoolClaims.lean`：攻撃力の上限（★の型 H。攻撃力を上げる一時的な変化がなければ、カードに書いた攻撃力の最大＋永続の変化の最大×フィールド上の枚数を超えない）と、カードの一覧によって決まる★の列挙（`gameClaims_valid`）
+- `CardGen/PoolClaims.lean`：攻撃力と守備力の上限（★の型 H。上げる一時的な変化がなければ、カードに書いた値の最大＋永続の変化の最大×フィールド上の枚数を超えない）と、カードの一覧によって決まる★の列挙（`gameClaims_valid`）
 - `CardGen/Flow.lean`：どのゲームでも成り立つカードの流れの★。各プレイヤーのカードは名前ごとの枚数が開始時のデッキのまま（`Reachable.cards_perm`）、デッキは上から減るだけ（`Reachable.deck_suffix`）、墓地は減らず並びも変わらない（`Step.grave_prefix`・`Match.step?_grave_prefix`）
 - `CardGen/Turn.lean`：ターンのある対戦（マナとタップ、インスタントとスタック、まとめての攻撃とブロック、デッキ切れ、優先権）
 - `CardGen/Warnings.lean`：形式の警告の裏付け（例：種類が空の範囲はどのカードにも当たらない、0のダメージは盤面を変えない）
