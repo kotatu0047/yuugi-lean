@@ -1,0 +1,13 @@
+#!/bin/bash
+# コミットの前に、YuugiLean 以外のすべてのビルドとテストを実行する。
+# 有効にする：git config core.hooksPath .githooks
+# 一度だけ飛ばす：git commit --no-verify
+# Unity を飛ばす：CARDGEN_NO_UNITY=1 git commit …
+#
+# 会話記録（.claude-history/）だけのコミットでは実行しない。
+if git diff --cached --name-only | grep -qv '^\.claude-history/'; then
+  if [ -n "${CARDGEN_NO_UNITY:-}" ]; then
+    exec "$(git rev-parse --show-toplevel)/tools/check-all.sh" --no-unity
+  fi
+  exec "$(git rev-parse --show-toplevel)/tools/check-all.sh"
+fi

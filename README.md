@@ -47,6 +47,10 @@ tools/unity-build.sh --test                      # Unity の画面の自動テ�
 tools/unity-build.sh --rclick                    # ビルドしたアプリで、右クリックのメニューが出るかを確かめる
 ```
 
+YuugiLean 以外のビルドとテスト（Lean・証明ジョブの再検査・C#・ドキュメント・Unity）は `tools/check-all.sh` でまとめて実行できる
+（Unity を飛ばすなら `--no-unity`）。`git config core.hooksPath .githooks` をしておくと、コミットの前に自動で実行される
+（会話記録だけのコミットは除く。一度だけ飛ばすなら `git commit --no-verify`、Unity だけ飛ばすなら `CARDGEN_NO_UNITY=1 git commit …`）。
+
 WSL では .NET 9 の SDK を `~/.dotnet` に入れて使う（`dotnet-install.sh --channel 9.0 --install-dir ~/.dotnet`、
 `export DOTNET_ROOT=~/.dotnet PATH=~/.dotnet:$PATH`）。ドキュメントのサイトは `pip install mkdocs-material==9.5.39`（GitHub Actions と同じ版）。
 
