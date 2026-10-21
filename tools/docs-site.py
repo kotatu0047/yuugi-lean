@@ -16,6 +16,7 @@ OUT = ROOT / "_docs_site"
 PAGES = {
     "README.md": "index.md",
     "企画書.md": "企画書.md",
+    "進捗.md": "進捗.md",
     "アーキテクチャ.md": "アーキテクチャ.md",
     "CardGen/中間表現.md": "中間表現.md",
     "jobs/README.md": "ジョブ.md",
