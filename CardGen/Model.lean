@@ -395,27 +395,47 @@ def State.battle (r : Rules) (g : State) (neg : List Pos) (p : PlayerId) (k : Na
     State :=
   if r.blocking then g.combat r neg p [k] (t.map (·, 0)).toList else g.duel r neg p k sl t
 
-/-- 対戦の1つの動き -/
+/-- 対戦の1つの動き。どちらのプレイヤーが、どの順に、何度動いてもよい（順番・回数・タイミングの制限は、
+ターンのある対戦 `Match.step?` が決める）。ここでの条件は「その動きが盤面の上でできるか」だけ -/
 inductive Step (r : Rules) : State → State → Prop
+  /-- `p` がデッキの一番上のカード `c` を引き、手札の最後に加える（デッキが空なら引けない） -/
   | draw (g : State) (p : PlayerId) (c : Card) (d : List Card) :
       (g p).deck = c :: d →
       Step r g (g.set p { g p with deck := d, hand := (g p).hand ++ [c] })
+  /-- `p` が手札のカード `c` を、`i` 番目のゾーン `z` の `j` 番目のマスに置く（`up`：表側表示か）。
+  置けるのは、普通のゾーン（`.plain`）で、そのゾーンが `c` の種類を受け入れ、マスが範囲内のとき。
+  1マスに1枚のゾーンなら、そのマスが空いていなければならない。置いたカードはダメージも変化もない状態で、
+  フィールドの最後に加わる（マナなどの費用は、ターンのある対戦が確かめる） -/
   | place (g : State) (p : PlayerId) (c : Card) (i j : Nat) (z : Zone) (up : Bool) :
       c ∈ (g p).hand → r.zones[i]? = some z → z.role = .plain → z.admits.contains c.type → j < z.count →
       (z.capacity = .one → ∀ sl ∈ (g p).field, ¬(sl.zone = i ∧ sl.cell = j)) →
       Step r g (g.set p { g p with hand := (g p).hand.erase c, field := (g p).field ++ [⟨i, j, c, up, 0, 0, 0⟩] })
+  /-- `p` がフィールドの `k` 番目のカード `sl` の、起動する効果（動き `as`）を発動して解決する。
+  カードはフィールドを離れ、`apply` なら動きを順に行い（無効にされていれば何も起きない）、最後に墓地へ行く。
+  `neg`：効果が無効になっているカードの位置。`tgt`：対象を選ぶ範囲で選んだカードの位置
+  （どちらも解決する前の盤面で。中身は `State.resolve`） -/
   | resolve (g : State) (p : PlayerId) (k : Nat) (sl : Slot) (as : List Action) (apply : Bool) (neg : List Pos)
       (tgt : Option Pos) :
       (g p).field[k]? = some sl → .activated as ∈ sl.card.effects →
       Step r g (g.resolve r p k sl as apply neg tgt)
+  /-- `p` がフィールドの `k` 番目のカード `sl`（表側表示で戦闘できるもの）で攻撃する。
+  遊戯王式の戦闘では、`target` が `some j` なら相手のフィールドの `j` 番目の戦闘できるカードを、`none` なら相手を
+  直接攻撃する（直接攻撃は、相手に戦闘できるカードがないときだけ）。結果は `State.duel`。
+  MTG 式の戦闘では、`some j` は相手の `j` 番目のカードがブロックしたこと、`none` はブロックされなかったことを表し、
+  結果は攻撃するカードが1枚だけの `State.combat`（`State.battle`） -/
   | attack (g : State) (p : PlayerId) (k : Nat) (sl : Slot) (target : Option Nat) (neg : List Pos) :
       (g p).field[k]? = some sl → sl.faceUp → r.fights sl →
       (match target with
        | none => r.blocking ∨ (g (!p)).field.all (!r.fights ·)
        | some j => ∃ tl, (g (!p)).field[j]? = some tl ∧ r.fights tl) →
       Step r g (g.battle r neg p k sl target)
+  /-- MTG 式の戦闘を1回まとめて行う：`p` のフィールドの `atk` 番目のカードたちで攻撃し、相手が `blocks` でブロックする
+  （`(j, a)`：相手の `j` 番目のカードが、`atk` の `a` 番目の攻撃をブロックする）。攻撃するのは表側表示の戦闘できるカード、
+  ブロックするのは戦闘できるカード（`State.combatOK`）。ダメージは同時に与え、そのあと状態の確認をする -/
   | combat (g : State) (p : PlayerId) (atk : List Nat) (blocks : List (Nat × Nat)) (neg : List Pos) :
       g.combatOK r p atk blocks → Step r g (g.combat r neg p atk blocks)
+  /-- どのカードのダメージと、ターンの終わりまでの攻撃力・守備力の変化も 0 に戻す
+  （ターンのある対戦では、ターンを終えるとき（`endTurn`）に行う） -/
   | mend (g : State) : Step r g g.mend
   /-- 誘発した効果を解決する：`p` のカード `c`（どこにあってもよい）の `e` 番目の誘発する効果の動きを行う
   （`apply` でなければ、無効にされていて何も起きない）。`cell`：誘発したときのマス。ターンのない対戦では、いつでも何度でもできる
