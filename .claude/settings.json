@@ -2,25 +2,15 @@
   "permissions": {
     "deny": [
       "Edit(/spec/**)",
-      "Write(/spec/**)",
       "Edit(/.claude/settings.json)",
-      "Write(/.claude/settings.json)",
       "Edit(/.claude/settings.local.json)",
-      "Write(/.claude/settings.local.json)",
       "Edit(/.claude/hooks/**)",
-      "Write(/.claude/hooks/**)",
       "Edit(/.github/workflows/**)",
-      "Write(/.github/workflows/**)",
       "Edit(/.githooks/**)",
-      "Write(/.githooks/**)",
       "Edit(/tools/check-all.sh)",
-      "Write(/tools/check-all.sh)",
       "Edit(/jobs/accept.py)",
-      "Write(/jobs/accept.py)",
       "Edit(/lakefile.toml)",
-      "Write(/lakefile.toml)",
-      "Edit(/lean-toolchain)",
-      "Write(/lean-toolchain)"
+      "Edit(/lean-toolchain)"
     ]
   },
   "hooks": {
@@ -28,14 +18,21 @@
       {
         "matcher": "Bash",
         "hooks": [
-          { "type": "command", "command": "python3 \"$CLAUDE_PROJECT_DIR\"/spec/guard.py" }
+          {
+            "type": "command",
+            "command": "python3 \"$CLAUDE_PROJECT_DIR\"/spec/guard.py"
+          }
         ]
       }
     ],
     "Stop": [
       {
         "hooks": [
-          { "type": "command", "command": "\"$CLAUDE_PROJECT_DIR\"/spec/stop-gate.sh", "timeout": 900 }
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/spec/stop-gate.sh",
+            "timeout": 900
+          }
         ]
       }
     ]
