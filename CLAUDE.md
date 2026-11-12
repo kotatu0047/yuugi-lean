@@ -11,6 +11,7 @@
 ## コミットと push
 
 - 作業（ファイルの変更）が一段落したら、確認なしでコミットし、`git push` まで行う（master に直接）。
+  そのとき `.claude-history/` の変更（新しい会話記録も）も同じコミットに含める。
 - コミットの前に `tools/check-all.sh` が走る（コミット前のフック `.githooks/pre-commit`。
   有効にするのは `git config core.hooksPath .githooks`）。証明のゲート・C# のテスト・ドキュメントのサイト・
   Unity の画面のテストとビルドをすべて行う。Unity に関係しない変更なら `CARDGEN_NO_UNITY=1 git commit …` で
